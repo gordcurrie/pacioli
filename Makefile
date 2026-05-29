@@ -18,6 +18,7 @@ test-verbose:
 	go test -race -count=1 -v ./...
 
 lint:
+	golangci-lint config verify
 	golangci-lint run ./...
 
 sec:
