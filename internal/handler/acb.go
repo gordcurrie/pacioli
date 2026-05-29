@@ -7,7 +7,6 @@ import (
 	"github.com/gordcurrie/pacioli/internal/security"
 	"github.com/gordcurrie/pacioli/internal/service"
 	"github.com/gordcurrie/pacioli/internal/transaction"
-	"github.com/shopspring/decimal"
 )
 
 type positionSummary struct {
@@ -19,18 +18,11 @@ type acbListPageData struct {
 	Positions []positionSummary
 }
 
-type acbHistoryRow struct {
-	Tx                 *transaction.Transaction
-	RunningShares      decimal.Decimal
-	RunningACB         decimal.Decimal
-	RunningACBPerShare decimal.Decimal
-}
-
 type acbDetailPageData struct {
 	Security     *security.Security
 	Result       *service.ACBResult
 	Transactions []*transaction.Transaction
-	Rows         []acbHistoryRow
+	Rows         []service.HistoryRow
 }
 
 func (h *Handler) index(w http.ResponseWriter, r *http.Request) {
@@ -88,8 +80,7 @@ func (h *Handler) showACB(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result := service.CalculateACB(id, txs)
-	rows := buildHistoryRows(txs)
+	result, rows := service.CalculateACBWithHistory(id, txs)
 
 	h.render(w, "acb", acbDetailPageData{
 		Security:     sec,
@@ -97,39 +88,4 @@ func (h *Handler) showACB(w http.ResponseWriter, r *http.Request) {
 		Transactions: txs,
 		Rows:         rows,
 	})
-}
-
-func buildHistoryRows(txs []*transaction.Transaction) []acbHistoryRow {
-	rows := make([]acbHistoryRow, 0, len(txs))
-	var shares, totalACB decimal.Decimal
-	for _, tx := range txs {
-		switch tx.Type {
-		case transaction.TypeBuy, transaction.TypeTransferIn, transaction.TypeJournal:
-			cost := tx.Quantity.Mul(tx.PriceCAD).Add(tx.CommissionCAD)
-			totalACB = totalACB.Add(cost)
-			shares = shares.Add(tx.Quantity)
-		case transaction.TypeSell, transaction.TypeTransferOut:
-			if shares.IsPositive() {
-				acbPerShare := totalACB.Div(shares)
-				totalACB = totalACB.Sub(acbPerShare.Mul(tx.Quantity))
-			}
-			shares = shares.Sub(tx.Quantity)
-		case transaction.TypeROCAdjustment:
-			totalACB = totalACB.Sub(tx.Quantity.Mul(tx.PriceCAD))
-		case transaction.TypeDividend, transaction.TypeFXConversion:
-			// no ACB impact
-		}
-
-		var perShare decimal.Decimal
-		if shares.IsPositive() {
-			perShare = totalACB.Div(shares)
-		}
-		rows = append(rows, acbHistoryRow{
-			Tx:                 tx,
-			RunningShares:      shares,
-			RunningACB:         totalACB,
-			RunningACBPerShare: perShare,
-		})
-	}
-	return rows
 }

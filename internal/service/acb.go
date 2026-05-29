@@ -15,6 +15,13 @@ type ACBResult struct {
 	ACBPerShare decimal.Decimal
 }
 
+type HistoryRow struct {
+	Tx                 *transaction.Transaction
+	RunningShares      decimal.Decimal
+	RunningACB         decimal.Decimal
+	RunningACBPerShare decimal.Decimal
+}
+
 type ACBService struct {
 	txStore transaction.Store
 }
@@ -31,10 +38,11 @@ func (s *ACBService) Calculate(ctx context.Context, securityID, userID int64) (*
 	return CalculateACB(securityID, txs), nil
 }
 
-// CalculateACB computes ACB from an ordered (trade_date asc) transaction slice.
-// Exported so it can be tested without a store.
-func CalculateACB(securityID int64, txs []*transaction.Transaction) *ACBResult {
+// CalculateACBWithHistory computes ACB and per-row running totals from an
+// ordered (trade_date asc) transaction slice.
+func CalculateACBWithHistory(securityID int64, txs []*transaction.Transaction) (*ACBResult, []HistoryRow) {
 	r := &ACBResult{SecurityID: securityID}
+	rows := make([]HistoryRow, 0, len(txs))
 	for _, tx := range txs {
 		switch tx.Type {
 		case transaction.TypeBuy, transaction.TypeTransferIn, transaction.TypeJournal:
@@ -47,15 +55,36 @@ func CalculateACB(securityID int64, txs []*transaction.Transaction) *ACBResult {
 				r.TotalACB = r.TotalACB.Sub(acbPerShare.Mul(tx.Quantity))
 			}
 			r.Shares = r.Shares.Sub(tx.Quantity)
+			if !r.Shares.IsPositive() {
+				r.Shares = decimal.Zero
+				r.TotalACB = decimal.Zero
+			}
 		case transaction.TypeROCAdjustment:
-			// Quantity = shares held at T3 record date; PriceCAD = ROC per unit
 			r.TotalACB = r.TotalACB.Sub(tx.Quantity.Mul(tx.PriceCAD))
 		case transaction.TypeDividend, transaction.TypeFXConversion:
 			// no ACB impact
 		}
+
+		var perShare decimal.Decimal
+		if r.Shares.IsPositive() {
+			perShare = r.TotalACB.Div(r.Shares)
+		}
+		rows = append(rows, HistoryRow{
+			Tx:                 tx,
+			RunningShares:      r.Shares,
+			RunningACB:         r.TotalACB,
+			RunningACBPerShare: perShare,
+		})
 	}
 	if r.Shares.IsPositive() {
 		r.ACBPerShare = r.TotalACB.Div(r.Shares)
 	}
+	return r, rows
+}
+
+// CalculateACB computes ACB from an ordered (trade_date asc) transaction slice.
+// Exported so it can be tested without a store.
+func CalculateACB(securityID int64, txs []*transaction.Transaction) *ACBResult {
+	r, _ := CalculateACBWithHistory(securityID, txs)
 	return r
 }

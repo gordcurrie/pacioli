@@ -81,6 +81,10 @@ func (h *Handler) editAccount(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, err)
 		return
 	}
+	if a.UserID != h.userID {
+		http.NotFound(w, r)
+		return
+	}
 	h.render(w, "account_form", accountFormData{Account: a, Types: accountTypes})
 }
 
@@ -90,6 +94,16 @@ func (h *Handler) updateAccount(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	existing, err := h.accounts.GetByID(r.Context(), id)
+	if err != nil {
+		h.serverError(w, err)
+		return
+	}
+	if existing.UserID != h.userID {
+		http.NotFound(w, r)
+		return
+	}
+
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
@@ -122,10 +136,18 @@ func (h *Handler) deleteAccount(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	existing, err := h.accounts.GetByID(r.Context(), id)
+	if err != nil {
+		h.serverError(w, err)
+		return
+	}
+	if existing.UserID != h.userID {
+		http.NotFound(w, r)
+		return
+	}
 	if err := h.accounts.Delete(r.Context(), id); err != nil {
 		h.serverError(w, err)
 		return
 	}
-	// Return empty — HTMX swaps the row out
 	w.WriteHeader(http.StatusOK)
 }

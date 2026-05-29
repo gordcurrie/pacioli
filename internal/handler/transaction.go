@@ -1,7 +1,9 @@
 package handler
 
 import (
+	"cmp"
 	"net/http"
+	"slices"
 	"strconv"
 	"time"
 
@@ -28,7 +30,6 @@ var txTypes = []transaction.Type{
 }
 
 func (h *Handler) listTransactions(w http.ResponseWriter, r *http.Request) {
-	// List recent transactions across all accounts for this user
 	accounts, err := h.accounts.ListByUser(r.Context(), h.userID)
 	if err != nil {
 		h.serverError(w, err)
@@ -44,6 +45,10 @@ func (h *Handler) listTransactions(w http.ResponseWriter, r *http.Request) {
 		}
 		txs = append(txs, atxs...)
 	}
+
+	slices.SortFunc(txs, func(a, b *transaction.Transaction) int {
+		return cmp.Compare(a.TradeDate.Unix(), b.TradeDate.Unix())
+	})
 
 	h.render(w, "transactions", transactionsPageData{Transactions: txs})
 }
@@ -84,6 +89,18 @@ func (h *Handler) createTransaction(w http.ResponseWriter, r *http.Request) {
 		renderForm("select an account")
 		return
 	}
+	var ownsAccount bool
+	for _, a := range accounts {
+		if a.ID == accountID {
+			ownsAccount = true
+			break
+		}
+	}
+	if !ownsAccount {
+		renderForm("invalid account")
+		return
+	}
+
 	securityID, err := strconv.ParseInt(r.FormValue("security_id"), 10, 64)
 	if err != nil || securityID == 0 {
 		renderForm("select a security")
@@ -100,7 +117,11 @@ func (h *Handler) createTransaction(w http.ResponseWriter, r *http.Request) {
 		renderForm("invalid price")
 		return
 	}
-	commNative, _ := decimal.NewFromString(r.FormValue("commission_native"))
+	commNative, err := decimal.NewFromString(r.FormValue("commission_native"))
+	if err != nil {
+		renderForm("invalid commission")
+		return
+	}
 
 	tradeDate, err := time.Parse(time.DateOnly, r.FormValue("trade_date"))
 	if err != nil {
@@ -157,10 +178,19 @@ func (h *Handler) deleteTransaction(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	tx, err := h.transactions.GetByID(r.Context(), id)
+	if err != nil {
+		h.serverError(w, err)
+		return
+	}
+	acct, err := h.accounts.GetByID(r.Context(), tx.AccountID)
+	if err != nil || acct.UserID != h.userID {
+		http.NotFound(w, r)
+		return
+	}
 	if err := h.transactions.Delete(r.Context(), id); err != nil {
 		h.serverError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusOK)
 }
-
