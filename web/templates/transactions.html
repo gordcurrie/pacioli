@@ -1,0 +1,53 @@
+{{define "content"}}
+<div style="display:flex; justify-content:space-between; align-items:center">
+  <h2>Transactions</h2>
+  <a href="/transactions/new" role="button">Add Transaction</a>
+</div>
+{{if .Error}}<p class="danger">{{.Error}}</p>{{end}}
+{{if .Transactions}}
+<figure>
+  <table>
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Type</th>
+        <th>Ticker</th>
+        <th>Account</th>
+        <th style="text-align:right">Qty</th>
+        <th style="text-align:right">Price (native)</th>
+        <th style="text-align:right">Commission</th>
+        <th style="text-align:right">Price (CAD)</th>
+        <th>FX Rate</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .Transactions}}
+      <tr id="tx-row-{{.ID}}">
+        <td>{{.TradeDate.Format "2006-01-02"}}</td>
+        <td>{{.Type}}</td>
+        <td>{{.SecurityID}}</td>
+        <td>{{.AccountID}}</td>
+        <td style="text-align:right">{{.Quantity.StringFixed 4}}</td>
+        <td style="text-align:right">{{.PriceNative.StringFixed 4}}</td>
+        <td style="text-align:right">{{.CommissionNative.StringFixed 2}}</td>
+        <td style="text-align:right">{{.PriceCAD.StringFixed 4}}</td>
+        <td>{{if .FXRate}}{{.FXRate.StringFixed 4}}{{else}}—{{end}}</td>
+        <td class="actions">
+          <button
+            hx-delete="/transactions/{{.ID}}"
+            hx-target="#tx-row-{{.ID}}"
+            hx-swap="outerHTML"
+            hx-confirm="Delete this transaction? This will affect ACB calculations."
+            class="outline danger"
+            style="padding: 0.25rem 0.5rem; font-size: 0.875rem">Delete</button>
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</figure>
+{{else}}
+<article><p>No transactions yet. <a href="/transactions/new">Add one</a>.</p></article>
+{{end}}
+{{end}}

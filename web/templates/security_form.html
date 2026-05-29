@@ -1,0 +1,43 @@
+{{define "content"}}
+<div style="display:flex; justify-content:space-between; align-items:center">
+  <h2>New Security</h2>
+  <a href="/securities" role="button" class="outline">Cancel</a>
+</div>
+{{if .Error}}<p class="danger">{{.Error}}</p>{{end}}
+<article>
+  <form method="POST" action="/securities">
+    <div class="grid">
+      <label>
+        Ticker
+        <input type="text" name="ticker" value="{{.Security.Ticker}}" required placeholder="e.g. VFV">
+      </label>
+      <label>
+        Exchange
+        <input type="text" name="exchange" value="{{.Security.Exchange}}" required placeholder="e.g. TSX">
+      </label>
+    </div>
+    <label>
+      Name
+      <input type="text" name="name" value="{{.Security.Name}}" required placeholder="e.g. Vanguard S&P 500 ETF">
+    </label>
+    <div class="grid">
+      <label>
+        Type
+        <select name="type" required>
+          {{range .Types}}
+          <option value="{{.}}" {{if eq . $.Security.Type}}selected{{end}}>{{.}}</option>
+          {{end}}
+        </select>
+      </label>
+      <label>
+        Currency
+        <select name="currency" required>
+          <option value="CAD" {{if eq .Security.Currency "CAD"}}selected{{end}}>CAD</option>
+          <option value="USD" {{if eq .Security.Currency "USD"}}selected{{end}}>USD</option>
+        </select>
+      </label>
+    </div>
+    <button type="submit">Add Security</button>
+  </form>
+</article>
+{{end}}

@@ -1,0 +1,57 @@
+{{define "content"}}
+<h2>ACB — {{.Security.Ticker}} <small>{{.Security.Exchange}}</small></h2>
+<p>{{.Security.Name}} · {{.Security.Currency}}</p>
+
+<div class="grid">
+  <article>
+    <header>Shares Held</header>
+    <h3>{{.Result.Shares.StringFixed 4}}</h3>
+  </article>
+  <article>
+    <header>ACB / Share</header>
+    <h3>{{.Result.ACBPerShare.StringFixed 4}} CAD</h3>
+  </article>
+  <article>
+    <header>Total ACB</header>
+    <h3>{{.Result.TotalACB.StringFixed 2}} CAD</h3>
+  </article>
+</div>
+
+<h3>Transaction History</h3>
+{{if .Transactions}}
+<figure>
+  <table>
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Type</th>
+        <th style="text-align:right">Qty</th>
+        <th style="text-align:right">Price CAD</th>
+        <th style="text-align:right">Commission CAD</th>
+        <th style="text-align:right">Running Shares</th>
+        <th style="text-align:right">Running ACB</th>
+        <th style="text-align:right">ACB/Share</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .Rows}}
+      <tr>
+        <td>{{.Tx.TradeDate.Format "2006-01-02"}}</td>
+        <td>{{.Tx.Type}}</td>
+        <td style="text-align:right">{{.Tx.Quantity.StringFixed 4}}</td>
+        <td style="text-align:right">{{.Tx.PriceCAD.StringFixed 4}}</td>
+        <td style="text-align:right">{{.Tx.CommissionCAD.StringFixed 2}}</td>
+        <td style="text-align:right">{{.RunningShares.StringFixed 4}}</td>
+        <td style="text-align:right">{{.RunningACB.StringFixed 2}}</td>
+        <td style="text-align:right">{{.RunningACBPerShare.StringFixed 4}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</figure>
+{{else}}
+<article><p>No transactions for this security in non-registered accounts.</p></article>
+{{end}}
+
+<p><a href="/acb">← Back to all positions</a></p>
+{{end}}

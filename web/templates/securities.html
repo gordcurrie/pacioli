@@ -1,0 +1,41 @@
+{{define "content"}}
+<div style="display:flex; justify-content:space-between; align-items:center">
+  <h2>Securities</h2>
+  <a href="/securities/new" role="button">Add Security</a>
+</div>
+{{if .Error}}<p class="danger">{{.Error}}</p>{{end}}
+<form method="GET" action="/securities" style="max-width:400px">
+  <div role="group">
+    <input type="search" name="q" value="{{.Query}}" placeholder="Search ticker or name...">
+    <button type="submit">Search</button>
+  </div>
+</form>
+{{if .Securities}}
+<figure>
+  <table>
+    <thead>
+      <tr>
+        <th>Ticker</th>
+        <th>Exchange</th>
+        <th>Name</th>
+        <th>Type</th>
+        <th>Currency</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .Securities}}
+      <tr>
+        <td><strong>{{.Ticker}}</strong></td>
+        <td>{{.Exchange}}</td>
+        <td>{{.Name}}</td>
+        <td>{{.Type}}</td>
+        <td>{{.Currency}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</figure>
+{{else}}
+<article><p>No securities found{{if .Query}} for "{{.Query}}"{{end}}.</p></article>
+{{end}}
+{{end}}
