@@ -18,6 +18,7 @@
 
 {{if gt .TotalOK 0}}
 <form method="post" action="/import/commit">
+  <input type="hidden" name="broker" value="{{.BrokerName}}">
   <input type="hidden" name="commit_rows" value="{{.CommitJSON}}">
   <button type="submit">Commit {{.TotalOK}} transactions</button>
 </form>

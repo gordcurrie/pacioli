@@ -53,8 +53,9 @@ func (h *Handler) importPreview(w http.ResponseWriter, r *http.Request) {
 		h.render(w, "import", importPageData{Brokers: brokerNames(), Error: errMsg})
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, 10<<20)
 	if err := r.ParseMultipartForm(10 << 20); err != nil {
-		renderUpload("invalid form upload")
+		renderUpload("invalid form upload (max 10 MB)")
 		return
 	}
 
@@ -99,15 +100,14 @@ func (h *Handler) importPreview(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, r, err)
 		return
 	}
-	secByName := make(map[string]struct {
-		ID     int64
-		Ticker string
-	}, len(securities))
+	type secRef struct {
+		ID       int64
+		Ticker   string
+		Currency string
+	}
+	secByName := make(map[string]secRef, len(securities))
 	for _, s := range securities {
-		secByName[s.Name] = struct {
-			ID     int64
-			Ticker string
-		}{s.ID, s.Ticker}
+		secByName[s.Name] = secRef{s.ID, s.Ticker, s.Currency}
 	}
 
 	var previewRows []importPreviewRow
@@ -156,11 +156,13 @@ func (h *Handler) importPreview(w http.ResponseWriter, r *http.Request) {
 
 		sec, secOK := secByName[row.SecurityName]
 		if !secOK {
-			// try the security search index
-			results, _ := h.securities.Search(r.Context(), row.SecurityName)
+			results, err := h.securities.Search(r.Context(), row.SecurityName)
+			if err != nil {
+				h.serverError(w, r, err)
+				return
+			}
 			if len(results) == 1 {
-				sec.ID = results[0].ID
-				sec.Ticker = results[0].Ticker
+				sec = secRef{results[0].ID, results[0].Ticker, results[0].Currency}
 				secOK = true
 			}
 		}
@@ -171,6 +173,15 @@ func (h *Handler) importPreview(w http.ResponseWriter, r *http.Request) {
 			previewRows = append(previewRows, pr)
 			continue
 		}
+
+		if sec.Currency != "CAD" {
+			pr.Status = "flag"
+			pr.StatusMsg = "non-CAD security (" + sec.Currency + ") — FX rate not in CSV; add transaction manually"
+			totFlag++
+			previewRows = append(previewRows, pr)
+			continue
+		}
+
 		pr.Ticker = sec.Ticker
 		pr.Status = "ok"
 		totOK++
@@ -205,6 +216,13 @@ func (h *Handler) importPreview(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+var validImportTypes = map[transaction.Type]bool{
+	transaction.TypeBuy:           true,
+	transaction.TypeSell:          true,
+	transaction.TypeDividend:      true,
+	transaction.TypeROCAdjustment: true,
+}
+
 func (h *Handler) importCommit(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		h.serverError(w, r, err)
@@ -217,13 +235,46 @@ func (h *Handler) importCommit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var b [8]byte
-	_, _ = rand.Read(b[:])
+	// resolve broker profile for source attribution
+	profile := broker.ByName(r.FormValue("broker"))
+	if profile == nil {
+		profile = broker.NewCanaccordProfile()
+	}
+	src := profile.Source()
+
+	// load user's accounts for ownership check
+	ctx := r.Context()
+	accounts, err := h.accounts.ListByUser(ctx, h.userID)
+	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
+	ownedAccounts := make(map[int64]bool, len(accounts))
+	for _, a := range accounts {
+		ownedAccounts[a.ID] = true
+	}
+
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		h.serverError(w, r, err)
+		return
+	}
 	importID := hex.EncodeToString(b[:])
 
-	ctx := r.Context()
 	for i := range commitRows {
 		cr := &commitRows[i]
+
+		if !ownedAccounts[cr.AccountID] {
+			loggerFromCtx(ctx).Warn("import: account not owned", "account_id", cr.AccountID)
+			continue
+		}
+
+		txType := transaction.Type(cr.TxType)
+		if !validImportTypes[txType] {
+			loggerFromCtx(ctx).Warn("import: invalid tx type", "type", cr.TxType)
+			continue
+		}
+
 		tradeDate, err := time.Parse(time.DateOnly, cr.TradeDate)
 		if err != nil {
 			loggerFromCtx(ctx).Error("import: parse trade date", "err", err)
@@ -234,14 +285,26 @@ func (h *Handler) importCommit(w http.ResponseWriter, r *http.Request) {
 			settledDate = tradeDate
 		}
 
-		qty, _ := decimal.NewFromString(cr.Quantity)
-		price, _ := decimal.NewFromString(cr.Price)
-		comm, _ := decimal.NewFromString(cr.Commission)
+		qty, err := decimal.NewFromString(cr.Quantity)
+		if err != nil || !qty.IsPositive() {
+			loggerFromCtx(ctx).Error("import: parse quantity", "val", cr.Quantity, "err", err)
+			continue
+		}
+		price, err := decimal.NewFromString(cr.Price)
+		if err != nil || price.IsNegative() {
+			loggerFromCtx(ctx).Error("import: parse price", "val", cr.Price, "err", err)
+			continue
+		}
+		comm, err := decimal.NewFromString(cr.Commission)
+		if err != nil || comm.IsNegative() {
+			loggerFromCtx(ctx).Error("import: parse commission", "val", cr.Commission, "err", err)
+			continue
+		}
 
 		tx := &transaction.Transaction{
 			AccountID:        cr.AccountID,
 			SecurityID:       cr.SecurityID,
-			Type:             transaction.Type(cr.TxType),
+			Type:             txType,
 			TradeDate:        tradeDate,
 			SettledDate:      settledDate,
 			Quantity:         qty,
@@ -249,7 +312,7 @@ func (h *Handler) importCommit(w http.ResponseWriter, r *http.Request) {
 			CommissionNative: comm,
 			PriceCAD:         price,
 			CommissionCAD:    comm,
-			Source:           transaction.SourceCanaccordCSV,
+			Source:           transaction.Source(src),
 			Notes:            cr.Notes,
 		}
 
@@ -263,7 +326,7 @@ func (h *Handler) importCommit(w http.ResponseWriter, r *http.Request) {
 			Action:     audit.ActionCreate,
 			EntityType: audit.EntityTransaction,
 			EntityID:   tx.ID,
-			Source:     audit.SourceCanaccordCSV,
+			Source:     src,
 			ImportID:   importID,
 		}); err != nil {
 			loggerFromCtx(ctx).Error("import: audit log", "err", err)

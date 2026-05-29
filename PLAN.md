@@ -68,7 +68,7 @@
 - ✅ Upload → preview → commit flow: multipart upload → resolve accounts/securities → hidden JSON commit payload → create transactions
 - ✅ Flagged rows excluded from commit: unknown account, unmatched security, unrecognized type, fund exchanges, registered-account transfers
 - ✅ Skipped rows: fees, GST, withholding tax, notional distributions, zero-amount ROC (T3 data — enter manually)
-- ✅ Import batch tracking via `import_id` in `audit_log` — all committed rows share one UUID per import
+- ✅ Import batch tracking via `import_id` in `audit_log` — all committed rows share one hex-encoded 16-byte random ID per import
 - ✅ `import/` directory in `.gitignore` — sample CSVs never committed
 
 ---
