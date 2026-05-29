@@ -48,6 +48,19 @@
 
 ---
 
+## Phase 2.2 — Audit Log ✅
+
+- ✅ `audit` package — `Entry`, `Action`, `EntityType`, `Source` types + `Store` interface
+- ✅ Migration 000002 — `audit_log` table; `source` column on `accounts` and `securities`
+- ✅ `sqlite.AuditStore` — writes to `audit_log`
+- ✅ `source` field on `account.Account` and `security.Security`
+- ✅ Handler `logAudit` helper — non-blocking; logs error on audit failure, never blocks primary op
+- ✅ Audit entries on create/delete for accounts, securities, transactions
+- ✅ JSON snapshot captured before delete — preserves full entity state for future recovery
+- ✅ `user_id` from `h.userID` — swaps to session user when auth lands (Phase 6), no schema change
+
+---
+
 ## Phase 3 — CSV Import ⬜
 
 - ⬜ Broker profile system (pluggable column mappings per broker)

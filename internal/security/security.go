@@ -18,6 +18,7 @@ type Security struct {
 	Name     string
 	Type     Type
 	Currency string
+	Source   string
 }
 
 type Store interface {

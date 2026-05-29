@@ -36,6 +36,7 @@ type Account struct {
 	Currency      string
 	AccountNumber string
 	IsRegistered  bool
+	Source        string
 	CreatedAt     time.Time
 }
 

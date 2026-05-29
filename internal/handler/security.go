@@ -4,6 +4,7 @@ import (
 	"html/template"
 	"net/http"
 
+	"github.com/gordcurrie/pacioli/internal/audit"
 	"github.com/gordcurrie/pacioli/internal/security"
 )
 
@@ -120,6 +121,7 @@ func (h *Handler) createSecurity(w http.ResponseWriter, r *http.Request) {
 		Name:     r.FormValue("name"),
 		Type:     secType,
 		Currency: currency,
+		Source:   string(audit.SourceManual),
 	}
 
 	if err := h.securities.Create(r.Context(), s); err != nil {
@@ -130,5 +132,6 @@ func (h *Handler) createSecurity(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	h.logAudit(r, audit.ActionCreate, audit.EntitySecurity, s.ID, audit.SourceManual, "")
 	http.Redirect(w, r, "/securities", http.StatusSeeOther)
 }

@@ -20,9 +20,9 @@ func NewAccountStore(db *sql.DB) *AccountStore {
 func (r *AccountStore) Create(ctx context.Context, a *account.Account) error {
 	a.IsRegistered = a.Type.IsRegistered()
 	res, err := r.db.ExecContext(ctx,
-		`INSERT INTO accounts (user_id, name, type, broker, currency, account_number, is_registered)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		a.UserID, a.Name, string(a.Type), a.Broker, a.Currency, a.AccountNumber, boolToInt(a.IsRegistered),
+		`INSERT INTO accounts (user_id, name, type, broker, currency, account_number, is_registered, source)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		a.UserID, a.Name, string(a.Type), a.Broker, a.Currency, a.AccountNumber, boolToInt(a.IsRegistered), a.Source,
 	)
 	if err != nil {
 		return fmt.Errorf("create account: %w", err)
@@ -37,14 +37,14 @@ func (r *AccountStore) Create(ctx context.Context, a *account.Account) error {
 
 func (r *AccountStore) GetByID(ctx context.Context, id int64) (*account.Account, error) {
 	row := r.db.QueryRowContext(ctx,
-		`SELECT id, user_id, name, type, broker, currency, account_number, is_registered, created_at
+		`SELECT id, user_id, name, type, broker, currency, account_number, is_registered, source, created_at
 		 FROM accounts WHERE id = ?`, id)
 	return scanAccount(row)
 }
 
 func (r *AccountStore) ListByUser(ctx context.Context, userID int64) ([]*account.Account, error) {
 	rows, err := r.db.QueryContext(ctx,
-		`SELECT id, user_id, name, type, broker, currency, account_number, is_registered, created_at
+		`SELECT id, user_id, name, type, broker, currency, account_number, is_registered, source, created_at
 		 FROM accounts WHERE user_id = ? ORDER BY name`, userID)
 	if err != nil {
 		return nil, fmt.Errorf("list accounts: %w", err)
@@ -89,7 +89,7 @@ func scanAccount(s accountScanner) (*account.Account, error) {
 
 	err := s.Scan(
 		&a.ID, &a.UserID, &a.Name, &accountType, &a.Broker,
-		&a.Currency, &a.AccountNumber, &isRegistered, &createdAt,
+		&a.Currency, &a.AccountNumber, &isRegistered, &a.Source, &createdAt,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("scan account: %w", err)
