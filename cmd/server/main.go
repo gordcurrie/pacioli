@@ -26,6 +26,7 @@ func main() {
 
 func run() error {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	slog.SetDefault(logger)
 
 	dsn := envOrDefault("DATABASE_DSN", "pacioli.db")
 	db, err := sqlite.Open(dsn)

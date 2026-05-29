@@ -12,8 +12,14 @@ import (
 	"github.com/shopspring/decimal"
 )
 
+type transactionRow struct {
+	*transaction.Transaction
+	Ticker      string
+	AccountName string
+}
+
 type transactionsPageData struct {
-	Transactions []*transaction.Transaction
+	Transactions []transactionRow
 	Error        string
 }
 
@@ -35,22 +41,48 @@ func (h *Handler) listTransactions(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, err)
 		return
 	}
+	accountNames := make(map[int64]string, len(accounts))
+	for _, a := range accounts {
+		accountNames[a.ID] = a.Name
+	}
 
-	var txs []*transaction.Transaction
+	securities, err := h.securities.ListAll(r.Context())
+	if err != nil {
+		h.serverError(w, err)
+		return
+	}
+	tickers := make(map[int64]string, len(securities))
+	for _, s := range securities {
+		tickers[s.ID] = s.Ticker
+	}
+
+	var raw []*transaction.Transaction
 	for _, a := range accounts {
 		atxs, err := h.transactions.ListByAccount(r.Context(), a.ID)
 		if err != nil {
 			h.serverError(w, err)
 			return
 		}
-		txs = append(txs, atxs...)
+		raw = append(raw, atxs...)
 	}
 
-	slices.SortFunc(txs, func(a, b *transaction.Transaction) int {
-		return cmp.Compare(a.TradeDate.Unix(), b.TradeDate.Unix())
+	slices.SortFunc(raw, func(a, b *transaction.Transaction) int {
+		if c := cmp.Compare(a.TradeDate.Unix(), b.TradeDate.Unix()); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.ID, b.ID)
 	})
 
-	h.render(w, "transactions", transactionsPageData{Transactions: txs})
+	rows := make([]transactionRow, len(raw))
+	for i, tx := range raw {
+		rows[i] = transactionRow{
+			Transaction: tx,
+			Ticker:      tickers[tx.SecurityID],
+			AccountName: accountNames[tx.AccountID],
+		}
+	}
+
+	h.render(w, "transactions", transactionsPageData{Transactions: rows})
 }
 
 func (h *Handler) newTransaction(w http.ResponseWriter, r *http.Request) {
@@ -108,18 +140,18 @@ func (h *Handler) createTransaction(w http.ResponseWriter, r *http.Request) {
 	}
 
 	qty, err := decimal.NewFromString(r.FormValue("quantity"))
-	if err != nil {
-		renderForm("invalid quantity")
+	if err != nil || !qty.IsPositive() {
+		renderForm("quantity must be greater than zero")
 		return
 	}
 	priceNative, err := decimal.NewFromString(r.FormValue("price_native"))
-	if err != nil {
-		renderForm("invalid price")
+	if err != nil || priceNative.IsNegative() {
+		renderForm("price must be zero or greater")
 		return
 	}
 	commNative, err := decimal.NewFromString(r.FormValue("commission_native"))
-	if err != nil {
-		renderForm("invalid commission")
+	if err != nil || commNative.IsNegative() {
+		renderForm("commission must be zero or greater")
 		return
 	}
 
@@ -140,8 +172,8 @@ func (h *Handler) createTransaction(w http.ResponseWriter, r *http.Request) {
 	commCAD := commNative
 	if fxRateStr != "" {
 		fx, err := decimal.NewFromString(fxRateStr)
-		if err != nil {
-			renderForm("invalid FX rate")
+		if err != nil || !fx.IsPositive() {
+			renderForm("FX rate must be greater than zero")
 			return
 		}
 		fxRate = &fx

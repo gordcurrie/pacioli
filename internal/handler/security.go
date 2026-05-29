@@ -75,6 +75,8 @@ func (h *Handler) searchSecurities(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+var validCurrencies = map[string]bool{"CAD": true, "USD": true}
+
 func (h *Handler) createSecurity(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		h.render(w, "security_form", securityFormData{
@@ -85,19 +87,46 @@ func (h *Handler) createSecurity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	secType := security.Type(r.FormValue("type"))
+	var validType bool
+	for _, t := range securityTypes {
+		if t == secType {
+			validType = true
+			break
+		}
+	}
+	if !validType {
+		h.render(w, "security_form", securityFormData{
+			Security: &security.Security{Currency: "CAD"},
+			Types:    securityTypes,
+			Error:    "invalid security type",
+		})
+		return
+	}
+
+	currency := r.FormValue("currency")
+	if !validCurrencies[currency] {
+		h.render(w, "security_form", securityFormData{
+			Security: &security.Security{Currency: "CAD"},
+			Types:    securityTypes,
+			Error:    "invalid currency",
+		})
+		return
+	}
+
 	s := &security.Security{
 		Ticker:   r.FormValue("ticker"),
 		Exchange: r.FormValue("exchange"),
 		Name:     r.FormValue("name"),
-		Type:     security.Type(r.FormValue("type")),
-		Currency: r.FormValue("currency"),
+		Type:     secType,
+		Currency: currency,
 	}
 
 	if err := h.securities.Create(r.Context(), s); err != nil {
 		h.render(w, "security_form", securityFormData{
 			Security: s,
 			Types:    securityTypes,
-			Error:    "failed to create security (may already exist)",
+			Error:    "failed to save security",
 		})
 		return
 	}

@@ -26,8 +26,8 @@
       <tr id="tx-row-{{.ID}}">
         <td>{{.TradeDate.Format "2006-01-02"}}</td>
         <td>{{.Type}}</td>
-        <td>{{.SecurityID}}</td>
-        <td>{{.AccountID}}</td>
+        <td>{{.Ticker}}</td>
+        <td>{{.AccountName}}</td>
         <td style="text-align:right">{{.Quantity.StringFixed 4}}</td>
         <td style="text-align:right">{{.PriceNative.StringFixed 4}}</td>
         <td style="text-align:right">{{.CommissionNative.StringFixed 2}}</td>
