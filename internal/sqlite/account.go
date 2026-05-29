@@ -19,6 +19,9 @@ func NewAccountStore(db *sql.DB) *AccountStore {
 
 func (r *AccountStore) Create(ctx context.Context, a *account.Account) error {
 	a.IsRegistered = a.Type.IsRegistered()
+	if a.Source == "" {
+		a.Source = "manual"
+	}
 	res, err := r.db.ExecContext(ctx,
 		`INSERT INTO accounts (user_id, name, type, broker, currency, account_number, is_registered, source)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,

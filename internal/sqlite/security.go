@@ -17,6 +17,9 @@ func NewSecurityStore(db *sql.DB) *SecurityStore {
 }
 
 func (r *SecurityStore) Create(ctx context.Context, s *security.Security) error {
+	if s.Source == "" {
+		s.Source = "manual"
+	}
 	res, err := r.db.ExecContext(ctx,
 		`INSERT INTO securities (ticker, exchange, name, type, currency, source) VALUES (?, ?, ?, ?, ?, ?)`,
 		s.Ticker, s.Exchange, s.Name, string(s.Type), s.Currency, s.Source,

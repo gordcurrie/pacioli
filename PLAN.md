@@ -55,7 +55,7 @@
 - ✅ `sqlite.AuditStore` — writes to `audit_log`
 - ✅ `source` field on `account.Account` and `security.Security`
 - ✅ Handler `logAudit` helper — non-blocking; logs error on audit failure, never blocks primary op
-- ✅ Audit entries on create/delete for accounts, securities, transactions
+- ✅ Audit entries on create/delete for accounts and transactions; create-only for securities (no delete handler yet)
 - ✅ JSON snapshot captured before delete — preserves full entity state for future recovery
 - ✅ `user_id` from `h.userID` — swaps to session user when auth lands (Phase 6), no schema change
 

@@ -244,7 +244,10 @@ func (h *Handler) deleteTransaction(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	snapshot, _ := json.Marshal(tx)
+	snapshot, err := json.Marshal(tx)
+	if err != nil {
+		loggerFromCtx(r.Context()).Error("snapshot marshal", "entity", "transaction", "id", id, "err", err)
+	}
 	if err := h.transactions.Delete(r.Context(), id); err != nil {
 		h.serverError(w, r, err)
 		return

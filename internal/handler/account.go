@@ -149,7 +149,10 @@ func (h *Handler) deleteAccount(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	snapshot, _ := json.Marshal(existing)
+	snapshot, err := json.Marshal(existing)
+	if err != nil {
+		loggerFromCtx(r.Context()).Error("snapshot marshal", "entity", "account", "id", id, "err", err)
+	}
 	if err := h.accounts.Delete(r.Context(), id); err != nil {
 		h.serverError(w, r, err)
 		return
