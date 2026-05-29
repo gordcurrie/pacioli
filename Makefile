@@ -27,7 +27,7 @@ sec:
 vuln:
 	govulncheck ./...
 
-check: lint sec vuln
+check: build test lint sec vuln
 
 tidy:
 	go mod tidy
