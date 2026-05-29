@@ -54,7 +54,7 @@ func (h *Handler) importPreview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	r.Body = http.MaxBytesReader(w, r.Body, 10<<20)
-	if err := r.ParseMultipartForm(10 << 20); err != nil {
+	if err := r.ParseMultipartForm(10 << 20); err != nil { // #nosec G120 -- body bounded by MaxBytesReader above
 		renderUpload("invalid form upload (max 10 MB)")
 		return
 	}
@@ -144,6 +144,14 @@ func (h *Handler) importPreview(w http.ResponseWriter, r *http.Request) {
 			Commission:   row.Commission.StringFixed(2),
 		}
 
+		if !row.Quantity.IsPositive() {
+			pr.Status = "flag"
+			pr.StatusMsg = "zero or negative quantity — record manually"
+			totFlag++
+			previewRows = append(previewRows, pr)
+			continue
+		}
+
 		acct, acctOK := accountByNo[row.AccountNo]
 		if !acctOK {
 			pr.Status = "flag"
@@ -224,10 +232,19 @@ var validImportTypes = map[transaction.Type]bool{
 }
 
 func (h *Handler) importCommit(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 5<<20)
 	if err := r.ParseForm(); err != nil {
 		h.serverError(w, r, err)
 		return
 	}
+
+	// fail closed — unknown broker is a tampered request
+	profile := broker.ByName(r.FormValue("broker"))
+	if profile == nil {
+		http.Redirect(w, r, "/import", http.StatusSeeOther)
+		return
+	}
+	src := profile.Source()
 
 	var commitRows []broker.CommitRow
 	if err := json.Unmarshal([]byte(r.FormValue("commit_rows")), &commitRows); err != nil || len(commitRows) == 0 {
@@ -235,15 +252,9 @@ func (h *Handler) importCommit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// resolve broker profile for source attribution
-	profile := broker.ByName(r.FormValue("broker"))
-	if profile == nil {
-		profile = broker.NewCanaccordProfile()
-	}
-	src := profile.Source()
-
-	// load user's accounts for ownership check
 	ctx := r.Context()
+
+	// load user's accounts for ownership validation
 	accounts, err := h.accounts.ListByUser(ctx, h.userID)
 	if err != nil {
 		h.serverError(w, r, err)
@@ -275,6 +286,17 @@ func (h *Handler) importCommit(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
+		// re-validate security: must exist and be CAD
+		sec, err := h.securities.GetByID(ctx, cr.SecurityID)
+		if err != nil {
+			loggerFromCtx(ctx).Warn("import: security not found", "security_id", cr.SecurityID)
+			continue
+		}
+		if sec.Currency != "CAD" {
+			loggerFromCtx(ctx).Warn("import: non-CAD security rejected", "security_id", cr.SecurityID, "currency", sec.Currency)
+			continue
+		}
+
 		tradeDate, err := time.Parse(time.DateOnly, cr.TradeDate)
 		if err != nil {
 			loggerFromCtx(ctx).Error("import: parse trade date", "err", err)
@@ -287,17 +309,17 @@ func (h *Handler) importCommit(w http.ResponseWriter, r *http.Request) {
 
 		qty, err := decimal.NewFromString(cr.Quantity)
 		if err != nil || !qty.IsPositive() {
-			loggerFromCtx(ctx).Error("import: parse quantity", "val", cr.Quantity, "err", err)
+			loggerFromCtx(ctx).Error("import: invalid quantity", "val", cr.Quantity)
 			continue
 		}
 		price, err := decimal.NewFromString(cr.Price)
 		if err != nil || price.IsNegative() {
-			loggerFromCtx(ctx).Error("import: parse price", "val", cr.Price, "err", err)
+			loggerFromCtx(ctx).Error("import: invalid price", "val", cr.Price)
 			continue
 		}
 		comm, err := decimal.NewFromString(cr.Commission)
 		if err != nil || comm.IsNegative() {
-			loggerFromCtx(ctx).Error("import: parse commission", "val", cr.Commission, "err", err)
+			loggerFromCtx(ctx).Error("import: invalid commission", "val", cr.Commission)
 			continue
 		}
 
