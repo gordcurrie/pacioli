@@ -52,6 +52,16 @@ make test     # run tests with race detector
 make build    # compile binary to bin/pacioli
 ```
 
+### Logs
+
+Structured JSON-style logs via stdlib `slog`. Every request emits one line:
+
+```
+time=... level=INFO msg=request method=GET path=/accounts status=200 latency_ms=3 request_id=3f2a8b1c4e5d6f7a
+```
+
+Handler errors include the same `request_id` for correlation. No external logging library.
+
 See [CLAUDE.md](CLAUDE.md) for architecture and conventions.
 
 ## License

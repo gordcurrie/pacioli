@@ -38,6 +38,16 @@
 
 ---
 
+## Phase 2.1 — Structured Logging ✅
+
+- ✅ `responseWriter` wrapper — captures status code for request logging
+- ✅ Request logging middleware — logs `method`, `path`, `status`, `latency`, `request_id` per request
+- ✅ Context logger propagation — middleware seeds `slog.Logger` with `request_id`, stores in `context.Context` via typed key; `loggerFromCtx(ctx)` helper
+- ✅ Handler methods use context logger — replace `h.logger` in request handlers with `loggerFromCtx(r.Context())`
+- ✅ Wire middleware in `main.go` — wrap mux before passing to `http.Server`
+
+---
+
 ## Phase 3 — CSV Import ⬜
 
 - ⬜ Broker profile system (pluggable column mappings per broker)

@@ -28,7 +28,7 @@ type acbDetailPageData struct {
 func (h *Handler) index(w http.ResponseWriter, r *http.Request) {
 	positions, err := h.loadPositions(r)
 	if err != nil {
-		h.serverError(w, err)
+		h.serverError(w, r, err)
 		return
 	}
 	h.render(w, "index", acbListPageData{Positions: positions})
@@ -37,7 +37,7 @@ func (h *Handler) index(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) listACB(w http.ResponseWriter, r *http.Request) {
 	positions, err := h.loadPositions(r)
 	if err != nil {
-		h.serverError(w, err)
+		h.serverError(w, r, err)
 		return
 	}
 	h.render(w, "acb_list", acbListPageData{Positions: positions})
@@ -76,7 +76,7 @@ func (h *Handler) showACB(w http.ResponseWriter, r *http.Request) {
 
 	txs, err := h.transactions.ListBySecurityNonRegistered(r.Context(), id, h.userID)
 	if err != nil {
-		h.serverError(w, err)
+		h.serverError(w, r, err)
 		return
 	}
 

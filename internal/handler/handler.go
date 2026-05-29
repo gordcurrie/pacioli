@@ -102,8 +102,8 @@ func (h *Handler) render(w http.ResponseWriter, page string, data any) {
 	}
 }
 
-func (h *Handler) serverError(w http.ResponseWriter, err error) {
-	h.logger.Error("handler error", "err", err)
+func (h *Handler) serverError(w http.ResponseWriter, r *http.Request, err error) {
+	loggerFromCtx(r.Context()).Error("handler error", "err", err)
 	http.Error(w, "internal server error", http.StatusInternalServerError)
 }
 
@@ -112,5 +112,5 @@ func (h *Handler) notFoundOrError(w http.ResponseWriter, r *http.Request, err er
 		http.NotFound(w, r)
 		return
 	}
-	h.serverError(w, err)
+	h.serverError(w, r, err)
 }

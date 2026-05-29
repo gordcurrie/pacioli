@@ -41,7 +41,7 @@ func (h *Handler) listSecurities(w http.ResponseWriter, r *http.Request) {
 		securities, err = h.securities.ListAll(r.Context())
 	}
 	if err != nil {
-		h.serverError(w, err)
+		h.serverError(w, r, err)
 		return
 	}
 	h.render(w, "securities", securitiesPageData{Securities: securities, Query: q})
@@ -62,7 +62,7 @@ func (h *Handler) searchSecurities(w http.ResponseWriter, r *http.Request) {
 	}
 	results, err := h.securities.Search(r.Context(), q)
 	if err != nil {
-		h.serverError(w, err)
+		h.serverError(w, r, err)
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
