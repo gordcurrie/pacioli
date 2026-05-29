@@ -38,7 +38,7 @@ var txTypes = []transaction.Type{
 func (h *Handler) listTransactions(w http.ResponseWriter, r *http.Request) {
 	accounts, err := h.accounts.ListByUser(r.Context(), h.userID)
 	if err != nil {
-		h.serverError(w, err)
+		h.serverError(w, r, err)
 		return
 	}
 	accountNames := make(map[int64]string, len(accounts))
@@ -48,7 +48,7 @@ func (h *Handler) listTransactions(w http.ResponseWriter, r *http.Request) {
 
 	securities, err := h.securities.ListAll(r.Context())
 	if err != nil {
-		h.serverError(w, err)
+		h.serverError(w, r, err)
 		return
 	}
 	tickers := make(map[int64]string, len(securities))
@@ -60,7 +60,7 @@ func (h *Handler) listTransactions(w http.ResponseWriter, r *http.Request) {
 	for _, a := range accounts {
 		atxs, err := h.transactions.ListByAccount(r.Context(), a.ID)
 		if err != nil {
-			h.serverError(w, err)
+			h.serverError(w, r, err)
 			return
 		}
 		raw = append(raw, atxs...)
@@ -88,7 +88,7 @@ func (h *Handler) listTransactions(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) newTransaction(w http.ResponseWriter, r *http.Request) {
 	accounts, err := h.accounts.ListByUser(r.Context(), h.userID)
 	if err != nil {
-		h.serverError(w, err)
+		h.serverError(w, r, err)
 		return
 	}
 	h.render(w, "transaction_form", transactionFormData{
@@ -100,7 +100,7 @@ func (h *Handler) newTransaction(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) createTransaction(w http.ResponseWriter, r *http.Request) {
 	accounts, err := h.accounts.ListByUser(r.Context(), h.userID)
 	if err != nil {
-		h.serverError(w, err)
+		h.serverError(w, r, err)
 		return
 	}
 	renderForm := func(errMsg string) {
@@ -234,7 +234,7 @@ func (h *Handler) deleteTransaction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.transactions.Delete(r.Context(), id); err != nil {
-		h.serverError(w, err)
+		h.serverError(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusOK)

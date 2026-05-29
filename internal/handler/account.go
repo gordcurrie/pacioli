@@ -27,7 +27,7 @@ var accountTypes = []account.Type{
 func (h *Handler) listAccounts(w http.ResponseWriter, r *http.Request) {
 	accounts, err := h.accounts.ListByUser(r.Context(), h.userID)
 	if err != nil {
-		h.serverError(w, err)
+		h.serverError(w, r, err)
 		return
 	}
 	h.render(w, "accounts", accountsPageData{Accounts: accounts})
@@ -146,7 +146,7 @@ func (h *Handler) deleteAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.accounts.Delete(r.Context(), id); err != nil {
-		h.serverError(w, err)
+		h.serverError(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusOK)

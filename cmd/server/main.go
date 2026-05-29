@@ -61,7 +61,7 @@ func run() error {
 	addr := envOrDefault("ADDR", ":8080")
 	srv := &http.Server{
 		Addr:         addr,
-		Handler:      mux,
+		Handler:      handler.RequestLogger(logger)(mux),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 30 * time.Second,
 		IdleTimeout:  120 * time.Second,

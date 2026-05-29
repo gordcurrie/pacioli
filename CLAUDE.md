@@ -36,6 +36,15 @@ cmd/server/     — main.go, wires everything together
 - Errors: wrap with `fmt.Errorf("context: %w", err)`; use `domain.ErrNotFound` for missing rows
 - No comments unless WHY non-obvious
 
+## Logging
+
+- `log/slog` stdlib only — no external logging library
+- `handler.RequestLogger(logger)` wraps the mux in `main.go`; logs `method`, `path`, `status`, `latency_ms`, `request_id` for every request
+- Request-scoped logger stored in `context.Context` by the middleware; retrieve with `loggerFromCtx(r.Context())` inside handler package
+- Handler errors use `loggerFromCtx(r.Context())` so `request_id` appears in error log lines, enabling correlation
+- `h.logger` used only for startup/non-request contexts (template parse failures, `main()` fatal errors)
+- Service and store layers do not log — errors bubble up to the handler layer
+
 ## Key Domain Rules (Canadian Tax)
 
 - **ACB pools across all non-registered accounts** (margin + cash). Registered accounts (TFSA, RRSP, RESP, LRSP, SRSP) excluded from ACB entirely.
