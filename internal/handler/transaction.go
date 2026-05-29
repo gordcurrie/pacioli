@@ -138,6 +138,11 @@ func (h *Handler) createTransaction(w http.ResponseWriter, r *http.Request) {
 		renderForm("select a security")
 		return
 	}
+	sec, err := h.securities.GetByID(r.Context(), securityID)
+	if err != nil {
+		renderForm("security not found")
+		return
+	}
 
 	qty, err := decimal.NewFromString(r.FormValue("quantity"))
 	if err != nil || !qty.IsPositive() {
@@ -179,6 +184,9 @@ func (h *Handler) createTransaction(w http.ResponseWriter, r *http.Request) {
 		fxRate = &fx
 		priceCAD = priceNative.Mul(fx)
 		commCAD = commNative.Mul(fx)
+	} else if sec.Currency != "CAD" {
+		renderForm("FX rate required for non-CAD securities")
+		return
 	}
 
 	txType := transaction.Type(r.FormValue("type"))
