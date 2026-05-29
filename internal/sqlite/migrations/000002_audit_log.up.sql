@@ -1,7 +1,5 @@
-ALTER TABLE accounts ADD COLUMN source TEXT NOT NULL DEFAULT 'manual'
-    CHECK(source IN ('manual','questrade','canaccord_csv'));
-ALTER TABLE securities ADD COLUMN source TEXT NOT NULL DEFAULT 'manual'
-    CHECK(source IN ('manual','questrade','canaccord_csv'));
+ALTER TABLE accounts ADD COLUMN source TEXT NOT NULL DEFAULT 'manual';
+ALTER TABLE securities ADD COLUMN source TEXT NOT NULL DEFAULT 'manual';
 
 CREATE TABLE audit_log (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -9,7 +7,7 @@ CREATE TABLE audit_log (
     action      TEXT NOT NULL CHECK(action IN ('create', 'delete')),
     entity_type TEXT NOT NULL CHECK(entity_type IN ('account', 'security', 'transaction')),
     entity_id   INTEGER NOT NULL,
-    source      TEXT NOT NULL DEFAULT 'manual' CHECK(source IN ('manual','questrade','canaccord_csv')),
+    source      TEXT NOT NULL DEFAULT 'manual',
     snapshot    TEXT,
     import_id   TEXT,
     created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
