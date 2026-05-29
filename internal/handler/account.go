@@ -78,7 +78,7 @@ func (h *Handler) editAccount(w http.ResponseWriter, r *http.Request) {
 	}
 	a, err := h.accounts.GetByID(r.Context(), id)
 	if err != nil {
-		h.serverError(w, err)
+		h.notFoundOrError(w, r, err)
 		return
 	}
 	if a.UserID != h.userID {
@@ -96,7 +96,7 @@ func (h *Handler) updateAccount(w http.ResponseWriter, r *http.Request) {
 	}
 	existing, err := h.accounts.GetByID(r.Context(), id)
 	if err != nil {
-		h.serverError(w, err)
+		h.notFoundOrError(w, r, err)
 		return
 	}
 	if existing.UserID != h.userID {
@@ -138,7 +138,7 @@ func (h *Handler) deleteAccount(w http.ResponseWriter, r *http.Request) {
 	}
 	existing, err := h.accounts.GetByID(r.Context(), id)
 	if err != nil {
-		h.serverError(w, err)
+		h.notFoundOrError(w, r, err)
 		return
 	}
 	if existing.UserID != h.userID {

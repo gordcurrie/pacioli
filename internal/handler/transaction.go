@@ -149,10 +149,23 @@ func (h *Handler) createTransaction(w http.ResponseWriter, r *http.Request) {
 		commCAD = commNative.Mul(fx)
 	}
 
+	txType := transaction.Type(r.FormValue("type"))
+	var validType bool
+	for _, t := range txTypes {
+		if t == txType {
+			validType = true
+			break
+		}
+	}
+	if !validType {
+		renderForm("invalid transaction type")
+		return
+	}
+
 	tx := &transaction.Transaction{
 		AccountID:        accountID,
 		SecurityID:       securityID,
-		Type:             transaction.Type(r.FormValue("type")),
+		Type:             txType,
 		TradeDate:        tradeDate,
 		SettledDate:      settledDate,
 		Quantity:         qty,
@@ -180,7 +193,7 @@ func (h *Handler) deleteTransaction(w http.ResponseWriter, r *http.Request) {
 	}
 	tx, err := h.transactions.GetByID(r.Context(), id)
 	if err != nil {
-		h.serverError(w, err)
+		h.notFoundOrError(w, r, err)
 		return
 	}
 	acct, err := h.accounts.GetByID(r.Context(), tx.AccountID)

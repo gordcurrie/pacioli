@@ -61,6 +61,9 @@ func CalculateACBWithHistory(securityID int64, txs []*transaction.Transaction) (
 			}
 		case transaction.TypeROCAdjustment:
 			r.TotalACB = r.TotalACB.Sub(tx.Quantity.Mul(tx.PriceCAD))
+			if r.TotalACB.IsNegative() {
+				r.TotalACB = decimal.Zero
+			}
 		case transaction.TypeDividend, transaction.TypeFXConversion:
 			// no ACB impact
 		}

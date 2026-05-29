@@ -89,6 +89,21 @@ func TestCalculateACB_DividendNoEffect(t *testing.T) {
 	}
 }
 
+func TestCalculateACB_ROCExceedsACB(t *testing.T) {
+	txs := []*transaction.Transaction{
+		{Type: transaction.TypeBuy, Quantity: d("100"), PriceCAD: d("10.00"), CommissionCAD: d("0")},
+		// ROC of $20/unit far exceeds total ACB of $1000
+		{Type: transaction.TypeROCAdjustment, Quantity: d("100"), PriceCAD: d("20.00"), CommissionCAD: d("0")},
+	}
+	r := service.CalculateACB(1, txs)
+	if r.TotalACB.IsNegative() {
+		t.Errorf("ACB should not go negative on excess ROC: got %s", r.TotalACB)
+	}
+	if !r.TotalACB.IsZero() {
+		t.Errorf("ACB should be floored at 0 on excess ROC: got %s", r.TotalACB)
+	}
+}
+
 func TestCalculateACB_Empty(t *testing.T) {
 	r := service.CalculateACB(1, nil)
 	if !r.Shares.IsZero() || !r.TotalACB.IsZero() {

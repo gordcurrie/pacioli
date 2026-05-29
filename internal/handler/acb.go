@@ -70,7 +70,7 @@ func (h *Handler) showACB(w http.ResponseWriter, r *http.Request) {
 
 	sec, err := h.securities.GetByID(r.Context(), id)
 	if err != nil {
-		h.serverError(w, err)
+		h.notFoundOrError(w, r, err)
 		return
 	}
 
