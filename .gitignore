@@ -1,5 +1,6 @@
 bin/
 tmp/
+*.original.md
 *.db
 *.db-shm
 *.db-wal

@@ -12,7 +12,7 @@
 
 - ✅ Go project structure (`cmd/server`, `internal/{account,security,transaction,distribution,fx,user,errs,sqlite}`)
 - ✅ Per-concept packages: `account.Account`, `account.Store`, `security.Security`, etc.
-- ✅ Store interfaces owned by each concept package (not a shared repository layer)
+- ✅ Store interfaces owned by each concept package (not shared repository layer)
 - ✅ SQLite implementations with `modernc.org/sqlite` (no CGO)
 - ✅ `shopspring/decimal` for all financial values (stored as TEXT in DB)
 - ✅ `golang-migrate` with embedded SQL migrations
@@ -96,4 +96,4 @@
 - Commissions: add to ACB on buy, deduct from proceeds on sell
 - FX conversion fees: includable in ACB
 - Superficial loss: sell at loss + buy back within 30 days (before or after) → loss denied, added to ACB
-- Foreign securities: Bank of Canada noon rate is authoritative; actual broker rate also acceptable
+- Foreign securities: Bank of Canada noon rate authoritative; actual broker rate also acceptable

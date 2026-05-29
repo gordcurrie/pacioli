@@ -11,7 +11,7 @@
 
 ## Architecture
 
-Per-concept packages inside `internal/`. Each package owns its type(s) and `Store` interface. Interface named `Store` within the package — callers use `account.Store`, not `account.AccountStore`.
+Per-concept packages in `internal/`. Each owns type(s) + `Store` interface. Interface named `Store` within package — callers use `account.Store`, not `account.AccountStore`.
 
 ```
 internal/
@@ -30,19 +30,19 @@ cmd/server/     — main.go, wires everything together
 
 ## Conventions
 
-- Store suffix for data access interfaces (`AccountStore`, not `AccountRepository`)
+- `Store` suffix for data access interfaces (`AccountStore`, not `AccountRepository`)
 - Concrete SQLite types match: `sqlite.AccountStore` satisfies `domain.AccountStore`
 - Decimal strings in DB (TEXT columns) — avoids float precision loss
 - Errors: wrap with `fmt.Errorf("context: %w", err)`; use `domain.ErrNotFound` for missing rows
-- No comments unless the WHY is non-obvious
+- No comments unless WHY non-obvious
 
 ## Key Domain Rules (Canadian Tax)
 
-- **ACB pools across all non-registered accounts** (margin + cash). Registered accounts (TFSA, RRSP, RESP, LRSP, SRSP) are excluded from ACB entirely.
+- **ACB pools across all non-registered accounts** (margin + cash). Registered accounts (TFSA, RRSP, RESP, LRSP, SRSP) excluded from ACB entirely.
 - **Average cost method** — Canada requires this, not FIFO/LIFO
 - **Commissions** included in ACB on buy; deducted from proceeds on sell
 - **FX conversion fees** includable in ACB cost
-- **Norbert's Gambit** — two-leg currency conversion (e.g. DLR.TO → DLR.U.TO); stored as `fx_conversion` type with `linked_transaction_id` pairing the legs
+- **Norbert's Gambit** — two-leg currency conversion (e.g. DLR.TO → DLR.U.TO); stored as `fx_conversion` type with `linked_transaction_id` pairing legs
 - **Return of Capital (ROC)** — annual T3 data; reduces ACB per unit held
 - **Superficial loss** — sell at loss + repurchase within 30 days → flag, don't auto-adjust
 
@@ -70,4 +70,4 @@ make tidy           # go mod tidy
 ## Adding a Migration
 
 1. Create `internal/sqlite/migrations/NNNNNN_description.up.sql` and `NNNNNN_description.down.sql`
-2. Migrations run automatically on startup via embedded iofs
+2. Migrations run on startup via embedded iofs
