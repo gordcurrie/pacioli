@@ -24,17 +24,17 @@
 
 ---
 
-## Phase 2 — Manual Entry + Basic UI ⬜
+## Phase 2 — Manual Entry + Basic UI ✅
 
-- ⬜ Service layer (`internal/service/`) — wire stores, no HTTP coupling
-- ⬜ ACB calculation engine (average cost, non-registered accounts only)
-- ⬜ HTML templates (`web/templates/`) with HTMX + Pico.css
-- ⬜ HTTP handlers (`internal/handler/`)
-- ⬜ Account CRUD (create, list, edit, delete)
-- ⬜ Security search / add
-- ⬜ Manual transaction entry form (buy, sell, dividend, ROC adjustment, Norbert's Gambit)
-- ⬜ ACB display per security (current ACB, ACB/share, total shares)
-- ⬜ Basic nav / layout
+- ✅ Service layer (`internal/service/`) — wire stores, no HTTP coupling
+- ✅ ACB calculation engine (average cost, non-registered accounts only)
+- ✅ HTML templates (`web/templates/`) with HTMX + Pico.css
+- ✅ HTTP handlers (`internal/handler/`)
+- ✅ Account CRUD (create, list, edit, delete)
+- ✅ Security search / add
+- ✅ Manual transaction entry form (buy, sell, dividend, ROC adjustment, Norbert's Gambit)
+- ✅ ACB display per security (current ACB, ACB/share, total shares)
+- ✅ Basic nav / layout
 
 ---
 

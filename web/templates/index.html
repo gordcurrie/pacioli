@@ -1,0 +1,41 @@
+{{define "content"}}
+<h2>Positions</h2>
+{{if .Positions}}
+<figure>
+  <table>
+    <thead>
+      <tr>
+        <th>Ticker</th>
+        <th>Exchange</th>
+        <th>Name</th>
+        <th>Currency</th>
+        <th style="text-align:right">Shares</th>
+        <th style="text-align:right">ACB/Share</th>
+        <th style="text-align:right">Total ACB</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .Positions}}
+      <tr>
+        <td><strong>{{.Security.Ticker}}</strong></td>
+        <td>{{.Security.Exchange}}</td>
+        <td>{{.Security.Name}}</td>
+        <td>{{.Security.Currency}}</td>
+        <td style="text-align:right">{{.ACB.Shares.StringFixed 4}}</td>
+        <td style="text-align:right">{{.ACB.ACBPerShare.StringFixed 4}}</td>
+        <td style="text-align:right">{{.ACB.TotalACB.StringFixed 2}}</td>
+        <td class="actions">
+          <a href="/acb/{{.Security.ID}}" role="button" class="outline" style="padding: 0.25rem 0.5rem; font-size: 0.875rem">Detail</a>
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</figure>
+{{else}}
+<article>
+  <p>No positions yet. <a href="/transactions/new">Add a transaction</a> to get started.</p>
+</article>
+{{end}}
+{{end}}

@@ -18,7 +18,7 @@ Named after [Luca Pacioli](https://en.wikipedia.org/wiki/Luca_Pacioli), the fath
 
 ### Prerequisites
 
-- Go 1.23+
+- Go 1.26+
 - `golangci-lint` — `brew install golangci-lint`
 - `gosec` — `go install github.com/securego/gosec/v2/cmd/gosec@latest`
 - `govulncheck` — `go install golang.org/x/vuln/cmd/govulncheck@latest`

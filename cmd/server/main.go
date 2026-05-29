@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -10,26 +11,52 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/gordcurrie/pacioli/internal/handler"
+	"github.com/gordcurrie/pacioli/internal/service"
 	"github.com/gordcurrie/pacioli/internal/sqlite"
+	"github.com/gordcurrie/pacioli/web"
 )
 
 func main() {
+	if err := run(); err != nil {
+		slog.Error("fatal", "err", err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	slog.SetDefault(logger)
 
 	dsn := envOrDefault("DATABASE_DSN", "pacioli.db")
 	db, err := sqlite.Open(dsn)
 	if err != nil {
-		logger.Error("open database", "err", err)
-		os.Exit(1)
+		return fmt.Errorf("open database: %w", err)
 	}
 	defer func() { _ = db.Close() }()
 
-	_ = db // repos and handlers wired up in Phase 2
+	userStore := sqlite.NewUserStore(db)
+	userID, err := userStore.EnsureDefault(context.Background(), envOrDefault("USER_EMAIL", "admin@pacioli.local"))
+	if err != nil {
+		return fmt.Errorf("ensure default user: %w", err)
+	}
+
+	accountStore := sqlite.NewAccountStore(db)
+	securityStore := sqlite.NewSecurityStore(db)
+	txStore := sqlite.NewTransactionStore(db)
+
+	acbSvc := service.NewACBService(txStore)
+
+	h, err := handler.New(accountStore, securityStore, txStore, acbSvc, userID, logger, web.Templates)
+	if err != nil {
+		return fmt.Errorf("init handlers: %w", err)
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
+	h.Routes(mux)
 
 	addr := envOrDefault("ADDR", ":8080")
 	srv := &http.Server{
@@ -40,24 +67,30 @@ func main() {
 		IdleTimeout:  120 * time.Second,
 	}
 
+	srvErr := make(chan error, 1)
 	go func() {
 		logger.Info("server starting", "addr", addr)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			logger.Error("server error", "err", err)
-			os.Exit(1)
+			srvErr <- err
 		}
 	}()
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
+
+	select {
+	case err := <-srvErr:
+		return fmt.Errorf("server: %w", err)
+	case <-quit:
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(ctx); err != nil {
-		logger.Error("shutdown error", "err", err)
+		return fmt.Errorf("shutdown: %w", err)
 	}
 	logger.Info("server stopped")
+	return nil
 }
 
 func envOrDefault(key, def string) string {

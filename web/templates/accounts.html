@@ -1,0 +1,46 @@
+{{define "content"}}
+<div style="display:flex; justify-content:space-between; align-items:center">
+  <h2>Accounts</h2>
+  <a href="/accounts/new" role="button">Add Account</a>
+</div>
+{{if .Error}}<p class="danger">{{.Error}}</p>{{end}}
+{{if .Accounts}}
+<figure>
+  <table>
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Type</th>
+        <th>Broker</th>
+        <th>Number</th>
+        <th>Currency</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .Accounts}}
+      <tr id="account-row-{{.ID}}">
+        <td>{{.Name}}</td>
+        <td>{{.Type}}</td>
+        <td>{{.Broker}}</td>
+        <td>{{.AccountNumber}}</td>
+        <td>{{.Currency}}</td>
+        <td class="actions">
+          <a href="/accounts/{{.ID}}/edit" role="button" class="outline" style="padding: 0.25rem 0.5rem; font-size: 0.875rem">Edit</a>
+          <button
+            hx-delete="/accounts/{{.ID}}"
+            hx-target="#account-row-{{.ID}}"
+            hx-swap="outerHTML"
+            hx-confirm="Delete this account?"
+            class="outline danger"
+            style="padding: 0.25rem 0.5rem; font-size: 0.875rem">Delete</button>
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</figure>
+{{else}}
+<article><p>No accounts yet.</p></article>
+{{end}}
+{{end}}

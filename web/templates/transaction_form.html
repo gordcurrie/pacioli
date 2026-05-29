@@ -1,0 +1,82 @@
+{{define "content"}}
+<div style="display:flex; justify-content:space-between; align-items:center">
+  <h2>New Transaction</h2>
+  <a href="/transactions" role="button" class="outline">Cancel</a>
+</div>
+{{if .Error}}<p class="danger">{{.Error}}</p>{{end}}
+<article>
+  <form method="POST" action="/transactions">
+    <div class="grid">
+      <label>
+        Account
+        <select name="account_id" required>
+          <option value="">Select account...</option>
+          {{range .Accounts}}
+          <option value="{{.ID}}">{{.Name}} ({{.Type}})</option>
+          {{end}}
+        </select>
+      </label>
+      <label>
+        Type
+        <select name="type" required>
+          {{range .Types}}
+          <option value="{{.}}">{{.}}</option>
+          {{end}}
+        </select>
+      </label>
+    </div>
+
+    <fieldset>
+      <legend>Security — type ticker to search, then select</legend>
+      <input type="search"
+             placeholder="e.g. VFV"
+             hx-get="/securities/search"
+             hx-target="#security-results"
+             hx-trigger="keyup changed delay:300ms"
+             name="security_search_input"
+             autocomplete="off">
+      <div id="security-results" style="margin-top:0.5rem"></div>
+    </fieldset>
+
+    <div class="grid">
+      <label>
+        Trade Date
+        <input type="date" name="trade_date" required>
+      </label>
+      <label>
+        Settled Date
+        <input type="date" name="settled_date" required>
+      </label>
+    </div>
+
+    <div class="grid">
+      <label>
+        Quantity
+        <input type="text" name="quantity" required placeholder="e.g. 100">
+      </label>
+      <label>
+        Price (native currency)
+        <input type="text" name="price_native" required placeholder="e.g. 25.50">
+      </label>
+    </div>
+
+    <div class="grid">
+      <label>
+        Commission (native currency)
+        <input type="text" name="commission_native" value="0" placeholder="e.g. 4.95">
+      </label>
+      <label>
+        FX Rate (leave blank if CAD)
+        <input type="text" name="fx_rate" placeholder="e.g. 1.3650">
+      </label>
+    </div>
+
+    <label>
+      Notes <small>(optional)</small>
+      <input type="text" name="notes" placeholder="">
+    </label>
+
+    <button type="submit">Add Transaction</button>
+  </form>
+</article>
+{{end}}

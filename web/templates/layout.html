@@ -1,0 +1,38 @@
+{{define "layout"}}
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pacioli</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2.1.1/css/pico.min.css"
+        integrity="sha384-L1dWfspMTHU/ApYnFiMz2QID/PlP1xCW9visvBdbEkOLkSSWsP6ZJWhPw6apiXxU"
+        crossorigin="anonymous">
+  <script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.10/dist/htmx.min.js"
+          integrity="sha384-H5SrcfygHmAuTDZphMHqBJLc3FhssKjG7w/CeCpFReSfwBWDTKpkzPP8c+cLsK+V"
+          crossorigin="anonymous"></script>
+  <style>
+    nav a { text-decoration: none; }
+    .danger { --pico-color: var(--pico-del-color); }
+    table td, table th { vertical-align: middle; }
+    .actions { white-space: nowrap; }
+  </style>
+</head>
+<body hx-boost="true">
+<nav class="container-fluid">
+  <ul>
+    <li><strong><a href="/" class="contrast">Pacioli</a></strong></li>
+  </ul>
+  <ul>
+    <li><a href="/acb">ACB</a></li>
+    <li><a href="/accounts">Accounts</a></li>
+    <li><a href="/securities">Securities</a></li>
+    <li><a href="/transactions">Transactions</a></li>
+  </ul>
+</nav>
+<main class="container">
+  {{template "content" .}}
+</main>
+</body>
+</html>
+{{end}}

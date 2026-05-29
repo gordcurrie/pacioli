@@ -2,7 +2,7 @@
 
 ## Stack
 
-- **Go 1.23** — backend, stdlib `net/http` (no router framework)
+- **Go 1.26** — backend, stdlib `net/http` (no router framework)
 - **HTMX + Pico.css** — frontend (minimal JS)
 - **SQLite** via `modernc.org/sqlite` (pure Go, no CGO)
 - **`shopspring/decimal`** — all financial math; never use float for money

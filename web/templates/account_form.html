@@ -1,0 +1,40 @@
+{{define "content"}}
+<div style="display:flex; justify-content:space-between; align-items:center">
+  <h2>{{if .Account.ID}}Edit Account{{else}}New Account{{end}}</h2>
+  <a href="/accounts" role="button" class="outline">Cancel</a>
+</div>
+{{if .Error}}<p class="danger">{{.Error}}</p>{{end}}
+<article>
+  <form method="POST" action="{{if .Account.ID}}/accounts/{{.Account.ID}}{{else}}/accounts{{end}}">
+    <label>
+      Name
+      <input type="text" name="name" value="{{.Account.Name}}" required placeholder="e.g. Questrade TFSA">
+    </label>
+    <label>
+      Type
+      <select name="type" required>
+        {{range .Types}}
+        <option value="{{.}}" {{if eq . $.Account.Type}}selected{{end}}>{{.}}</option>
+        {{end}}
+      </select>
+      <small>margin and cash are non-registered (ACB tracked). tfsa/rrsp/resp/lrsp/srsp are registered (ACB excluded).</small>
+    </label>
+    <label>
+      Broker
+      <input type="text" name="broker" value="{{.Account.Broker}}" required placeholder="e.g. Questrade">
+    </label>
+    <label>
+      Currency
+      <select name="currency">
+        <option value="CAD" {{if eq .Account.Currency "CAD"}}selected{{end}}>CAD</option>
+        <option value="USD" {{if eq .Account.Currency "USD"}}selected{{end}}>USD</option>
+      </select>
+    </label>
+    <label>
+      Account Number <small>(optional)</small>
+      <input type="text" name="account_number" value="{{.Account.AccountNumber}}" placeholder="e.g. 12345678">
+    </label>
+    <button type="submit">{{if .Account.ID}}Save{{else}}Create{{end}}</button>
+  </form>
+</article>
+{{end}}
