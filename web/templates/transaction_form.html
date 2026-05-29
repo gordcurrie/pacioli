@@ -26,21 +26,17 @@
       </label>
     </div>
 
-    <label>
-      Security
+    <fieldset>
+      <legend>Security — type ticker to search, then select</legend>
       <input type="search"
-             placeholder="Type ticker to search..."
+             placeholder="e.g. VFV"
              hx-get="/securities/search"
              hx-target="#security-results"
              hx-trigger="keyup changed delay:300ms"
-             hx-include="[name='security_search_input']"
              name="security_search_input"
-             id="security_search_input"
              autocomplete="off">
-      <div id="security-results" style="border: 1px solid var(--pico-border-color); border-radius: var(--pico-border-radius); margin-top: -1rem; display:none"></div>
-      <input type="hidden" name="security_id" id="security_id_field" required>
-      <small id="selected-security-label"></small>
-    </label>
+      <div id="security-results" style="margin-top:0.5rem"></div>
+    </fieldset>
 
     <div class="grid">
       <label>
@@ -83,13 +79,4 @@
     <button type="submit">Add Transaction</button>
   </form>
 </article>
-<script>
-function selectSecurity(id, label) {
-  document.getElementById('security_id_field').value = id;
-  document.getElementById('selected-security-label').textContent = 'Selected: ' + label;
-  document.getElementById('security-results').innerHTML = '';
-  document.getElementById('security-results').style.display = 'none';
-  document.getElementById('security_search_input').value = label;
-}
-</script>
 {{end}}

@@ -24,11 +24,12 @@ var securityTypes = []security.Type{
 }
 
 var searchResultTmpl = template.Must(template.New("sr").Parse(`
-<ul style="list-style:none; padding:0.5rem; margin:0">
 {{- range .}}
-<li><a href="#" onclick="selectSecurity({{.ID}}, {{printf "%s — %s (%s)" .Ticker .Name .Exchange | js}}); return false;" style="display:block; padding:0.25rem 0">{{.Ticker}} — {{.Name}} ({{.Exchange}})</a></li>
-{{- end}}
-</ul>`))
+<label style="display:block; padding:0.25rem 0; cursor:pointer">
+  <input type="radio" name="security_id" value="{{.ID}}" required>
+  {{.Ticker}} — {{.Name}} ({{.Exchange}})
+</label>
+{{- end}}`))
 
 func (h *Handler) listSecurities(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query().Get("q")
