@@ -1,10 +1,12 @@
 package handler
 
 import (
+	"encoding/json"
 	"net/http"
 	"strconv"
 
 	"github.com/gordcurrie/pacioli/internal/account"
+	"github.com/gordcurrie/pacioli/internal/audit"
 )
 
 type accountsPageData struct {
@@ -57,6 +59,7 @@ func (h *Handler) createAccount(w http.ResponseWriter, r *http.Request) {
 		Broker:        r.FormValue("broker"),
 		Currency:      r.FormValue("currency"),
 		AccountNumber: r.FormValue("account_number"),
+		Source:        string(audit.SourceManual),
 	}
 
 	if err := h.accounts.Create(r.Context(), a); err != nil {
@@ -67,6 +70,7 @@ func (h *Handler) createAccount(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	h.logAudit(r, audit.ActionCreate, audit.EntityAccount, a.ID, audit.SourceManual, "")
 	http.Redirect(w, r, "/accounts", http.StatusSeeOther)
 }
 
@@ -145,9 +149,14 @@ func (h *Handler) deleteAccount(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	snapshot, err := json.Marshal(existing)
+	if err != nil {
+		loggerFromCtx(r.Context()).Error("snapshot marshal", "entity", "account", "id", id, "err", err)
+	}
 	if err := h.accounts.Delete(r.Context(), id); err != nil {
 		h.serverError(w, r, err)
 		return
 	}
+	h.logAudit(r, audit.ActionDelete, audit.EntityAccount, id, audit.Source(existing.Source), string(snapshot))
 	w.WriteHeader(http.StatusOK)
 }

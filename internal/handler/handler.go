@@ -9,6 +9,7 @@ import (
 	"net/http"
 
 	"github.com/gordcurrie/pacioli/internal/account"
+	"github.com/gordcurrie/pacioli/internal/audit"
 	"github.com/gordcurrie/pacioli/internal/security"
 	"github.com/gordcurrie/pacioli/internal/service"
 	"github.com/gordcurrie/pacioli/internal/transaction"
@@ -18,6 +19,7 @@ type Handler struct {
 	accounts     account.Store
 	securities   security.Store
 	transactions transaction.Store
+	audits       audit.Store
 	acbSvc       *service.ACBService
 	userID       int64
 	logger       *slog.Logger
@@ -28,6 +30,7 @@ func New(
 	accounts account.Store,
 	securities security.Store,
 	transactions transaction.Store,
+	audits audit.Store,
 	acbSvc *service.ACBService,
 	userID int64,
 	logger *slog.Logger,
@@ -37,6 +40,7 @@ func New(
 		accounts:     accounts,
 		securities:   securities,
 		transactions: transactions,
+		audits:       audits,
 		acbSvc:       acbSvc,
 		userID:       userID,
 		logger:       logger,
@@ -113,4 +117,17 @@ func (h *Handler) notFoundOrError(w http.ResponseWriter, r *http.Request, err er
 		return
 	}
 	h.serverError(w, r, err)
+}
+
+func (h *Handler) logAudit(r *http.Request, action audit.Action, entity audit.EntityType, id int64, source audit.Source, snapshot string) {
+	if err := h.audits.Log(r.Context(), &audit.Entry{
+		UserID:     h.userID,
+		Action:     action,
+		EntityType: entity,
+		EntityID:   id,
+		Source:     source,
+		Snapshot:   snapshot,
+	}); err != nil {
+		loggerFromCtx(r.Context()).Error("audit log", "err", err)
+	}
 }

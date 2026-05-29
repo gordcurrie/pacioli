@@ -17,9 +17,12 @@ func NewSecurityStore(db *sql.DB) *SecurityStore {
 }
 
 func (r *SecurityStore) Create(ctx context.Context, s *security.Security) error {
+	if s.Source == "" {
+		s.Source = "manual"
+	}
 	res, err := r.db.ExecContext(ctx,
-		`INSERT INTO securities (ticker, exchange, name, type, currency) VALUES (?, ?, ?, ?, ?)`,
-		s.Ticker, s.Exchange, s.Name, string(s.Type), s.Currency,
+		`INSERT INTO securities (ticker, exchange, name, type, currency, source) VALUES (?, ?, ?, ?, ?, ?)`,
+		s.Ticker, s.Exchange, s.Name, string(s.Type), s.Currency, s.Source,
 	)
 	if err != nil {
 		return fmt.Errorf("create security: %w", err)
@@ -34,13 +37,13 @@ func (r *SecurityStore) Create(ctx context.Context, s *security.Security) error 
 
 func (r *SecurityStore) GetByID(ctx context.Context, id int64) (*security.Security, error) {
 	row := r.db.QueryRowContext(ctx,
-		`SELECT id, ticker, exchange, name, type, currency FROM securities WHERE id = ?`, id)
+		`SELECT id, ticker, exchange, name, type, currency, source FROM securities WHERE id = ?`, id)
 	return scanSecurity(row)
 }
 
 func (r *SecurityStore) GetByTickerExchange(ctx context.Context, ticker, exchange string) (*security.Security, error) {
 	row := r.db.QueryRowContext(ctx,
-		`SELECT id, ticker, exchange, name, type, currency FROM securities WHERE ticker=? AND exchange=?`,
+		`SELECT id, ticker, exchange, name, type, currency, source FROM securities WHERE ticker=? AND exchange=?`,
 		ticker, exchange)
 	return scanSecurity(row)
 }
@@ -48,7 +51,7 @@ func (r *SecurityStore) GetByTickerExchange(ctx context.Context, ticker, exchang
 func (r *SecurityStore) Search(ctx context.Context, query string) ([]*security.Security, error) {
 	like := "%" + query + "%"
 	rows, err := r.db.QueryContext(ctx,
-		`SELECT id, ticker, exchange, name, type, currency FROM securities
+		`SELECT id, ticker, exchange, name, type, currency, source FROM securities
 		 WHERE ticker LIKE ? OR name LIKE ? ORDER BY ticker LIMIT 50`,
 		like, like)
 	if err != nil {
@@ -60,7 +63,7 @@ func (r *SecurityStore) Search(ctx context.Context, query string) ([]*security.S
 
 func (r *SecurityStore) ListAll(ctx context.Context) ([]*security.Security, error) {
 	rows, err := r.db.QueryContext(ctx,
-		`SELECT id, ticker, exchange, name, type, currency FROM securities ORDER BY ticker`)
+		`SELECT id, ticker, exchange, name, type, currency, source FROM securities ORDER BY ticker`)
 	if err != nil {
 		return nil, fmt.Errorf("list securities: %w", err)
 	}
@@ -75,7 +78,7 @@ type securityScanner interface {
 func scanSecurity(s securityScanner) (*security.Security, error) {
 	var sec security.Security
 	var secType string
-	if err := s.Scan(&sec.ID, &sec.Ticker, &sec.Exchange, &sec.Name, &secType, &sec.Currency); err != nil {
+	if err := s.Scan(&sec.ID, &sec.Ticker, &sec.Exchange, &sec.Name, &secType, &sec.Currency, &sec.Source); err != nil {
 		return nil, fmt.Errorf("scan security: %w", err)
 	}
 	sec.Type = security.Type(secType)

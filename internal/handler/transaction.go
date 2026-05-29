@@ -2,12 +2,14 @@ package handler
 
 import (
 	"cmp"
+	"encoding/json"
 	"net/http"
 	"slices"
 	"strconv"
 	"time"
 
 	"github.com/gordcurrie/pacioli/internal/account"
+	"github.com/gordcurrie/pacioli/internal/audit"
 	"github.com/gordcurrie/pacioli/internal/transaction"
 	"github.com/shopspring/decimal"
 )
@@ -222,6 +224,7 @@ func (h *Handler) createTransaction(w http.ResponseWriter, r *http.Request) {
 		renderForm("failed to save transaction")
 		return
 	}
+	h.logAudit(r, audit.ActionCreate, audit.EntityTransaction, tx.ID, audit.Source(tx.Source), "")
 	http.Redirect(w, r, "/transactions", http.StatusSeeOther)
 }
 
@@ -241,9 +244,14 @@ func (h *Handler) deleteTransaction(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	snapshot, err := json.Marshal(tx)
+	if err != nil {
+		loggerFromCtx(r.Context()).Error("snapshot marshal", "entity", "transaction", "id", id, "err", err)
+	}
 	if err := h.transactions.Delete(r.Context(), id); err != nil {
 		h.serverError(w, r, err)
 		return
 	}
+	h.logAudit(r, audit.ActionDelete, audit.EntityTransaction, id, audit.Source(tx.Source), string(snapshot))
 	w.WriteHeader(http.StatusOK)
 }
