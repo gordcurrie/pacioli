@@ -1,0 +1,10 @@
+DROP INDEX IF EXISTS idx_accounts_user_id;
+DROP INDEX IF EXISTS idx_transactions_trade_date;
+DROP INDEX IF EXISTS idx_transactions_security_id;
+DROP INDEX IF EXISTS idx_transactions_account_id;
+DROP TABLE IF EXISTS distributions;
+DROP TABLE IF EXISTS transactions;
+DROP TABLE IF EXISTS fx_rates;
+DROP TABLE IF EXISTS securities;
+DROP TABLE IF EXISTS accounts;
+DROP TABLE IF EXISTS users;

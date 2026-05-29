@@ -1,0 +1,14 @@
+services:
+  pacioli:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - pacioli-data:/data
+    environment:
+      DATABASE_DSN: /data/pacioli.db
+      ADDR: :8080
+    restart: unless-stopped
+
+volumes:
+  pacioli-data:

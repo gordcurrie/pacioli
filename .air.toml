@@ -1,0 +1,23 @@
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  bin = "./tmp/pacioli"
+  cmd = "go build -o ./tmp/pacioli ./cmd/server"
+  delay = 1000
+  exclude_dir = ["tmp", "vendor", ".git", "web/static"]
+  exclude_regex = ["_test\\.go"]
+  include_ext = ["go", "html", "css", "js"]
+  kill_delay = "0s"
+  rerun = false
+  send_interrupt = true
+
+[log]
+  main_only = false
+  time = false
+
+[misc]
+  clean_on_exit = true
+
+[screen]
+  clear_on_rebuild = true

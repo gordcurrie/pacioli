@@ -1,0 +1,43 @@
+version: "2"
+
+linters:
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - gosec
+    - gocritic
+    - misspell
+    - noctx
+    - exhaustive
+    - revive
+    - bodyclose
+    - durationcheck
+    - errorlint
+    - nilerr
+    - sqlclosecheck
+    - unparam
+    - wastedassign
+
+  settings:
+    gosec:
+      severity: medium
+      confidence: medium
+    revive:
+      severity: warning
+    exhaustive:
+      default-signifies-exhaustive: true
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - style
+        - performance
+
+issues:
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - gosec
+        - errcheck
