@@ -57,6 +57,7 @@ func (h *Handler) parseTemplates(fsys fs.FS) error {
 		"securities", "security_form",
 		"transactions", "transaction_form",
 		"acb", "acb_list",
+		"import", "import_preview",
 	}
 	h.tmpls = make(map[string]*template.Template, len(pages))
 	for _, p := range pages {
@@ -91,6 +92,10 @@ func (h *Handler) Routes(mux *http.ServeMux) {
 
 	mux.HandleFunc("GET /acb", h.listACB)
 	mux.HandleFunc("GET /acb/{id}", h.showACB)
+
+	mux.HandleFunc("GET /import", h.importPage)
+	mux.HandleFunc("POST /import/preview", h.importPreview)
+	mux.HandleFunc("POST /import/commit", h.importCommit)
 }
 
 func (h *Handler) render(w http.ResponseWriter, page string, data any) {

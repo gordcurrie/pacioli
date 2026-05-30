@@ -1,0 +1,32 @@
+{{define "content"}}
+<h2>Import CSV</h2>
+{{if .Error}}<p class="danger">{{.Error}}</p>{{end}}
+<article>
+  <form method="post" action="/import/preview" enctype="multipart/form-data">
+    <label>
+      Broker
+      <select name="broker" required>
+        {{range .Brokers}}
+        <option value="{{.}}">{{.}}</option>
+        {{end}}
+      </select>
+    </label>
+    <label>
+      CSV File
+      <input type="file" name="csv_file" accept=".csv" required>
+    </label>
+    <button type="submit">Preview Import</button>
+  </form>
+</article>
+<details>
+  <summary>Notes on CSV import</summary>
+  <ul>
+    <li>Account numbers in the CSV must match the account number field on your accounts.</li>
+    <li>Security names are matched against the name field in your securities list. Add missing securities before importing.</li>
+    <li>Fees, GST, withholding tax, and zero-amount distributions are skipped automatically.</li>
+    <li>Fund Return of Capital rows are skipped — enter ROC adjustments manually from your T3 slips.</li>
+    <li>Exchanges, TFSA/RRSP contributions, and unrecognized row types are flagged for manual review.</li>
+    <li>All imported transactions are assumed CAD. Non-CAD securities will need FX rate correction.</li>
+  </ul>
+</details>
+{{end}}
