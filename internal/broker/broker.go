@@ -1,6 +1,8 @@
 package broker
 
 import (
+	"bufio"
+	"bytes"
 	"encoding/csv"
 	"errors"
 	"fmt"
@@ -72,9 +74,15 @@ func ByName(name string) Profile {
 	return nil
 }
 
+var utf8BOM = []byte{0xEF, 0xBB, 0xBF}
+
 // ParseCSV reads all rows from r using profile p, skipping the header row.
 func ParseCSV(r io.Reader, p Profile) ([]*ParsedRow, error) {
-	cr := csv.NewReader(r)
+	br := bufio.NewReader(r)
+	if bom, err := br.Peek(3); err == nil && bytes.Equal(bom, utf8BOM) {
+		_, _ = br.Discard(3)
+	}
+	cr := csv.NewReader(br)
 	cr.TrimLeadingSpace = true
 	cr.FieldsPerRecord = -1 // allow variable column counts across rows
 

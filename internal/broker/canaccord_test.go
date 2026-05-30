@@ -179,6 +179,20 @@ func TestCanaccordParseSkipTypes(t *testing.T) {
 	}
 }
 
+func TestParseCSVStripsUTF8BOM(t *testing.T) {
+	bom := "\xEF\xBB\xBF"
+	csv := bom + `"Date","Type","Description","Settlement","Quantity","Price","Amount","Account","Client","ID"
+"2/7/2023 12:00:00 AM","Buy","SOME ETF TRD #1","2/9/2023 12:00:00 AM","100.00000","20.00","-2000.00","TST001A1","Test User A","TST001"
+`
+	rows, err := ParseCSV(strings.NewReader(csv), NewCanaccordProfile())
+	if err != nil {
+		t.Fatalf("ParseCSV with BOM: %v", err)
+	}
+	if len(rows) != 1 || rows[0].Status != RowImport {
+		t.Fatalf("expected 1 importable row, got %d rows", len(rows))
+	}
+}
+
 func TestParseCSVHeaderSkip(t *testing.T) {
 	csv := `"Date","Type","Description","Settlement","Quantity","Price","Amount","Account","Client","ID"
 "3/31/2023 12:00:00 AM","GST","GST note","3/31/2023 12:00:00 AM","","","-2.71","TST002A1","Test User B","TST002"
