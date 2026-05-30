@@ -257,7 +257,9 @@ var validImportTypes = map[transaction.Type]bool{
 }
 
 func (h *Handler) importCommit(w http.ResponseWriter, r *http.Request) {
-	r.Body = http.MaxBytesReader(w, r.Body, 10<<20)
+	// URL-encoded JSON inflates ~3× vs raw bytes (special chars → %XX);
+	// cap at 3× the upload limit so a max-size CSV never fails at commit.
+	r.Body = http.MaxBytesReader(w, r.Body, 30<<20)
 	if err := r.ParseForm(); err != nil {
 		h.serverError(w, r, err)
 		return
