@@ -77,11 +77,19 @@ func (p *canaccordProfile) Parse(r []string) (*ParsedRow, error) {
 		}
 	}
 
-	// commission = |qty × price| − |amount|; clamp to zero for rounding diffs
+	// commission derivation:
+	//   buy:  paid = gross + commission  →  commission = |amount| − gross
+	//   sell: received = gross − commission  →  commission = gross − |amount|
+	// clamp to zero for rounding diffs
 	commission := decimal.Zero
 	if price.IsPositive() && qty.IsPositive() {
 		gross := qty.Mul(price)
-		diff := gross.Sub(amount.Abs())
+		var diff decimal.Decimal
+		if txType == transaction.TypeBuy {
+			diff = amount.Abs().Sub(gross)
+		} else {
+			diff = gross.Sub(amount.Abs())
+		}
 		if diff.IsPositive() {
 			commission = diff
 		}

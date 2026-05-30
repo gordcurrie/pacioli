@@ -109,6 +109,27 @@ func TestCanaccordParseBuy(t *testing.T) {
 	}
 }
 
+func TestCanaccordParseBuyWithCommission(t *testing.T) {
+	p := NewCanaccordProfile()
+	// 100 shares @ $10.00 + $5 commission = $1005 total outflow
+	record := []string{
+		"2/7/2023 12:00:00 AM", "Buy", "SOME EQUITY TRD #999",
+		"2/9/2023 12:00:00 AM", "100.00000", "10.00", "-1005.00",
+		"TST001A1", "Test User A", "TST001",
+	}
+	row, err := p.Parse(record)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if row.TxType != transaction.TypeBuy {
+		t.Errorf("TxType = %q, want buy", row.TxType)
+	}
+	// commission = |amount| − gross = 1005 − 1000 = 5
+	if row.Commission.String() != "5" {
+		t.Errorf("Commission = %s, want 5", row.Commission)
+	}
+}
+
 func TestCanaccordParseSellWithCommission(t *testing.T) {
 	p := NewCanaccordProfile()
 	record := []string{
