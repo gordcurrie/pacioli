@@ -2,8 +2,10 @@ package handler
 
 import (
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"time"
 
@@ -232,7 +234,7 @@ var validImportTypes = map[transaction.Type]bool{
 }
 
 func (h *Handler) importCommit(w http.ResponseWriter, r *http.Request) {
-	r.Body = http.MaxBytesReader(w, r.Body, 5<<20)
+	r.Body = http.MaxBytesReader(w, r.Body, 10<<20)
 	if err := r.ParseForm(); err != nil {
 		h.serverError(w, r, err)
 		return
@@ -289,8 +291,12 @@ func (h *Handler) importCommit(w http.ResponseWriter, r *http.Request) {
 		// re-validate security: must exist and be CAD
 		sec, err := h.securities.GetByID(ctx, cr.SecurityID)
 		if err != nil {
-			loggerFromCtx(ctx).Warn("import: security not found", "security_id", cr.SecurityID)
-			continue
+			if errors.Is(err, sql.ErrNoRows) {
+				loggerFromCtx(ctx).Warn("import: security not found", "security_id", cr.SecurityID)
+				continue
+			}
+			h.serverError(w, r, err)
+			return
 		}
 		if sec.Currency != "CAD" {
 			loggerFromCtx(ctx).Warn("import: non-CAD security rejected", "security_id", cr.SecurityID, "currency", sec.Currency)
