@@ -45,10 +45,13 @@ func run() error {
 	securityStore := sqlite.NewSecurityStore(db)
 	txStore := sqlite.NewTransactionStore(db)
 	auditStore := sqlite.NewAuditStore(db)
+	fxStore := sqlite.NewFXStore(db)
+	qtTokenStore := sqlite.NewQTokenStore(db)
 
 	acbSvc := service.NewACBService(txStore)
+	bocSvc := service.NewBOCFetcher(fxStore)
 
-	h, err := handler.New(accountStore, securityStore, txStore, auditStore, acbSvc, userID, logger, web.Templates)
+	h, err := handler.New(accountStore, securityStore, txStore, auditStore, qtTokenStore, bocSvc, acbSvc, userID, logger, web.Templates)
 	if err != nil {
 		return fmt.Errorf("init handlers: %w", err)
 	}

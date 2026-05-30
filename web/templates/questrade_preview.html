@@ -1,0 +1,72 @@
+{{define "content"}}
+<div style="display:flex; justify-content:space-between; align-items:center">
+  <h2>Questrade Import Preview</h2>
+  <a href="/questrade">← Back</a>
+</div>
+
+{{if .Error}}<p class="danger">{{.Error}}</p>{{end}}
+
+<p>
+  <strong style="color:var(--pico-color-green-550)">{{.TotalOK}} ready</strong> &middot;
+  {{.TotalSkip}} skipped &middot;
+  {{if gt .TotalFlag 0}}<strong class="danger">{{.TotalFlag}} flagged</strong>{{else}}0 flagged{{end}}
+</p>
+
+{{if gt .TotalFlag 0}}
+<p>Flagged rows are excluded. Add missing securities, then re-import, or proceed with ready rows only.</p>
+{{end}}
+
+{{if gt .TotalOK 0}}
+<form method="post" action="/questrade/commit">
+  <input type="hidden" name="commit_rows" value="{{.CommitJSON}}">
+  <button type="submit">Commit {{.TotalOK}} transactions</button>
+</form>
+{{else}}
+<article><p>No importable activities found. Nothing to commit.</p></article>
+{{end}}
+
+{{if .Rows}}
+<figure>
+<table>
+  <thead>
+    <tr>
+      <th>#</th>
+      <th>Status</th>
+      <th>Date</th>
+      <th>Type</th>
+      <th>Symbol</th>
+      <th>Account</th>
+      <th style="text-align:right">Qty</th>
+      <th style="text-align:right">Price</th>
+      <th>Cur</th>
+      <th style="text-align:right">FX Rate</th>
+      <th style="text-align:right">Commission</th>
+    </tr>
+  </thead>
+  <tbody>
+  {{range .Rows}}
+  <tr>
+    <td>{{.Line}}</td>
+    <td>
+      {{if eq .Status "ok"}}
+        <span style="color:var(--pico-color-green-550)">&#10003;</span>
+      {{else}}
+        <span class="danger" title="{{.StatusMsg}}">&#9888; {{.StatusMsg}}</span>
+      {{end}}
+    </td>
+    <td>{{.TradeDate}}</td>
+    <td>{{.TxType}}</td>
+    <td>{{.Symbol}}</td>
+    <td>{{if .AccountName}}{{.AccountName}}{{else}}&mdash;{{end}}</td>
+    <td style="text-align:right">{{.Quantity}}</td>
+    <td style="text-align:right">{{.Price}}</td>
+    <td>{{.Currency}}</td>
+    <td style="text-align:right">{{if .FXRate}}{{.FXRate}}{{else}}&mdash;{{end}}</td>
+    <td style="text-align:right">{{.Commission}}</td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</figure>
+{{end}}
+{{end}}

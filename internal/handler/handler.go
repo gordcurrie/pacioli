@@ -10,6 +10,7 @@ import (
 
 	"github.com/gordcurrie/pacioli/internal/account"
 	"github.com/gordcurrie/pacioli/internal/audit"
+	"github.com/gordcurrie/pacioli/internal/questrade"
 	"github.com/gordcurrie/pacioli/internal/security"
 	"github.com/gordcurrie/pacioli/internal/service"
 	"github.com/gordcurrie/pacioli/internal/transaction"
@@ -20,6 +21,8 @@ type Handler struct {
 	securities   security.Store
 	transactions transaction.Store
 	audits       audit.Store
+	qtTokens     questrade.TokenStore
+	bocSvc       *service.BOCFetcher
 	acbSvc       *service.ACBService
 	userID       int64
 	logger       *slog.Logger
@@ -31,6 +34,8 @@ func New(
 	securities security.Store,
 	transactions transaction.Store,
 	audits audit.Store,
+	qtTokens questrade.TokenStore,
+	bocSvc *service.BOCFetcher,
 	acbSvc *service.ACBService,
 	userID int64,
 	logger *slog.Logger,
@@ -41,6 +46,8 @@ func New(
 		securities:   securities,
 		transactions: transactions,
 		audits:       audits,
+		qtTokens:     qtTokens,
+		bocSvc:       bocSvc,
 		acbSvc:       acbSvc,
 		userID:       userID,
 		logger:       logger,
@@ -58,6 +65,7 @@ func (h *Handler) parseTemplates(fsys fs.FS) error {
 		"transactions", "transaction_form",
 		"acb", "acb_list",
 		"import", "import_preview",
+		"questrade", "questrade_preview",
 	}
 	h.tmpls = make(map[string]*template.Template, len(pages))
 	for _, p := range pages {
@@ -96,6 +104,12 @@ func (h *Handler) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /import", h.importPage)
 	mux.HandleFunc("POST /import/preview", h.importPreview)
 	mux.HandleFunc("POST /import/commit", h.importCommit)
+
+	mux.HandleFunc("GET /questrade", h.questradePage)
+	mux.HandleFunc("POST /questrade/connect", h.questradeConnect)
+	mux.HandleFunc("POST /questrade/disconnect", h.questradeDisconnect)
+	mux.HandleFunc("POST /questrade/preview", h.questradePreview)
+	mux.HandleFunc("POST /questrade/commit", h.questradeCommit)
 }
 
 func (h *Handler) render(w http.ResponseWriter, page string, data any) {

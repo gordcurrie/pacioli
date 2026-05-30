@@ -1,0 +1,60 @@
+{{define "content"}}
+<h2>Questrade Integration</h2>
+
+{{if .Error}}<p class="danger">{{.Error}}</p>{{end}}
+
+{{if .Connected}}
+
+<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem">
+  <p style="margin:0">Status: <strong style="color:var(--pico-color-green-550)">Connected ✓</strong></p>
+  <form method="post" action="/questrade/disconnect">
+    <button class="outline danger" type="submit" style="margin:0">Disconnect</button>
+  </form>
+</div>
+
+<article>
+  <h3>Import Activities</h3>
+  <form method="post" action="/questrade/preview">
+    <div class="grid">
+      <label>Questrade Account Number
+        <input type="text" name="qt_account" placeholder="e.g. 12345678" required>
+      </label>
+      <label>Import Into
+        <select name="pacioli_account" required>
+          <option value="">— select account —</option>
+          {{range .Accounts}}
+          <option value="{{.ID}}">{{.Name}}</option>
+          {{end}}
+        </select>
+      </label>
+    </div>
+    <div class="grid">
+      <label>Start Date
+        <input type="date" name="start_date" required>
+      </label>
+      <label>End Date
+        <input type="date" name="end_date" required>
+      </label>
+    </div>
+    <button type="submit">Fetch &amp; Preview</button>
+  </form>
+</article>
+
+{{else}}
+
+<article>
+  <p>Connect your Questrade account to import transaction history automatically.</p>
+  <ol>
+    <li>Log in to Questrade → <strong>App Hub</strong> → <strong>Generate personal API token</strong></li>
+    <li>Copy the token and paste it below</li>
+  </ol>
+  <form method="post" action="/questrade/connect">
+    <label>API Refresh Token
+      <input type="password" name="refresh_token" placeholder="Paste token here" required autocomplete="off">
+    </label>
+    <button type="submit">Connect</button>
+  </form>
+</article>
+
+{{end}}
+{{end}}
