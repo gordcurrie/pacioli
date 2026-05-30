@@ -48,7 +48,7 @@ func Exchange(ctx context.Context, refreshToken string) (Token, error) {
 		"grant_type":    {"refresh_token"},
 		"refresh_token": {refreshToken},
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, oauthEndpoint, // #nosec G107
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, oauthEndpoint,
 		strings.NewReader(body.Encode()))
 	if err != nil {
 		return Token{}, fmt.Errorf("questrade exchange: %w", err)
@@ -56,7 +56,7 @@ func Exchange(ctx context.Context, refreshToken string) (Token, error) {
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	c := &http.Client{Timeout: 30 * time.Second}
-	resp, err := c.Do(req) // #nosec G704 -- URL is the constant Questrade token endpoint
+	resp, err := c.Do(req) // #nosec G704 -- URL is the oauthEndpoint constant
 	if err != nil {
 		return Token{}, fmt.Errorf("questrade exchange: %w", err)
 	}
