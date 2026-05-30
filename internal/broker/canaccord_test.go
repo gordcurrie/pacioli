@@ -54,7 +54,7 @@ func TestExtractSecurityName(t *testing.T) {
 		{"TBR FR QD GLB RL ES TR J J -NL TRD #92477", "TBR FR QD GLB RL ES TR J J -NL"},
 		{"DYNAMIC GLB EQ PVT PL CL F -NL GRS: 6000.00 NET: 6000.00 PRC: 18.9976", "DYNAMIC GLB EQ PVT PL CL F -NL"},
 		{"MINMALL MINI MALL ST TRST -NL ECH ICC600W TO AVE600W", "MINMALL MINI MALL ST TRST -NL"},
-		{"TCFMLP TCYT US CAD - I -NL TFSA 374-Y0PE-1", "TCFMLP TCYT US CAD - I -NL"},
+		{"TCFMLP TCYT US CAD - I -NL TFSA TST-ACCT-1", "TCFMLP TCYT US CAD - I -NL"},
 		{"BROOKFIELD RENEW ENGY LPU", "BROOKFIELD RENEW ENGY LPU"},
 		{"  CENOVUS ENERGY INC  ", "CENOVUS ENERGY INC"},
 	}
@@ -70,16 +70,16 @@ func TestExtractSecurityName(t *testing.T) {
 func TestCanaccordParseBuy(t *testing.T) {
 	p := NewCanaccordProfile()
 	record := []string{
-		"2/7/2023 12:00:00 AM",   // Date
-		"Buy",                    // Type
+		"2/7/2023 12:00:00 AM",         // Date
+		"Buy",                           // Type
 		"INVESCO CANADN ETF TRD #19994", // Description
-		"2/9/2023 12:00:00 AM",   // Settlement
-		"1021.00000",             // Quantity
-		"19.70",                  // Price
-		"-20113.70",              // Amount
-		"374X9PS1",               // Account
-		"PAMELA CURRIE",          // Client Name
-		"374X9P",                 // Client ID
+		"2/9/2023 12:00:00 AM",          // Settlement
+		"1021.00000",                    // Quantity
+		"19.70",                         // Price
+		"-20113.70",                     // Amount
+		"TST001A1",                      // Account
+		"Test User A",                   // Client Name
+		"TST001",                        // Client ID
 	}
 
 	row, err := p.Parse(record)
@@ -101,8 +101,8 @@ func TestCanaccordParseBuy(t *testing.T) {
 	if !row.Commission.IsZero() {
 		t.Errorf("Commission = %s, want 0 (fee-based account)", row.Commission)
 	}
-	if row.AccountNo != "374X9PS1" {
-		t.Errorf("AccountNo = %q, want 374X9PS1", row.AccountNo)
+	if row.AccountNo != "TST001A1" {
+		t.Errorf("AccountNo = %q, want TST001A1", row.AccountNo)
 	}
 	if row.SecurityName != "INVESCO CANADN ETF" {
 		t.Errorf("SecurityName = %q, want INVESCO CANADN ETF", row.SecurityName)
@@ -119,9 +119,9 @@ func TestCanaccordParseSellWithCommission(t *testing.T) {
 		"-1800.97430",
 		"11.06",
 		"19909.77",
-		"374X9PS1",
-		"PAMELA CURRIE",
-		"374X9P",
+		"TST001A1",
+		"Test User A",
+		"TST001",
 	}
 
 	row, err := p.Parse(record)
@@ -131,7 +131,6 @@ func TestCanaccordParseSellWithCommission(t *testing.T) {
 	if row.TxType != transaction.TypeSell {
 		t.Errorf("TxType = %q, want sell", row.TxType)
 	}
-	// quantity should be positive even though CSV has negative
 	if row.Quantity.IsNegative() {
 		t.Errorf("Quantity should be positive, got %s", row.Quantity)
 	}
@@ -147,7 +146,7 @@ func TestCanaccordParseSkipTypes(t *testing.T) {
 	for _, typ := range skipTypes {
 		record := []string{
 			"3/15/2023 12:00:00 AM", typ, "SOME FUND",
-			"3/15/2023 12:00:00 AM", "", "", "-54.22", "374Y0PQ1", "GORDON CURRIE", "374Y0P",
+			"3/15/2023 12:00:00 AM", "", "", "-54.22", "TST002A1", "Test User B", "TST002",
 		}
 		row, err := p.Parse(record)
 		if err != nil {
@@ -161,8 +160,8 @@ func TestCanaccordParseSkipTypes(t *testing.T) {
 
 func TestParseCSVHeaderSkip(t *testing.T) {
 	csv := `"Date","Type","Description","Settlement","Quantity","Price","Amount","Account","Client","ID"
-"3/31/2023 12:00:00 AM","GST","GST note","3/31/2023 12:00:00 AM","","","-2.71","374Y0PQ1","GORDON CURRIE","374Y0P"
-"2/7/2023 12:00:00 AM","Buy","SOME ETF TRD #100","2/9/2023 12:00:00 AM","100.00000","20.00","-2000.00","374X9PS1","PAMELA CURRIE","374X9P"
+"3/31/2023 12:00:00 AM","GST","GST note","3/31/2023 12:00:00 AM","","","-2.71","TST002A1","Test User B","TST002"
+"2/7/2023 12:00:00 AM","Buy","SOME ETF TRD #100","2/9/2023 12:00:00 AM","100.00000","20.00","-2000.00","TST001A1","Test User A","TST001"
 `
 	rows, err := ParseCSV(strings.NewReader(csv), NewCanaccordProfile())
 	if err != nil {

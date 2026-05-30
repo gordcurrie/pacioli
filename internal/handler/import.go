@@ -90,9 +90,15 @@ func (h *Handler) importPreview(w http.ResponseWriter, r *http.Request) {
 		ID   int64
 		Name string
 	}
-	accountByNo := make(map[string]acctRef, len(accounts))
+	accountNoCount := make(map[string]int, len(accounts))
 	for _, a := range accounts {
 		if a.AccountNumber != "" {
+			accountNoCount[a.AccountNumber]++
+		}
+	}
+	accountByNo := make(map[string]acctRef, len(accounts))
+	for _, a := range accounts {
+		if a.AccountNumber != "" && accountNoCount[a.AccountNumber] == 1 {
 			accountByNo[a.AccountNumber] = acctRef{a.ID, a.Name}
 		}
 	}
@@ -107,9 +113,15 @@ func (h *Handler) importPreview(w http.ResponseWriter, r *http.Request) {
 		Ticker   string
 		Currency string
 	}
+	secNameCount := make(map[string]int, len(securities))
+	for _, s := range securities {
+		secNameCount[s.Name]++
+	}
 	secByName := make(map[string]secRef, len(securities))
 	for _, s := range securities {
-		secByName[s.Name] = secRef{s.ID, s.Ticker, s.Currency}
+		if secNameCount[s.Name] == 1 {
+			secByName[s.Name] = secRef{s.ID, s.Ticker, s.Currency}
+		}
 	}
 
 	var previewRows []importPreviewRow
@@ -157,7 +169,11 @@ func (h *Handler) importPreview(w http.ResponseWriter, r *http.Request) {
 		acct, acctOK := accountByNo[row.AccountNo]
 		if !acctOK {
 			pr.Status = "flag"
-			pr.StatusMsg = "account not found — add account with number: " + row.AccountNo
+			if accountNoCount[row.AccountNo] > 1 {
+				pr.StatusMsg = "ambiguous account number — multiple accounts share: " + row.AccountNo
+			} else {
+				pr.StatusMsg = "account not found — add account with number: " + row.AccountNo
+			}
 			totFlag++
 			previewRows = append(previewRows, pr)
 			continue
@@ -166,6 +182,13 @@ func (h *Handler) importPreview(w http.ResponseWriter, r *http.Request) {
 
 		sec, secOK := secByName[row.SecurityName]
 		if !secOK {
+			if secNameCount[row.SecurityName] > 1 {
+				pr.Status = "flag"
+				pr.StatusMsg = "ambiguous security name — multiple securities share: " + row.SecurityName
+				totFlag++
+				previewRows = append(previewRows, pr)
+				continue
+			}
 			results, err := h.securities.Search(r.Context(), row.SecurityName)
 			if err != nil {
 				h.serverError(w, r, err)
