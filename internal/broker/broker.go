@@ -76,6 +76,7 @@ func ByName(name string) Profile {
 func ParseCSV(r io.Reader, p Profile) ([]*ParsedRow, error) {
 	cr := csv.NewReader(r)
 	cr.TrimLeadingSpace = true
+	cr.FieldsPerRecord = -1 // allow variable column counts across rows
 
 	if _, err := cr.Read(); err != nil {
 		return nil, fmt.Errorf("read header: %w", err)

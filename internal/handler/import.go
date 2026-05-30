@@ -274,6 +274,29 @@ func (h *Handler) importCommit(w http.ResponseWriter, r *http.Request) {
 	}
 	importID := hex.EncodeToString(b[:])
 
+	// per-request security cache to avoid N+1 GetByID calls
+	type cachedSec struct {
+		currency string
+		found    bool
+	}
+	secCache := make(map[int64]cachedSec)
+	lookupSec := func(id int64) (cachedSec, error) {
+		if s, ok := secCache[id]; ok {
+			return s, nil
+		}
+		sec, err := h.securities.GetByID(ctx, id)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				secCache[id] = cachedSec{}
+				return cachedSec{}, nil
+			}
+			return cachedSec{}, err
+		}
+		s := cachedSec{currency: sec.Currency, found: true}
+		secCache[id] = s
+		return s, nil
+	}
+
 	for i := range commitRows {
 		cr := &commitRows[i]
 
@@ -289,17 +312,17 @@ func (h *Handler) importCommit(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// re-validate security: must exist and be CAD
-		sec, err := h.securities.GetByID(ctx, cr.SecurityID)
+		sec, err := lookupSec(cr.SecurityID)
 		if err != nil {
-			if errors.Is(err, sql.ErrNoRows) {
-				loggerFromCtx(ctx).Warn("import: security not found", "security_id", cr.SecurityID)
-				continue
-			}
 			h.serverError(w, r, err)
 			return
 		}
-		if sec.Currency != "CAD" {
-			loggerFromCtx(ctx).Warn("import: non-CAD security rejected", "security_id", cr.SecurityID, "currency", sec.Currency)
+		if !sec.found {
+			loggerFromCtx(ctx).Warn("import: security not found", "security_id", cr.SecurityID)
+			continue
+		}
+		if sec.currency != "CAD" {
+			loggerFromCtx(ctx).Warn("import: non-CAD security rejected", "security_id", cr.SecurityID, "currency", sec.currency)
 			continue
 		}
 
@@ -315,17 +338,17 @@ func (h *Handler) importCommit(w http.ResponseWriter, r *http.Request) {
 
 		qty, err := decimal.NewFromString(cr.Quantity)
 		if err != nil || !qty.IsPositive() {
-			loggerFromCtx(ctx).Error("import: invalid quantity", "val", cr.Quantity)
+			loggerFromCtx(ctx).Error("import: invalid quantity", "val", cr.Quantity, "err", err)
 			continue
 		}
 		price, err := decimal.NewFromString(cr.Price)
 		if err != nil || price.IsNegative() {
-			loggerFromCtx(ctx).Error("import: invalid price", "val", cr.Price)
+			loggerFromCtx(ctx).Error("import: invalid price", "val", cr.Price, "err", err)
 			continue
 		}
 		comm, err := decimal.NewFromString(cr.Commission)
 		if err != nil || comm.IsNegative() {
-			loggerFromCtx(ctx).Error("import: invalid commission", "val", cr.Commission)
+			loggerFromCtx(ctx).Error("import: invalid commission", "val", cr.Commission, "err", err)
 			continue
 		}
 
