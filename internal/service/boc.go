@@ -77,7 +77,7 @@ type bocResponse struct {
 }
 
 func (f *BOCFetcher) fetchBOC(ctx context.Context, start, end time.Time) (map[time.Time]decimal.Decimal, error) {
-	rawURL := fmt.Sprintf("%s?start_date=%s&end_date=%s", // #nosec G107 -- constant base, date params from time.Time.Format
+	rawURL := fmt.Sprintf("%s?start_date=%s&end_date=%s",
 		bocURL, start.Format(time.DateOnly), end.Format(time.DateOnly))
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, http.NoBody)

@@ -16,8 +16,8 @@ const oauthEndpoint = "https://login.questrade.com/oauth2/token"
 
 // Token holds Questrade OAuth2 credentials.
 type Token struct {
-	AccessToken  string //nolint:gosec // G117: field name matches secret pattern but this is an OAuth token struct
-	RefreshToken string //nolint:gosec // G117
+	AccessToken  string    `json:"-"` // never serialize; stored via explicit SQL params only
+	RefreshToken string    `json:"-"` // never serialize; rotated on every use
 	APIServer    string
 	ExpiresAt    time.Time
 }
@@ -32,13 +32,6 @@ type TokenStore interface {
 	Save(ctx context.Context, userID int64, token Token) error
 	Get(ctx context.Context, userID int64) (Token, error)
 	Delete(ctx context.Context, userID int64) error
-}
-
-type tokenResponse struct {
-	AccessToken  string `json:"access_token"`  //nolint:gosec // G117
-	RefreshToken string `json:"refresh_token"` //nolint:gosec // G117
-	APIServer    string `json:"api_server"`
-	ExpiresIn    int    `json:"expires_in"`
 }
 
 // Exchange converts a refresh token into a new Token. The original refresh
@@ -66,7 +59,12 @@ func Exchange(ctx context.Context, refreshToken string) (Token, error) {
 		return Token{}, fmt.Errorf("questrade exchange: unexpected status %d", resp.StatusCode)
 	}
 
-	var tr tokenResponse
+	var tr struct {
+		AccessToken  string `json:"access_token"`  //nolint:gosec // G117: local parse struct for Questrade token response
+		RefreshToken string `json:"refresh_token"` //nolint:gosec // G117
+		APIServer    string `json:"api_server"`
+		ExpiresIn    int    `json:"expires_in"`
+	}
 	if err := json.NewDecoder(resp.Body).Decode(&tr); err != nil {
 		return Token{}, fmt.Errorf("questrade exchange: decode: %w", err)
 	}
@@ -251,7 +249,7 @@ func numToDecimal(n json.Number) (decimal.Decimal, error) {
 func (c *Client) get(ctx context.Context, path string, dest any) error {
 	apiServer := strings.TrimSuffix(c.token.APIServer, "/")
 	rawURL := apiServer + "/" + path
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, http.NoBody) // #nosec G107 G704 -- api_server from Questrade token response, path from trusted input
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, http.NoBody)
 	if err != nil {
 		return err
 	}
