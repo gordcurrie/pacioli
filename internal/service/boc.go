@@ -91,7 +91,7 @@ func (f *BOCFetcher) fetchBOC(ctx context.Context, start, end time.Time) (map[ti
 	if err != nil {
 		return nil, fmt.Errorf("boc fetch: %w", err)
 	}
-	resp, err := f.hc.Do(req) // #nosec G704 -- URL has constant base, date params from time.Time.Format
+	resp, err := f.hc.Do(req) // #nosec G704 -- BaseURL is code-controlled (defaults to bocURL constant; only overridden in tests)
 	if err != nil {
 		return nil, fmt.Errorf("boc fetch: %w", err)
 	}
