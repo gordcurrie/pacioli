@@ -49,7 +49,7 @@ func (f *BOCFetcher) USDCADRate(ctx context.Context, date time.Time) (decimal.De
 		}
 	}
 
-	// Not cached: fetch an 11-day window (date-10 through date) from BoC and populate the cache.
+	// Not cached: fetch an 11-day window (date-10 through date+1) from BoC and populate the cache.
 	start := date.AddDate(0, 0, -10)
 	end := date.AddDate(0, 0, 1)
 	fetched, err := f.fetchBOC(ctx, start, end)

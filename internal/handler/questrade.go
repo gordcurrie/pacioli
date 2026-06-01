@@ -524,17 +524,17 @@ func (h *Handler) questradeCommit(w http.ResponseWriter, r *http.Request) {
 
 		qty, err := decimal.NewFromString(cr.Quantity)
 		if err != nil || !qty.IsPositive() {
-			loggerFromCtx(ctx).Error("qt commit: invalid quantity", "val", cr.Quantity)
+			loggerFromCtx(ctx).Error("qt commit: invalid quantity", "val", cr.Quantity, "err", err)
 			continue
 		}
 		priceNative, err := decimal.NewFromString(cr.PriceNative)
 		if err != nil || priceNative.IsNegative() {
-			loggerFromCtx(ctx).Error("qt commit: invalid price native", "val", cr.PriceNative)
+			loggerFromCtx(ctx).Error("qt commit: invalid price native", "val", cr.PriceNative, "err", err)
 			continue
 		}
 		commNative, err := decimal.NewFromString(cr.CommNative)
 		if err != nil || commNative.IsNegative() {
-			loggerFromCtx(ctx).Error("qt commit: invalid comm native", "val", cr.CommNative)
+			loggerFromCtx(ctx).Error("qt commit: invalid comm native", "val", cr.CommNative, "err", err)
 			continue
 		}
 
