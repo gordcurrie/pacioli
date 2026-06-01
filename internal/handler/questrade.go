@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -82,7 +83,7 @@ func (h *Handler) activeToken(r *http.Request) (questrade.Token, error) {
 		return questrade.Token{}, err
 	}
 	if err := h.qtTokens.Save(ctx, h.userID, token); err != nil {
-		loggerFromCtx(ctx).Error("save refreshed qt token", "err", err)
+		return questrade.Token{}, fmt.Errorf("save refreshed qt token: %w", err)
 	}
 	return token, nil
 }
@@ -90,9 +91,17 @@ func (h *Handler) activeToken(r *http.Request) (questrade.Token, error) {
 func (h *Handler) questradePage(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	_, err := h.qtTokens.Get(ctx, h.userID)
+	if err != nil && !errors.Is(err, errs.ErrNotFound) {
+		h.serverError(w, r, err)
+		return
+	}
 	connected := err == nil
 
-	accounts, _ := h.accounts.ListByUser(ctx, h.userID)
+	accounts, err := h.accounts.ListByUser(ctx, h.userID)
+	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
 	opts := make([]qtAccountOption, len(accounts))
 	for i, a := range accounts {
 		opts[i] = qtAccountOption{a.ID, a.Name}
@@ -111,7 +120,11 @@ func (h *Handler) questradeConnect(w http.ResponseWriter, r *http.Request) {
 	token, err := questrade.Exchange(ctx, refreshToken)
 	if err != nil {
 		loggerFromCtx(ctx).Error("questrade connect", "err", err)
-		accounts, _ := h.accounts.ListByUser(ctx, h.userID)
+		accounts, err2 := h.accounts.ListByUser(ctx, h.userID)
+		if err2 != nil {
+			h.serverError(w, r, err2)
+			return
+		}
 		opts := make([]qtAccountOption, len(accounts))
 		for i, a := range accounts {
 			opts[i] = qtAccountOption{a.ID, a.Name}
@@ -127,7 +140,10 @@ func (h *Handler) questradeConnect(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) questradeDisconnect(w http.ResponseWriter, r *http.Request) {
-	_ = h.qtTokens.Delete(r.Context(), h.userID)
+	if err := h.qtTokens.Delete(r.Context(), h.userID); err != nil {
+		h.serverError(w, r, err)
+		return
+	}
 	http.Redirect(w, r, "/questrade", http.StatusSeeOther)
 }
 
@@ -135,7 +151,11 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	renderErr := func(msg string) {
-		accounts, _ := h.accounts.ListByUser(ctx, h.userID)
+		accounts, err := h.accounts.ListByUser(ctx, h.userID)
+		if err != nil {
+			h.serverError(w, r, err)
+			return
+		}
 		opts := make([]qtAccountOption, len(accounts))
 		for i, a := range accounts {
 			opts[i] = qtAccountOption{a.ID, a.Name}

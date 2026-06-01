@@ -80,5 +80,8 @@ func (s *QTokenStore) Get(ctx context.Context, userID int64) (questrade.Token, e
 
 func (s *QTokenStore) Delete(ctx context.Context, userID int64) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM questrade_tokens WHERE user_id = ?`, userID)
-	return err
+	if err != nil {
+		return fmt.Errorf("delete questrade token: %w", err)
+	}
+	return nil
 }
