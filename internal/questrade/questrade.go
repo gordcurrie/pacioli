@@ -39,8 +39,8 @@ func (t Token) IsExpired() bool {
 	return time.Now().Add(60 * time.Second).After(t.ExpiresAt)
 }
 
-// TokenStore persists Questrade tokens per user.
-type TokenStore interface {
+// Store persists Questrade tokens per user.
+type Store interface {
 	Save(ctx context.Context, userID int64, token Token) error
 	Get(ctx context.Context, userID int64) (Token, error)
 	Delete(ctx context.Context, userID int64) error
@@ -267,7 +267,7 @@ func (c *Client) get(ctx context.Context, path string, dest any) error {
 	}
 	req.Header.Set("Authorization", "Bearer "+c.token.AccessToken.Reveal())
 
-	resp, err := c.hc.Do(req) // #nosec G704
+	resp, err := c.hc.Do(req) // #nosec G704 -- rawURL built from APIServer returned by Questrade OAuth token exchange, not user input
 	if err != nil {
 		return err
 	}

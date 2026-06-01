@@ -399,6 +399,13 @@ func classifyQTActivity(a *questrade.Activity) (qtStatus, string, transaction.Ty
 	}
 }
 
+// validQTTypes restricts commit to types the Questrade preview can actually produce.
+var validQTTypes = map[transaction.Type]bool{
+	transaction.TypeBuy:      true,
+	transaction.TypeSell:     true,
+	transaction.TypeDividend: true,
+}
+
 func (h *Handler) questradeCommit(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, 30<<20)
 	if err := r.ParseForm(); err != nil {
@@ -461,7 +468,7 @@ func (h *Handler) questradeCommit(w http.ResponseWriter, r *http.Request) {
 		}
 
 		txType := transaction.Type(cr.TxType)
-		if !validImportTypes[txType] {
+		if !validQTTypes[txType] {
 			loggerFromCtx(ctx).Warn("qt commit: invalid tx type", "type", cr.TxType)
 			continue
 		}

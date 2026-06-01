@@ -21,7 +21,7 @@ type Handler struct {
 	securities   security.Store
 	transactions transaction.Store
 	audits       audit.Store
-	qtTokens     questrade.TokenStore
+	qtTokens     questrade.Store
 	bocSvc       *service.BOCFetcher
 	acbSvc       *service.ACBService
 	userID       int64
@@ -34,7 +34,7 @@ func New(
 	securities security.Store,
 	transactions transaction.Store,
 	audits audit.Store,
-	qtTokens questrade.TokenStore,
+	qtTokens questrade.Store,
 	bocSvc *service.BOCFetcher,
 	acbSvc *service.ACBService,
 	userID int64,
