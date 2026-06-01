@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/gordcurrie/pacioli/internal/handler"
+	"github.com/gordcurrie/pacioli/internal/questrade"
 	"github.com/gordcurrie/pacioli/internal/service"
 	"github.com/gordcurrie/pacioli/internal/sqlite"
 	"github.com/gordcurrie/pacioli/web"
@@ -47,17 +48,18 @@ func run() error {
 	securityStore := sqlite.NewSecurityStore(db)
 	txStore := sqlite.NewTransactionStore(db)
 	auditStore := sqlite.NewAuditStore(db)
-	tokenKeyHex := strings.TrimSpace(os.Getenv("TOKEN_ENCRYPTION_KEY"))
-	if tokenKeyHex == "" {
-		return fmt.Errorf("TOKEN_ENCRYPTION_KEY env var required (generate: openssl rand -hex 32)")
-	}
-	tokenKey, err := hex.DecodeString(tokenKeyHex)
-	if err != nil || len(tokenKey) != 32 {
-		return fmt.Errorf("TOKEN_ENCRYPTION_KEY must be 64 hex chars (32 bytes)")
-	}
-
 	fxStore := sqlite.NewFXStore(db)
-	qtTokenStore := sqlite.NewQTokenStore(db, tokenKey)
+
+	var qtTokenStore questrade.Store
+	if tokenKeyHex := strings.TrimSpace(os.Getenv("TOKEN_ENCRYPTION_KEY")); tokenKeyHex != "" {
+		tokenKey, err := hex.DecodeString(tokenKeyHex)
+		if err != nil || len(tokenKey) != 32 {
+			return fmt.Errorf("TOKEN_ENCRYPTION_KEY must be 64 hex chars (32 bytes)")
+		}
+		qtTokenStore = sqlite.NewQTokenStore(db, tokenKey)
+	} else {
+		logger.Warn("TOKEN_ENCRYPTION_KEY not set — Questrade integration disabled")
+	}
 
 	acbSvc := service.NewACBService(txStore)
 	bocSvc := service.NewBOCFetcher(fxStore)

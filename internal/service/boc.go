@@ -87,7 +87,7 @@ func (f *BOCFetcher) fetchBOC(ctx context.Context, start, end time.Time) (map[ti
 	rawURL := fmt.Sprintf("%s?start_date=%s&end_date=%s",
 		f.BaseURL, start.Format(time.DateOnly), end.Format(time.DateOnly))
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, http.NoBody) // #nosec G107 G704
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, http.NoBody) // #nosec G107 G704 -- BaseURL defaults to bocURL constant; only overridden in tests; date params from time.Time.Format
 	if err != nil {
 		return nil, fmt.Errorf("boc fetch: %w", err)
 	}

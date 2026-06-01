@@ -89,6 +89,10 @@ func (h *Handler) activeToken(r *http.Request) (questrade.Token, error) {
 }
 
 func (h *Handler) questradePage(w http.ResponseWriter, r *http.Request) {
+	if h.qtTokens == nil {
+		h.render(w, "questrade", qtPageData{Error: "Questrade integration not configured — set TOKEN_ENCRYPTION_KEY to enable."})
+		return
+	}
 	ctx := r.Context()
 	_, err := h.qtTokens.Get(ctx, h.userID)
 	if err != nil && !errors.Is(err, errs.ErrNotFound) {
@@ -110,6 +114,10 @@ func (h *Handler) questradePage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) questradeConnect(w http.ResponseWriter, r *http.Request) {
+	if h.qtTokens == nil {
+		http.Redirect(w, r, "/questrade", http.StatusSeeOther)
+		return
+	}
 	ctx := r.Context()
 	refreshToken := r.FormValue("refresh_token")
 	if refreshToken == "" {
@@ -140,6 +148,10 @@ func (h *Handler) questradeConnect(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) questradeDisconnect(w http.ResponseWriter, r *http.Request) {
+	if h.qtTokens == nil {
+		http.Redirect(w, r, "/questrade", http.StatusSeeOther)
+		return
+	}
 	if err := h.qtTokens.Delete(r.Context(), h.userID); err != nil {
 		h.serverError(w, r, err)
 		return
@@ -148,6 +160,10 @@ func (h *Handler) questradeDisconnect(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
+	if h.qtTokens == nil {
+		http.Redirect(w, r, "/questrade", http.StatusSeeOther)
+		return
+	}
 	ctx := r.Context()
 
 	renderErr := func(msg string) {
@@ -407,6 +423,10 @@ var validQTTypes = map[transaction.Type]bool{
 }
 
 func (h *Handler) questradeCommit(w http.ResponseWriter, r *http.Request) {
+	if h.qtTokens == nil {
+		http.Redirect(w, r, "/questrade", http.StatusSeeOther)
+		return
+	}
 	r.Body = http.MaxBytesReader(w, r.Body, 30<<20)
 	if err := r.ParseForm(); err != nil {
 		h.serverError(w, r, err)
