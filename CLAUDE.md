@@ -75,7 +75,7 @@ make tidy           # go mod tidy
 |------------------------|-------------------------|-------------------------------------------------|
 | `DATABASE_DSN`         | `pacioli.db`            | SQLite file path                                |
 | `ADDR`                 | `:8080`                 | HTTP listen address                             |
-| `TOKEN_ENCRYPTION_KEY` | *(required)*            | 64 hex chars (32 bytes) — AES-256-GCM key for Questrade tokens at rest. Generate: `openssl rand -hex 32` |
+| `TOKEN_ENCRYPTION_KEY` | *(optional)*            | 64 hex chars (32 bytes) — AES-256-GCM key for Questrade tokens at rest. If unset, Questrade integration is disabled. Generate: `openssl rand -hex 32` |
 
 ## Adding a Migration
 
