@@ -1,6 +1,7 @@
 package sqlite
 
 import (
+	"context"
 	"database/sql"
 	"embed"
 	"errors"
@@ -22,6 +23,13 @@ func Open(dsn string) (*sql.DB, error) {
 	}
 
 	db.SetMaxOpenConns(1) // SQLite doesn't support concurrent writes
+
+	if _, err := db.ExecContext(context.Background(), `PRAGMA journal_mode = WAL`); err != nil {
+		return nil, fmt.Errorf("set WAL mode: %w", err)
+	}
+	if _, err := db.ExecContext(context.Background(), `PRAGMA busy_timeout = 5000`); err != nil {
+		return nil, fmt.Errorf("set busy timeout: %w", err)
+	}
 
 	if err := runMigrations(db); err != nil {
 		return nil, fmt.Errorf("run migrations: %w", err)
