@@ -13,7 +13,8 @@ import (
 
 func TestQTokenStore(t *testing.T) {
 	db := newTestDB(t)
-	s := sqlite.NewQTokenStore(db)
+	key := make([]byte, 32) // all-zero key is fine for tests
+	s := sqlite.NewQTokenStore(db, key)
 	ctx := context.Background()
 
 	// ensure user exists

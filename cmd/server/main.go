@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -45,8 +46,17 @@ func run() error {
 	securityStore := sqlite.NewSecurityStore(db)
 	txStore := sqlite.NewTransactionStore(db)
 	auditStore := sqlite.NewAuditStore(db)
+	tokenKeyHex := os.Getenv("TOKEN_ENCRYPTION_KEY")
+	if tokenKeyHex == "" {
+		return fmt.Errorf("TOKEN_ENCRYPTION_KEY env var required (generate: openssl rand -hex 32)")
+	}
+	tokenKey, err := hex.DecodeString(tokenKeyHex)
+	if err != nil || len(tokenKey) != 32 {
+		return fmt.Errorf("TOKEN_ENCRYPTION_KEY must be 64 hex chars (32 bytes)")
+	}
+
 	fxStore := sqlite.NewFXStore(db)
-	qtTokenStore := sqlite.NewQTokenStore(db)
+	qtTokenStore := sqlite.NewQTokenStore(db, tokenKey)
 
 	acbSvc := service.NewACBService(txStore)
 	bocSvc := service.NewBOCFetcher(fxStore)

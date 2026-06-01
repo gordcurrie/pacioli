@@ -12,15 +12,24 @@ import (
 )
 
 type QTokenStore struct {
-	db *sql.DB
+	db  *sql.DB
+	key []byte // 32-byte AES-256 key
 }
 
-func NewQTokenStore(db *sql.DB) *QTokenStore {
-	return &QTokenStore{db: db}
+func NewQTokenStore(db *sql.DB, key []byte) *QTokenStore {
+	return &QTokenStore{db: db, key: key}
 }
 
 func (s *QTokenStore) Save(ctx context.Context, userID int64, t questrade.Token) error {
-	_, err := s.db.ExecContext(ctx,
+	encAccess, err := encrypt(s.key, t.AccessToken.Reveal())
+	if err != nil {
+		return fmt.Errorf("save questrade token: %w", err)
+	}
+	encRefresh, err := encrypt(s.key, t.RefreshToken.Reveal())
+	if err != nil {
+		return fmt.Errorf("save questrade token: %w", err)
+	}
+	_, err = s.db.ExecContext(ctx,
 		`INSERT INTO questrade_tokens (user_id, access_token, refresh_token, api_server, expires_at)
 		 VALUES (?, ?, ?, ?, ?)
 		 ON CONFLICT(user_id) DO UPDATE SET
@@ -29,7 +38,7 @@ func (s *QTokenStore) Save(ctx context.Context, userID int64, t questrade.Token)
 		     api_server    = excluded.api_server,
 		     expires_at    = excluded.expires_at,
 		     updated_at    = CURRENT_TIMESTAMP`,
-		userID, t.AccessToken.Reveal(), t.RefreshToken.Reveal(), t.APIServer,
+		userID, encAccess, encRefresh, t.APIServer,
 		t.ExpiresAt.UTC().Format(time.RFC3339),
 	)
 	if err != nil {
@@ -39,14 +48,12 @@ func (s *QTokenStore) Save(ctx context.Context, userID int64, t questrade.Token)
 }
 
 func (s *QTokenStore) Get(ctx context.Context, userID int64) (questrade.Token, error) {
-	var accessToken, refreshToken, expiresAt string
+	var encAccess, encRefresh, expiresAt string
 	var t questrade.Token
 	err := s.db.QueryRowContext(ctx,
 		`SELECT access_token, refresh_token, api_server, expires_at
 		 FROM questrade_tokens WHERE user_id = ?`, userID,
-	).Scan(&accessToken, &refreshToken, &t.APIServer, &expiresAt)
-	t.AccessToken = questrade.Secret(accessToken)
-	t.RefreshToken = questrade.Secret(refreshToken)
+	).Scan(&encAccess, &encRefresh, &t.APIServer, &expiresAt)
 
 	if errors.Is(err, sql.ErrNoRows) {
 		return questrade.Token{}, errs.ErrNotFound
@@ -54,10 +61,19 @@ func (s *QTokenStore) Get(ctx context.Context, userID int64) (questrade.Token, e
 	if err != nil {
 		return questrade.Token{}, fmt.Errorf("get questrade token: %w", err)
 	}
-	var parseErr error
-	t.ExpiresAt, parseErr = time.Parse(time.RFC3339, expiresAt)
-	if parseErr != nil {
-		return questrade.Token{}, fmt.Errorf("get questrade token: parse expires_at: %w", parseErr)
+	accessToken, err := decrypt(s.key, encAccess)
+	if err != nil {
+		return questrade.Token{}, fmt.Errorf("get questrade token: %w", err)
+	}
+	refreshToken, err := decrypt(s.key, encRefresh)
+	if err != nil {
+		return questrade.Token{}, fmt.Errorf("get questrade token: %w", err)
+	}
+	t.AccessToken = questrade.Secret(accessToken)
+	t.RefreshToken = questrade.Secret(refreshToken)
+	t.ExpiresAt, err = time.Parse(time.RFC3339, expiresAt)
+	if err != nil {
+		return questrade.Token{}, fmt.Errorf("get questrade token: parse expires_at: %w", err)
 	}
 	return t, nil
 }
