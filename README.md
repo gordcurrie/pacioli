@@ -31,7 +31,21 @@ git clone https://github.com/gordcurrie/pacioli
 cd pacioli
 go mod download
 make install-hooks   # installs pre-commit lint/sec/vuln checks
-make dev             # start with hot reload (requires air)
+```
+
+Set up environment variables (uses [direnv](https://direnv.net/)):
+
+```bash
+cp .envrc.example .envrc
+# edit .envrc — fill in TOKEN_ENCRYPTION_KEY:
+openssl rand -hex 32   # paste output into .envrc
+direnv allow
+```
+
+Then start the server:
+
+```bash
+make dev   # hot reload via air
 ```
 
 Server starts at `http://localhost:8080`.

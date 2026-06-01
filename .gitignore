@@ -7,4 +7,5 @@ import/
 *.db-wal
 .env
 .env.local
+.envrc
 dist/
