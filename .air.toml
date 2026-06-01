@@ -8,7 +8,7 @@ tmp_dir = "tmp"
   exclude_dir = ["tmp", "vendor", ".git", "web/static"]
   exclude_regex = ["_test\\.go"]
   include_ext = ["go", "html", "css", "js"]
-  kill_delay = "0s"
+  kill_delay = "500ms"
   rerun = false
   send_interrupt = true
 
