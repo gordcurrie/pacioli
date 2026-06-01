@@ -29,7 +29,7 @@ func (s *QTokenStore) Save(ctx context.Context, userID int64, t questrade.Token)
 		     api_server    = excluded.api_server,
 		     expires_at    = excluded.expires_at,
 		     updated_at    = CURRENT_TIMESTAMP`,
-		userID, t.AccessToken, t.RefreshToken, t.APIServer,
+		userID, t.AccessToken.Reveal(), t.RefreshToken.Reveal(), t.APIServer,
 		t.ExpiresAt.UTC().Format(time.RFC3339),
 	)
 	if err != nil {
@@ -39,12 +39,14 @@ func (s *QTokenStore) Save(ctx context.Context, userID int64, t questrade.Token)
 }
 
 func (s *QTokenStore) Get(ctx context.Context, userID int64) (questrade.Token, error) {
+	var accessToken, refreshToken, expiresAt string
 	var t questrade.Token
-	var expiresAt string
 	err := s.db.QueryRowContext(ctx,
 		`SELECT access_token, refresh_token, api_server, expires_at
 		 FROM questrade_tokens WHERE user_id = ?`, userID,
-	).Scan(&t.AccessToken, &t.RefreshToken, &t.APIServer, &expiresAt)
+	).Scan(&accessToken, &refreshToken, &t.APIServer, &expiresAt)
+	t.AccessToken = questrade.Secret(accessToken)
+	t.RefreshToken = questrade.Secret(refreshToken)
 
 	if errors.Is(err, sql.ErrNoRows) {
 		return questrade.Token{}, errs.ErrNotFound

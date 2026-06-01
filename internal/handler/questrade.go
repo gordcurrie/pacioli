@@ -78,7 +78,7 @@ func (h *Handler) activeToken(r *http.Request) (questrade.Token, error) {
 	if !token.IsExpired() {
 		return token, nil
 	}
-	token, err = questrade.Exchange(ctx, token.RefreshToken)
+	token, err = questrade.Exchange(ctx, token.RefreshToken.Reveal())
 	if err != nil {
 		return questrade.Token{}, err
 	}

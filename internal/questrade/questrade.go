@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -14,10 +15,21 @@ import (
 
 const oauthEndpoint = "https://login.questrade.com/oauth2/token"
 
+// Secret is an opaque string that redacts itself in logs, fmt output, and JSON
+// marshaling. Use Reveal() only at trust boundaries (HTTP headers, SQL params).
+type Secret string
+
+func (s Secret) String() string                 { return "[REDACTED]" }
+func (s Secret) GoString() string               { return "[REDACTED]" }
+func (s Secret) MarshalJSON() ([]byte, error)   { return []byte(`"[REDACTED]"`), nil }
+func (s Secret) MarshalText() ([]byte, error)   { return []byte("[REDACTED]"), nil }
+func (s Secret) LogValue() slog.Value           { return slog.StringValue("[REDACTED]") }
+func (s Secret) Reveal() string                 { return string(s) }
+
 // Token holds Questrade OAuth2 credentials.
 type Token struct {
-	AccessToken  string    `json:"-"` // never serialize; stored via explicit SQL params only
-	RefreshToken string    `json:"-"` // never serialize; rotated on every use
+	AccessToken  Secret    `json:"-"`
+	RefreshToken Secret    `json:"-"`
 	APIServer    string
 	ExpiresAt    time.Time
 }
@@ -69,8 +81,8 @@ func Exchange(ctx context.Context, refreshToken string) (Token, error) {
 		return Token{}, fmt.Errorf("questrade exchange: decode: %w", err)
 	}
 	return Token{
-		AccessToken:  tr.AccessToken,
-		RefreshToken: tr.RefreshToken,
+		AccessToken:  Secret(tr.AccessToken),
+		RefreshToken: Secret(tr.RefreshToken),
 		APIServer:    tr.APIServer,
 		ExpiresAt:    time.Now().Add(time.Duration(tr.ExpiresIn) * time.Second),
 	}, nil
@@ -253,7 +265,7 @@ func (c *Client) get(ctx context.Context, path string, dest any) error {
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.token.AccessToken)
+	req.Header.Set("Authorization", "Bearer "+c.token.AccessToken.Reveal())
 
 	resp, err := c.hc.Do(req) // #nosec G704
 	if err != nil {
