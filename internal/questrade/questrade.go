@@ -1,9 +1,11 @@
 package questrade
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -68,7 +70,8 @@ func Exchange(ctx context.Context, refreshToken string) (Token, error) {
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return Token{}, fmt.Errorf("questrade exchange: unexpected status %d", resp.StatusCode)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		return Token{}, fmt.Errorf("questrade exchange: status %d: %s", resp.StatusCode, bytes.TrimSpace(body))
 	}
 
 	var tr struct {
