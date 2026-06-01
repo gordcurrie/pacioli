@@ -1,7 +1,6 @@
 .PHONY: build run dev test test-verbose lint sec vuln check install-hooks tidy
 
-BINARY     := bin/pacioli
-GOSEC_VER  := v2.27.0
+BINARY := bin/pacioli
 
 build:
 	go build -o $(BINARY) ./cmd/server
@@ -23,7 +22,7 @@ lint:
 	golangci-lint run ./...
 
 sec:
-	go install github.com/securego/gosec/v2/cmd/gosec@$(GOSEC_VER)
+	go install github.com/securego/gosec/v2/cmd/gosec@latest
 	gosec -quiet ./...
 
 vuln:
