@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -46,7 +47,7 @@ func run() error {
 	securityStore := sqlite.NewSecurityStore(db)
 	txStore := sqlite.NewTransactionStore(db)
 	auditStore := sqlite.NewAuditStore(db)
-	tokenKeyHex := os.Getenv("TOKEN_ENCRYPTION_KEY")
+	tokenKeyHex := strings.TrimSpace(os.Getenv("TOKEN_ENCRYPTION_KEY"))
 	if tokenKeyHex == "" {
 		return fmt.Errorf("TOKEN_ENCRYPTION_KEY env var required (generate: openssl rand -hex 32)")
 	}
