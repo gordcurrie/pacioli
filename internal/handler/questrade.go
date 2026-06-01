@@ -334,6 +334,15 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
+		// Only CAD and USD are supported; flag anything else before it reaches commit.
+		if act.Currency != "CAD" && act.Currency != "USD" {
+			totFlag++
+			baseRow.Status = "flag"
+			baseRow.StatusMsg = "unsupported currency (" + act.Currency + ") — only CAD and USD securities can be imported"
+			previewRows = append(previewRows, baseRow)
+			continue
+		}
+
 		// Fetch BoC rate for display and to verify it's available before committing.
 		var fxRateStr string
 		if act.Currency == "USD" {
