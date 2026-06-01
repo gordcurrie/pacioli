@@ -56,7 +56,7 @@ func (h *Handler) importPreview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	r.Body = http.MaxBytesReader(w, r.Body, 10<<20)
-	if err := r.ParseMultipartForm(10 << 20); err != nil { //nolint:gosec // G120: body already bounded by MaxBytesReader above
+	if err := r.ParseMultipartForm(10 << 20); err != nil { // #nosec G120 -- body already bounded by MaxBytesReader above
 		renderUpload("invalid form upload (max 10 MB)")
 		return
 	}
