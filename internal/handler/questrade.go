@@ -53,6 +53,8 @@ type qtPreviewData struct {
 }
 
 // qtCommitRow is the JSON payload passed from preview to commit.
+// CAD amounts and FX rates are NOT included — the commit handler derives them
+// server-side from the security's currency and the BoC cache.
 type qtCommitRow struct {
 	TradeDate   string `json:"td"`
 	SettledDate string `json:"sd"`
@@ -62,9 +64,6 @@ type qtCommitRow struct {
 	Quantity    string `json:"q"`
 	PriceNative string `json:"pn"`
 	CommNative  string `json:"cn"`
-	PriceCAD    string `json:"pc"`
-	CommCAD     string `json:"cc"`
-	FXRate      string `json:"fx"` // empty = CAD, else USD/CAD rate used
 	Notes       string `json:"n"`
 }
 
@@ -290,10 +289,17 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		priceCAD := price
-		commCAD := comm
-		var fxRateStr string
+		// Activity currency must match the security's currency in the DB.
+		if act.Currency != sec.Currency {
+			totFlag++
+			baseRow.Status = "flag"
+			baseRow.StatusMsg = "currency mismatch: activity is " + act.Currency + " but security is " + sec.Currency
+			previewRows = append(previewRows, baseRow)
+			continue
+		}
 
+		// Fetch BoC rate for display and to verify it's available before committing.
+		var fxRateStr string
 		if act.Currency == "USD" {
 			fxRate, err := h.bocSvc.USDCADRate(ctx, act.TradeDate)
 			if err != nil {
@@ -303,8 +309,6 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 				previewRows = append(previewRows, baseRow)
 				continue
 			}
-			priceCAD = price.Mul(fxRate)
-			commCAD = comm.Mul(fxRate)
 			fxRateStr = fxRate.String()
 		}
 
@@ -318,6 +322,8 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 		baseRow.Commission = comm.StringFixed(2)
 		previewRows = append(previewRows, baseRow)
 
+		// CAD amounts are NOT stored in the commit payload — derived server-side
+		// at commit time from the security's currency + BoC cache.
 		commitRows = append(commitRows, qtCommitRow{
 			TradeDate:   act.TradeDate.Format(time.DateOnly),
 			SettledDate: act.SettledDate.Format(time.DateOnly),
@@ -327,9 +333,6 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 			Quantity:    qty.String(),
 			PriceNative: price.String(),
 			CommNative:  comm.String(),
-			PriceCAD:    priceCAD.String(),
-			CommCAD:     commCAD.String(),
-			FXRate:      fxRateStr,
 		})
 	}
 
@@ -407,22 +410,26 @@ func (h *Handler) questradeCommit(w http.ResponseWriter, r *http.Request) {
 	}
 	importID := hex.EncodeToString(b[:])
 
-	type cachedSec struct{ found bool }
+	type cachedSec struct {
+		currency string
+		found    bool
+	}
 	secCache := make(map[int64]cachedSec)
-	lookupSec := func(id int64) (bool, error) {
+	lookupSec := func(id int64) (cachedSec, error) {
 		if s, ok := secCache[id]; ok {
-			return s.found, nil
+			return s, nil
 		}
-		_, err := h.securities.GetByID(ctx, id)
+		sec, err := h.securities.GetByID(ctx, id)
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				secCache[id] = cachedSec{}
-				return false, nil
+				return cachedSec{}, nil
 			}
-			return false, err
+			return cachedSec{}, err
 		}
-		secCache[id] = cachedSec{found: true}
-		return true, nil
+		cs := cachedSec{currency: sec.Currency, found: true}
+		secCache[id] = cs
+		return cs, nil
 	}
 
 	for i := range commitRows {
@@ -439,12 +446,12 @@ func (h *Handler) questradeCommit(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		found, err := lookupSec(cr.SecurityID)
+		sec, err := lookupSec(cr.SecurityID)
 		if err != nil {
 			h.serverError(w, r, err)
 			return
 		}
-		if !found {
+		if !sec.found {
 			loggerFromCtx(ctx).Warn("qt commit: security not found", "security_id", cr.SecurityID)
 			continue
 		}
@@ -474,25 +481,27 @@ func (h *Handler) questradeCommit(w http.ResponseWriter, r *http.Request) {
 			loggerFromCtx(ctx).Error("qt commit: invalid comm native", "val", cr.CommNative)
 			continue
 		}
-		priceCAD, err := decimal.NewFromString(cr.PriceCAD)
-		if err != nil || priceCAD.IsNegative() {
-			loggerFromCtx(ctx).Error("qt commit: invalid price CAD", "val", cr.PriceCAD)
-			continue
-		}
-		commCAD, err := decimal.NewFromString(cr.CommCAD)
-		if err != nil || commCAD.IsNegative() {
-			loggerFromCtx(ctx).Error("qt commit: invalid comm CAD", "val", cr.CommCAD)
-			continue
-		}
 
+		// Derive CAD amounts server-side from the security's authoritative currency.
+		priceCAD := priceNative
+		commCAD := commNative
 		var fxRate *decimal.Decimal
-		if cr.FXRate != "" {
-			r, err := decimal.NewFromString(cr.FXRate)
+
+		switch sec.currency {
+		case "CAD":
+			// no conversion needed
+		case "USD":
+			rate, err := h.bocSvc.USDCADRate(ctx, tradeDate)
 			if err != nil {
-				loggerFromCtx(ctx).Error("qt commit: invalid fx rate", "val", cr.FXRate)
+				loggerFromCtx(ctx).Error("qt commit: BoC rate unavailable", "date", cr.TradeDate, "err", err)
 				continue
 			}
-			fxRate = &r
+			priceCAD = priceNative.Mul(rate)
+			commCAD = commNative.Mul(rate)
+			fxRate = &rate
+		default:
+			loggerFromCtx(ctx).Warn("qt commit: unsupported security currency", "currency", sec.currency, "security_id", cr.SecurityID)
+			continue
 		}
 
 		tx := &transaction.Transaction{

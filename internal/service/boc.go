@@ -18,20 +18,25 @@ const bocURL = "https://www.bankofcanada.ca/valet/observations/FXUSDCAD/json"
 // BOCFetcher fetches USD/CAD noon rates from the Bank of Canada and caches
 // them in the fx_rates table. It is the CRA-accepted authoritative source.
 type BOCFetcher struct {
-	store fx.Store
-	hc    *http.Client
+	store   fx.Store
+	hc      *http.Client
+	BaseURL string // overridable in tests; defaults to bocURL
 }
 
 func NewBOCFetcher(store fx.Store) *BOCFetcher {
 	return &BOCFetcher{
-		store: store,
-		hc:    &http.Client{Timeout: 15 * time.Second},
+		store:   store,
+		hc:      &http.Client{Timeout: 15 * time.Second},
+		BaseURL: bocURL,
 	}
 }
 
 // USDCADRate returns the BoC noon USD/CAD rate for the given date. If the date
 // is a weekend or holiday, the nearest prior business day rate is used.
 func (f *BOCFetcher) USDCADRate(ctx context.Context, date time.Time) (decimal.Decimal, error) {
+	// Normalize to UTC midnight so map keys match fetchBOC's parsed dates.
+	date = time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, time.UTC)
+
 	// Check cache for the date and up to 5 prior business days.
 	for i := 0; i <= 5; i++ {
 		d := date.AddDate(0, 0, -i)
@@ -52,7 +57,9 @@ func (f *BOCFetcher) USDCADRate(ctx context.Context, date time.Time) (decimal.De
 		return decimal.Zero, err
 	}
 	for d, r := range fetched {
-		_ = f.store.StoreRate(ctx, d, "USD", "CAD", r, "boc")
+		if err := f.store.StoreRate(ctx, d, "USD", "CAD", r, "boc"); err != nil {
+			return decimal.Zero, fmt.Errorf("boc: cache rate %s: %w", d.Format(time.DateOnly), err)
+		}
 	}
 
 	// Walk back to find nearest available rate.
@@ -78,9 +85,9 @@ type bocResponse struct {
 
 func (f *BOCFetcher) fetchBOC(ctx context.Context, start, end time.Time) (map[time.Time]decimal.Decimal, error) {
 	rawURL := fmt.Sprintf("%s?start_date=%s&end_date=%s",
-		bocURL, start.Format(time.DateOnly), end.Format(time.DateOnly))
+		f.BaseURL, start.Format(time.DateOnly), end.Format(time.DateOnly))
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, http.NoBody)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, http.NoBody) // #nosec G107 G704
 	if err != nil {
 		return nil, fmt.Errorf("boc fetch: %w", err)
 	}

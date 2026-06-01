@@ -54,7 +54,11 @@ func (s *QTokenStore) Get(ctx context.Context, userID int64) (questrade.Token, e
 	if err != nil {
 		return questrade.Token{}, fmt.Errorf("get questrade token: %w", err)
 	}
-	t.ExpiresAt, _ = time.Parse(time.RFC3339, expiresAt)
+	var parseErr error
+	t.ExpiresAt, parseErr = time.Parse(time.RFC3339, expiresAt)
+	if parseErr != nil {
+		return questrade.Token{}, fmt.Errorf("get questrade token: parse expires_at: %w", parseErr)
+	}
 	return t, nil
 }
 
