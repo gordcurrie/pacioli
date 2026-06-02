@@ -84,6 +84,18 @@ func (h *Handler) activeToken(r *http.Request) (questrade.Token, error) {
 	if !token.IsExpired() {
 		return token, nil
 	}
+	// Refresh tokens are single-use; serialize concurrent refresh attempts so
+	// only one goroutine calls Exchange. Re-check expiry after acquiring the
+	// lock in case another goroutine already refreshed.
+	h.tokenMu.Lock()
+	defer h.tokenMu.Unlock()
+	token, err = h.qtTokens.Get(ctx, h.userID)
+	if err != nil {
+		return questrade.Token{}, err
+	}
+	if !token.IsExpired() {
+		return token, nil
+	}
 	token, err = questrade.Exchange(ctx, token.RefreshToken.Reveal())
 	if err != nil {
 		return questrade.Token{}, err

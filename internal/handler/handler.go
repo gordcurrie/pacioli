@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"sync"
 
 	"github.com/gordcurrie/pacioli/internal/account"
 	"github.com/gordcurrie/pacioli/internal/audit"
@@ -28,6 +29,7 @@ type Handler struct {
 	userID       int64
 	logger       *slog.Logger
 	tmpls        map[string]*template.Template
+	tokenMu      sync.Mutex // guards single-use refresh token exchange
 }
 
 // Config holds all dependencies for the Handler.
