@@ -53,8 +53,11 @@ func run() error {
 	var qtTokenStore questrade.Store
 	if tokenKeyHex := strings.TrimSpace(os.Getenv("TOKEN_ENCRYPTION_KEY")); tokenKeyHex != "" {
 		tokenKey, err := hex.DecodeString(tokenKeyHex)
-		if err != nil || len(tokenKey) != 32 {
-			return fmt.Errorf("TOKEN_ENCRYPTION_KEY must be 64 hex chars (32 bytes)")
+		if err != nil {
+			return fmt.Errorf("TOKEN_ENCRYPTION_KEY: invalid hex: %w", err)
+		}
+		if len(tokenKey) != 32 {
+			return fmt.Errorf("TOKEN_ENCRYPTION_KEY: got %d bytes, need 32 (64 hex chars)", len(tokenKey))
 		}
 		qtTokenStore = sqlite.NewQTokenStore(db, tokenKey)
 	} else {

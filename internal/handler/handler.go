@@ -3,6 +3,7 @@ package handler
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"html/template"
 	"io/fs"
 	"log/slog"
@@ -44,6 +45,9 @@ type Config struct {
 }
 
 func New(cfg *Config) (*Handler, error) {
+	if cfg == nil {
+		return nil, fmt.Errorf("handler: nil config")
+	}
 	h := &Handler{
 		accounts:     cfg.Accounts,
 		securities:   cfg.Securities,

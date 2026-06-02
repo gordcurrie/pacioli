@@ -296,10 +296,12 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 		}
 
 		baseRow := qtPreviewRow{
-			Line:      i + 1,
-			TradeDate: act.TradeDate.Format(time.DateOnly),
-			Symbol:    act.Symbol,
-			Currency:  act.Currency,
+			Line:        i + 1,
+			TradeDate:   act.TradeDate.Format(time.DateOnly),
+			Symbol:      act.Symbol,
+			Currency:    act.Currency,
+			TxType:      string(txType),
+			AccountName: pAccountName,
 		}
 
 		if status == qtFlag {
