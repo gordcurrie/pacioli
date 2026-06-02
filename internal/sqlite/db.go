@@ -16,11 +16,16 @@ import (
 //go:embed migrations/*.sql
 var migrationsFS embed.FS
 
-func Open(dsn string) (*sql.DB, error) {
+func Open(dsn string) (_ *sql.DB, retErr error) {
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}
+	defer func() {
+		if retErr != nil {
+			_ = db.Close()
+		}
+	}()
 
 	db.SetMaxOpenConns(1) // SQLite doesn't support concurrent writes
 
