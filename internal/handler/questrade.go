@@ -19,9 +19,10 @@ import (
 )
 
 type qtPageData struct {
-	Connected bool
-	Accounts  []qtAccountOption
-	Error     string
+	Configured bool
+	Connected  bool
+	Accounts   []qtAccountOption
+	Error      string
 }
 
 type qtAccountOption struct {
@@ -90,7 +91,7 @@ func (h *Handler) activeToken(r *http.Request) (questrade.Token, error) {
 
 func (h *Handler) questradePage(w http.ResponseWriter, r *http.Request) {
 	if h.qtTokens == nil {
-		h.render(w, "questrade", qtPageData{Error: "Questrade integration not configured — set TOKEN_ENCRYPTION_KEY to enable."})
+		h.render(w, "questrade", qtPageData{Configured: false, Error: "Questrade integration not configured — set TOKEN_ENCRYPTION_KEY to enable."})
 		return
 	}
 	ctx := r.Context()
@@ -110,7 +111,7 @@ func (h *Handler) questradePage(w http.ResponseWriter, r *http.Request) {
 	for i, a := range accounts {
 		opts[i] = qtAccountOption{a.ID, a.Name}
 	}
-	h.render(w, "questrade", qtPageData{Connected: connected, Accounts: opts})
+	h.render(w, "questrade", qtPageData{Configured: true, Connected: connected, Accounts: opts})
 }
 
 func (h *Handler) questradeConnect(w http.ResponseWriter, r *http.Request) {

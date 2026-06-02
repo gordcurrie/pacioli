@@ -3,6 +3,8 @@
 
 {{if .Error}}<p class="danger">{{.Error}}</p>{{end}}
 
+{{if .Configured}}
+
 {{if .Connected}}
 
 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem">
@@ -55,6 +57,8 @@
     <button type="submit">Connect</button>
   </form>
 </article>
+
+{{end}}
 
 {{end}}
 {{end}}
