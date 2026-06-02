@@ -1,6 +1,7 @@
 .PHONY: build run dev test test-verbose lint sec vuln check install-hooks tidy
 
-BINARY := bin/pacioli
+BINARY    := bin/pacioli
+GOSEC_BIN := $(or $(shell go env GOBIN),$(shell go env GOPATH)/bin)/gosec
 
 build:
 	go build -o $(BINARY) ./cmd/server
@@ -23,7 +24,7 @@ lint:
 
 sec:
 	go install github.com/securego/gosec/v2/cmd/gosec@latest
-	$$(go env GOPATH)/bin/gosec -quiet ./...
+	$(GOSEC_BIN) -quiet ./...
 
 vuln:
 	govulncheck ./...
