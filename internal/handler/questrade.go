@@ -36,9 +36,9 @@ const (
 )
 
 type qtPreviewRow struct {
-	Line      int
-	Status    string
-	StatusMsg string
+	Line        int
+	Status      string
+	StatusMsg   string
 	TxType      string
 	TradeDate   string
 	Symbol      string
@@ -47,7 +47,9 @@ type qtPreviewRow struct {
 	Price       string
 	Currency    string
 	FXRate      string
+	PriceCAD    string
 	Commission  string
+	CommCAD     string
 }
 
 type qtPreviewData struct {
@@ -396,6 +398,11 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 		baseRow.Price = price.StringFixed(4)
 		baseRow.FXRate = fxRateStr
 		baseRow.Commission = comm.StringFixed(2)
+		if fxRateStr != "" {
+			fxRate, _ := decimal.NewFromString(fxRateStr)
+			baseRow.PriceCAD = price.Mul(fxRate).StringFixed(4)
+			baseRow.CommCAD = comm.Mul(fxRate).StringFixed(2)
+		}
 		previewRows = append(previewRows, baseRow)
 
 		// CAD amounts are NOT stored in the commit payload — derived server-side

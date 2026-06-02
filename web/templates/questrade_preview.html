@@ -37,10 +37,11 @@
       <th>Symbol</th>
       <th>Account</th>
       <th style="text-align:right">Qty</th>
-      <th style="text-align:right">Price</th>
+      <th style="text-align:right">Price (native)</th>
       <th>Cur</th>
       <th style="text-align:right">FX Rate</th>
-      <th style="text-align:right">Commission</th>
+      <th style="text-align:right">Price (CAD)</th>
+      <th style="text-align:right">Commission (CAD)</th>
     </tr>
   </thead>
   <tbody>
@@ -62,7 +63,8 @@
     <td style="text-align:right">{{.Price}}</td>
     <td>{{.Currency}}</td>
     <td style="text-align:right">{{if .FXRate}}{{.FXRate}}{{else}}&mdash;{{end}}</td>
-    <td style="text-align:right">{{.Commission}}</td>
+    <td style="text-align:right">{{if .PriceCAD}}{{.PriceCAD}}{{else}}&mdash;{{end}}</td>
+    <td style="text-align:right">{{if .CommCAD}}{{.CommCAD}}{{else}}&mdash;{{end}}</td>
   </tr>
   {{end}}
   </tbody>
