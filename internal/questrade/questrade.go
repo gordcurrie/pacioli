@@ -277,7 +277,8 @@ func (c *Client) get(ctx context.Context, path string, dest any) error {
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("unexpected status %d", resp.StatusCode)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		return fmt.Errorf("unexpected status %d: %s", resp.StatusCode, bytes.TrimSpace(body))
 	}
 	return json.NewDecoder(resp.Body).Decode(dest)
 }
