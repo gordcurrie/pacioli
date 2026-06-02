@@ -3,13 +3,16 @@ package handler
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"html/template"
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"sync"
 
 	"github.com/gordcurrie/pacioli/internal/account"
 	"github.com/gordcurrie/pacioli/internal/audit"
+	"github.com/gordcurrie/pacioli/internal/questrade"
 	"github.com/gordcurrie/pacioli/internal/security"
 	"github.com/gordcurrie/pacioli/internal/service"
 	"github.com/gordcurrie/pacioli/internal/transaction"
@@ -20,32 +23,70 @@ type Handler struct {
 	securities   security.Store
 	transactions transaction.Store
 	audits       audit.Store
+	qtTokens     questrade.Store
+	bocSvc       *service.BOCFetcher
 	acbSvc       *service.ACBService
 	userID       int64
 	logger       *slog.Logger
 	tmpls        map[string]*template.Template
+	tokenMu      sync.Mutex // guards single-use refresh token exchange
 }
 
-func New(
-	accounts account.Store,
-	securities security.Store,
-	transactions transaction.Store,
-	audits audit.Store,
-	acbSvc *service.ACBService,
-	userID int64,
-	logger *slog.Logger,
-	tmplFS fs.FS,
-) (*Handler, error) {
-	h := &Handler{
-		accounts:     accounts,
-		securities:   securities,
-		transactions: transactions,
-		audits:       audits,
-		acbSvc:       acbSvc,
-		userID:       userID,
-		logger:       logger,
+// Config holds all dependencies for the Handler.
+type Config struct {
+	Accounts     account.Store
+	Securities   security.Store
+	Transactions transaction.Store
+	Audits       audit.Store
+	QTTokens     questrade.Store
+	BOCSvc       *service.BOCFetcher
+	ACBSvc       *service.ACBService
+	UserID       int64
+	Logger       *slog.Logger
+	TemplateFS   fs.FS
+}
+
+func (cfg *Config) validate() error {
+	switch {
+	case cfg.Accounts == nil:
+		return fmt.Errorf("handler: Accounts is required")
+	case cfg.Securities == nil:
+		return fmt.Errorf("handler: Securities is required")
+	case cfg.Transactions == nil:
+		return fmt.Errorf("handler: Transactions is required")
+	case cfg.Audits == nil:
+		return fmt.Errorf("handler: Audits is required")
+	case cfg.ACBSvc == nil:
+		return fmt.Errorf("handler: ACBSvc is required")
+	case cfg.Logger == nil:
+		return fmt.Errorf("handler: Logger is required")
+	case cfg.TemplateFS == nil:
+		return fmt.Errorf("handler: TemplateFS is required")
+	case cfg.QTTokens != nil && cfg.BOCSvc == nil:
+		return fmt.Errorf("handler: BOCSvc is required when QTTokens is configured")
 	}
-	if err := h.parseTemplates(tmplFS); err != nil {
+	return nil
+}
+
+func New(cfg *Config) (*Handler, error) {
+	if cfg == nil {
+		return nil, fmt.Errorf("handler: nil config")
+	}
+	if err := cfg.validate(); err != nil {
+		return nil, err
+	}
+	h := &Handler{
+		accounts:     cfg.Accounts,
+		securities:   cfg.Securities,
+		transactions: cfg.Transactions,
+		audits:       cfg.Audits,
+		qtTokens:     cfg.QTTokens,
+		bocSvc:       cfg.BOCSvc,
+		acbSvc:       cfg.ACBSvc,
+		userID:       cfg.UserID,
+		logger:       cfg.Logger,
+	}
+	if err := h.parseTemplates(cfg.TemplateFS); err != nil {
 		return nil, err
 	}
 	return h, nil
@@ -58,6 +99,7 @@ func (h *Handler) parseTemplates(fsys fs.FS) error {
 		"transactions", "transaction_form",
 		"acb", "acb_list",
 		"import", "import_preview",
+		"questrade", "questrade_preview",
 	}
 	h.tmpls = make(map[string]*template.Template, len(pages))
 	for _, p := range pages {
@@ -96,6 +138,12 @@ func (h *Handler) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /import", h.importPage)
 	mux.HandleFunc("POST /import/preview", h.importPreview)
 	mux.HandleFunc("POST /import/commit", h.importCommit)
+
+	mux.HandleFunc("GET /questrade", h.questradePage)
+	mux.HandleFunc("POST /questrade/connect", h.questradeConnect)
+	mux.HandleFunc("POST /questrade/disconnect", h.questradeDisconnect)
+	mux.HandleFunc("POST /questrade/preview", h.questradePreview)
+	mux.HandleFunc("POST /questrade/commit", h.questradeCommit)
 }
 
 func (h *Handler) render(w http.ResponseWriter, page string, data any) {

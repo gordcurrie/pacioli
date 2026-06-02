@@ -1,0 +1,4 @@
+export DATABASE_DSN=pacioli.db
+export ADDR=:8080
+# Generate with: openssl rand -hex 32
+export TOKEN_ENCRYPTION_KEY=

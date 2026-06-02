@@ -2,16 +2,19 @@ package main
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/gordcurrie/pacioli/internal/handler"
+	"github.com/gordcurrie/pacioli/internal/questrade"
 	"github.com/gordcurrie/pacioli/internal/service"
 	"github.com/gordcurrie/pacioli/internal/sqlite"
 	"github.com/gordcurrie/pacioli/web"
@@ -45,10 +48,37 @@ func run() error {
 	securityStore := sqlite.NewSecurityStore(db)
 	txStore := sqlite.NewTransactionStore(db)
 	auditStore := sqlite.NewAuditStore(db)
+	fxStore := sqlite.NewFXStore(db)
+
+	var qtTokenStore questrade.Store
+	if tokenKeyHex := strings.TrimSpace(os.Getenv("TOKEN_ENCRYPTION_KEY")); tokenKeyHex != "" {
+		tokenKey, err := hex.DecodeString(tokenKeyHex)
+		if err != nil {
+			return fmt.Errorf("TOKEN_ENCRYPTION_KEY: invalid hex: %w", err)
+		}
+		if len(tokenKey) != 32 {
+			return fmt.Errorf("TOKEN_ENCRYPTION_KEY: got %d bytes, need 32 (64 hex chars)", len(tokenKey))
+		}
+		qtTokenStore = sqlite.NewQTokenStore(db, tokenKey)
+	} else {
+		logger.Warn("TOKEN_ENCRYPTION_KEY not set — Questrade integration disabled")
+	}
 
 	acbSvc := service.NewACBService(txStore)
+	bocSvc := service.NewBOCFetcher(fxStore)
 
-	h, err := handler.New(accountStore, securityStore, txStore, auditStore, acbSvc, userID, logger, web.Templates)
+	h, err := handler.New(&handler.Config{
+		Accounts:     accountStore,
+		Securities:   securityStore,
+		Transactions: txStore,
+		Audits:       auditStore,
+		QTTokens:     qtTokenStore,
+		BOCSvc:       bocSvc,
+		ACBSvc:       acbSvc,
+		UserID:       userID,
+		Logger:       logger,
+		TemplateFS:   web.Templates,
+	})
 	if err != nil {
 		return fmt.Errorf("init handlers: %w", err)
 	}

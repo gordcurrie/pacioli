@@ -31,7 +31,21 @@ git clone https://github.com/gordcurrie/pacioli
 cd pacioli
 go mod download
 make install-hooks   # installs pre-commit lint/sec/vuln checks
-make dev             # start with hot reload (requires air)
+```
+
+Set up environment variables (uses [direnv](https://direnv.net/)):
+
+```bash
+cp .envrc.example .envrc
+# TOKEN_ENCRYPTION_KEY is optional — only needed to enable Questrade import.
+# To generate one: openssl rand -hex 32
+direnv allow
+```
+
+Then start the server:
+
+```bash
+make dev   # hot reload via air
 ```
 
 Server starts at `http://localhost:8080`.
