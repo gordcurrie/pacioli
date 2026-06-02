@@ -122,7 +122,7 @@ func (h *Handler) questradeConnect(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	refreshToken := r.FormValue("refresh_token")
 	if refreshToken == "" {
-		h.render(w, "questrade", qtPageData{Error: "refresh token required"})
+		h.render(w, "questrade", qtPageData{Configured: true, Error: "refresh token required"})
 		return
 	}
 
@@ -138,7 +138,7 @@ func (h *Handler) questradeConnect(w http.ResponseWriter, r *http.Request) {
 		for i, a := range accounts {
 			opts[i] = qtAccountOption{a.ID, a.Name}
 		}
-		h.render(w, "questrade", qtPageData{Accounts: opts, Error: "connection failed: " + err.Error()})
+		h.render(w, "questrade", qtPageData{Configured: true, Accounts: opts, Error: "connection failed: " + err.Error()})
 		return
 	}
 	if err := h.qtTokens.Save(ctx, h.userID, token); err != nil {
@@ -177,7 +177,7 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 		for i, a := range accounts {
 			opts[i] = qtAccountOption{a.ID, a.Name}
 		}
-		h.render(w, "questrade", qtPageData{Connected: true, Accounts: opts, Error: msg})
+		h.render(w, "questrade", qtPageData{Configured: true, Connected: true, Accounts: opts, Error: msg})
 	}
 
 	token, err := h.activeToken(r)
