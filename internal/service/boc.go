@@ -45,7 +45,7 @@ func (f *BOCFetcher) USDCADRate(ctx context.Context, date time.Time) (decimal.De
 			return rate, nil
 		}
 		if !errors.Is(err, errs.ErrNotFound) {
-			return decimal.Zero, err
+			return decimal.Zero, fmt.Errorf("boc: cache lookup %s: %w", d.Format(time.DateOnly), err)
 		}
 	}
 

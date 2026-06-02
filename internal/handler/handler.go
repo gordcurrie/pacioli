@@ -29,30 +29,33 @@ type Handler struct {
 	tmpls        map[string]*template.Template
 }
 
-func New(
-	accounts account.Store,
-	securities security.Store,
-	transactions transaction.Store,
-	audits audit.Store,
-	qtTokens questrade.Store,
-	bocSvc *service.BOCFetcher,
-	acbSvc *service.ACBService,
-	userID int64,
-	logger *slog.Logger,
-	tmplFS fs.FS,
-) (*Handler, error) {
+// Config holds all dependencies for the Handler.
+type Config struct {
+	Accounts     account.Store
+	Securities   security.Store
+	Transactions transaction.Store
+	Audits       audit.Store
+	QTTokens     questrade.Store
+	BOCSvc       *service.BOCFetcher
+	ACBSvc       *service.ACBService
+	UserID       int64
+	Logger       *slog.Logger
+	TemplateFS   fs.FS
+}
+
+func New(cfg *Config) (*Handler, error) {
 	h := &Handler{
-		accounts:     accounts,
-		securities:   securities,
-		transactions: transactions,
-		audits:       audits,
-		qtTokens:     qtTokens,
-		bocSvc:       bocSvc,
-		acbSvc:       acbSvc,
-		userID:       userID,
-		logger:       logger,
+		accounts:     cfg.Accounts,
+		securities:   cfg.Securities,
+		transactions: cfg.Transactions,
+		audits:       cfg.Audits,
+		qtTokens:     cfg.QTTokens,
+		bocSvc:       cfg.BOCSvc,
+		acbSvc:       cfg.ACBSvc,
+		userID:       cfg.UserID,
+		logger:       cfg.Logger,
 	}
-	if err := h.parseTemplates(tmplFS); err != nil {
+	if err := h.parseTemplates(cfg.TemplateFS); err != nil {
 		return nil, err
 	}
 	return h, nil

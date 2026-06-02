@@ -37,8 +37,8 @@ Set up environment variables (uses [direnv](https://direnv.net/)):
 
 ```bash
 cp .envrc.example .envrc
-# edit .envrc — fill in TOKEN_ENCRYPTION_KEY:
-openssl rand -hex 32   # paste output into .envrc
+# TOKEN_ENCRYPTION_KEY is optional — only needed to enable Questrade import.
+# To generate one: openssl rand -hex 32
 direnv allow
 ```
 

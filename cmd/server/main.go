@@ -64,7 +64,18 @@ func run() error {
 	acbSvc := service.NewACBService(txStore)
 	bocSvc := service.NewBOCFetcher(fxStore)
 
-	h, err := handler.New(accountStore, securityStore, txStore, auditStore, qtTokenStore, bocSvc, acbSvc, userID, logger, web.Templates)
+	h, err := handler.New(&handler.Config{
+		Accounts:     accountStore,
+		Securities:   securityStore,
+		Transactions: txStore,
+		Audits:       auditStore,
+		QTTokens:     qtTokenStore,
+		BOCSvc:       bocSvc,
+		ACBSvc:       acbSvc,
+		UserID:       userID,
+		Logger:       logger,
+		TemplateFS:   web.Templates,
+	})
 	if err != nil {
 		return fmt.Errorf("init handlers: %w", err)
 	}

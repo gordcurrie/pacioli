@@ -30,10 +30,15 @@ type qtAccountOption struct {
 	Name string
 }
 
+const (
+	qtStatusOK   = "ok"
+	qtStatusFlag = "flag"
+)
+
 type qtPreviewRow struct {
-	Line        int
-	Status      string // "ok" | "flag"
-	StatusMsg   string
+	Line      int
+	Status    string
+	StatusMsg string
 	TxType      string
 	TradeDate   string
 	Symbol      string
@@ -299,7 +304,7 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 
 		if status == qtFlag {
 			totFlag++
-			baseRow.Status = "flag"
+			baseRow.Status = qtStatusFlag
 			baseRow.StatusMsg = msg
 			previewRows = append(previewRows, baseRow)
 			continue
@@ -317,7 +322,7 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 
 		if !qty.IsPositive() {
 			totFlag++
-			baseRow.Status = "flag"
+			baseRow.Status = qtStatusFlag
 			baseRow.StatusMsg = "zero quantity — record manually"
 			previewRows = append(previewRows, baseRow)
 			continue
@@ -326,7 +331,7 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 		sec, secOK := secByTicker[act.Symbol]
 		if !secOK {
 			totFlag++
-			baseRow.Status = "flag"
+			baseRow.Status = qtStatusFlag
 			if tickerCount[act.Symbol] > 1 {
 				baseRow.StatusMsg = "ambiguous ticker — multiple securities share: " + act.Symbol
 			} else {
@@ -339,7 +344,7 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 		// Activity currency must match the security's currency in the DB.
 		if act.Currency != sec.Currency {
 			totFlag++
-			baseRow.Status = "flag"
+			baseRow.Status = qtStatusFlag
 			baseRow.StatusMsg = "currency mismatch: activity is " + act.Currency + " but security is " + sec.Currency
 			previewRows = append(previewRows, baseRow)
 			continue
@@ -348,7 +353,7 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 		// Only CAD and USD are supported; flag anything else before it reaches commit.
 		if act.Currency != "CAD" && act.Currency != "USD" {
 			totFlag++
-			baseRow.Status = "flag"
+			baseRow.Status = qtStatusFlag
 			baseRow.StatusMsg = "unsupported currency (" + act.Currency + ") — only CAD and USD securities can be imported"
 			previewRows = append(previewRows, baseRow)
 			continue
@@ -360,7 +365,7 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 			fxRate, err := h.bocSvc.USDCADRate(ctx, act.TradeDate)
 			if err != nil {
 				totFlag++
-				baseRow.Status = "flag"
+				baseRow.Status = qtStatusFlag
 				baseRow.StatusMsg = "BoC USD/CAD rate unavailable for " + act.TradeDate.Format(time.DateOnly) + ": " + err.Error()
 				previewRows = append(previewRows, baseRow)
 				continue
@@ -369,7 +374,7 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 		}
 
 		totOK++
-		baseRow.Status = "ok"
+		baseRow.Status = qtStatusOK
 		baseRow.TxType = string(txType)
 		baseRow.AccountName = pAccountName
 		baseRow.Quantity = qty.String()
