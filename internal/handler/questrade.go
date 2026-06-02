@@ -120,6 +120,11 @@ func (h *Handler) questradeConnect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	if err := r.ParseForm(); err != nil {
+		h.serverError(w, r, err)
+		return
+	}
 	refreshToken := r.FormValue("refresh_token")
 	if refreshToken == "" {
 		h.render(w, "questrade", qtPageData{Configured: true, Error: "refresh token required"})
@@ -166,6 +171,11 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	if err := r.ParseForm(); err != nil {
+		h.serverError(w, r, err)
+		return
+	}
 
 	renderErr := func(msg string) {
 		accounts, err := h.accounts.ListByUser(ctx, h.userID)
