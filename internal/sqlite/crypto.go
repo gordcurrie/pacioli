@@ -11,6 +11,9 @@ import (
 
 // encrypt encrypts plaintext with AES-256-GCM using key. Returns base64(nonce||ciphertext).
 func encrypt(key []byte, plaintext string) (string, error) {
+	if len(key) != 32 {
+		return "", fmt.Errorf("encrypt: key must be 32 bytes for AES-256")
+	}
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return "", fmt.Errorf("encrypt: %w", err)
@@ -29,6 +32,9 @@ func encrypt(key []byte, plaintext string) (string, error) {
 
 // decrypt decrypts a value produced by encrypt.
 func decrypt(key []byte, encoded string) (string, error) {
+	if len(key) != 32 {
+		return "", fmt.Errorf("decrypt: key must be 32 bytes for AES-256")
+	}
 	data, err := base64.StdEncoding.DecodeString(encoded)
 	if err != nil {
 		return "", fmt.Errorf("decrypt: decode: %w", err)

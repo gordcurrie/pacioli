@@ -37,7 +37,7 @@ func (f *BOCFetcher) USDCADRate(ctx context.Context, date time.Time) (decimal.De
 	// Normalize to UTC midnight so map keys match fetchBOC's parsed dates.
 	date = time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, time.UTC)
 
-	// Check cache for the date and up to 5 prior business days.
+	// Check cache for the date and up to 5 prior calendar days.
 	for i := 0; i <= 5; i++ {
 		d := date.AddDate(0, 0, -i)
 		rate, err := f.store.GetRate(ctx, d, "USD", "CAD")
