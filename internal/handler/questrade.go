@@ -160,7 +160,7 @@ func (h *Handler) questradeConnect(w http.ResponseWriter, r *http.Request) {
 		for i, a := range accounts {
 			opts[i] = qtAccountOption{a.ID, a.Name}
 		}
-		h.render(w, "questrade", qtPageData{Configured: true, Accounts: opts, Error: "connection failed: " + err.Error()})
+		h.render(w, "questrade", qtPageData{Configured: true, Accounts: opts, Error: "connection failed — check the token and try again"})
 		return
 	}
 	if err := h.qtTokens.Save(ctx, h.userID, token); err != nil {
@@ -270,7 +270,8 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 	// end + 1 day gives an exclusive upper bound covering the entire end date in any timezone.
 	activities, err := client.Activities(ctx, qtAccountNo, start, end.AddDate(0, 0, 1))
 	if err != nil {
-		renderErr("failed to fetch activities: " + err.Error())
+		loggerFromCtx(ctx).Error("questrade fetch activities", "err", err)
+		renderErr("failed to fetch activities — check account number and date range")
 		return
 	}
 
