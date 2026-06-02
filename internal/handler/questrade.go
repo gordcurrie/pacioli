@@ -214,7 +214,7 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if end.Before(start) {
-		renderErr("end date must be after start date")
+		renderErr("end date must be on or after start date")
 		return
 	}
 
