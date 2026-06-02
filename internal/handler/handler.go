@@ -44,9 +44,34 @@ type Config struct {
 	TemplateFS   fs.FS
 }
 
+func (cfg *Config) validate() error {
+	switch {
+	case cfg.Accounts == nil:
+		return fmt.Errorf("handler: Accounts is required")
+	case cfg.Securities == nil:
+		return fmt.Errorf("handler: Securities is required")
+	case cfg.Transactions == nil:
+		return fmt.Errorf("handler: Transactions is required")
+	case cfg.Audits == nil:
+		return fmt.Errorf("handler: Audits is required")
+	case cfg.ACBSvc == nil:
+		return fmt.Errorf("handler: ACBSvc is required")
+	case cfg.Logger == nil:
+		return fmt.Errorf("handler: Logger is required")
+	case cfg.TemplateFS == nil:
+		return fmt.Errorf("handler: TemplateFS is required")
+	case cfg.QTTokens != nil && cfg.BOCSvc == nil:
+		return fmt.Errorf("handler: BOCSvc is required when QTTokens is configured")
+	}
+	return nil
+}
+
 func New(cfg *Config) (*Handler, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("handler: nil config")
+	}
+	if err := cfg.validate(); err != nil {
+		return nil, err
 	}
 	h := &Handler{
 		accounts:     cfg.Accounts,
