@@ -1,6 +1,6 @@
 module github.com/gordcurrie/pacioli
 
-go 1.26
+go 1.26.4
 
 require (
 	github.com/golang-migrate/migrate/v4 v4.18.1
