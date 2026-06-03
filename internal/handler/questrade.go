@@ -349,7 +349,7 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 			totFlag++
 			baseRow.Status = qtStatusFlag
 			baseRow.StatusMsg = msg
-			if act.Action == "FXT" && !act.NetAmount.IsZero() {
+			if strings.TrimSpace(act.Action) == "FXT" && !act.NetAmount.IsZero() {
 				baseRow.StatusMsg += fmt.Sprintf(" — net: %s %s", act.NetAmount.StringFixed(2), act.Currency)
 				if act.Type != "" {
 					baseRow.StatusMsg += " (" + act.Type + ")"
@@ -737,9 +737,9 @@ func (h *Handler) questradeSync(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, r, err)
 		return
 	}
-	secByTicker := make(map[string]*security.Security, len(existingSecs))
+	secByTickerExchange := make(map[string]*security.Security, len(existingSecs))
 	for _, s := range existingSecs {
-		secByTicker[s.Ticker] = s
+		secByTickerExchange[s.Ticker+"|"+s.Exchange] = s
 	}
 
 	for _, qa := range qtAccounts {
@@ -750,9 +750,6 @@ func (h *Handler) questradeSync(w http.ResponseWriter, r *http.Request) {
 		}
 		for _, p := range positions {
 			ticker := p.Symbol
-			if _, ok := secByTicker[ticker]; ok {
-				continue
-			}
 			currency := p.Currency
 			if !validCurrencies[currency] {
 				currency = "CAD"
@@ -764,6 +761,8 @@ func (h *Handler) questradeSync(w http.ResponseWriter, r *http.Request) {
 				Currency: currency,
 				Source:   string(audit.SourceQuestrade),
 			}
+			// Symbol search fills exchange/name/type/currency — must run before
+			// the existence check so we key on the correct (ticker, exchange) pair.
 			results, err := client.SymbolSearch(ctx, ticker)
 			if err == nil && len(results) > 0 {
 				sr := results[0]
@@ -774,12 +773,15 @@ func (h *Handler) questradeSync(w http.ResponseWriter, r *http.Request) {
 					sec.Currency = sr.Currency
 				}
 			}
+			if _, ok := secByTickerExchange[ticker+"|"+sec.Exchange]; ok {
+				continue
+			}
 			if err := h.securities.Create(ctx, sec); err != nil {
 				log.Error("questrade sync: create security", "ticker", ticker, "err", err)
 				continue
 			}
 			h.logAudit(r, audit.ActionCreate, audit.EntitySecurity, sec.ID, audit.SourceQuestrade, "")
-			secByTicker[ticker] = sec
+			secByTickerExchange[ticker+"|"+sec.Exchange] = sec
 			newSecurities++
 		}
 	}

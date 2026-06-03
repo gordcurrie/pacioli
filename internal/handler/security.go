@@ -204,7 +204,7 @@ func (h *Handler) searchSecurities(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := searchResultTmpl.Execute(w, results); err != nil {
-		h.logger.Error("render security search results", "err", err)
+		loggerFromCtx(r.Context()).Error("render security search results", "err", err)
 	}
 }
 
