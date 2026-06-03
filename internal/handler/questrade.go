@@ -741,6 +741,7 @@ func (h *Handler) questradeSync(w http.ResponseWriter, r *http.Request) {
 	for _, s := range existingSecs {
 		secByTickerExchange[s.Ticker+"|"+s.Exchange] = s
 	}
+	symbolCache := make(map[string][]questrade.SymbolInfo)
 
 	for _, qa := range qtAccounts {
 		positions, err := client.Positions(ctx, qa.Number)
@@ -763,8 +764,16 @@ func (h *Handler) questradeSync(w http.ResponseWriter, r *http.Request) {
 			}
 			// Symbol search fills exchange/name/type/currency — must run before
 			// the existence check so we key on the correct (ticker, exchange) pair.
-			results, err := client.SymbolSearch(ctx, ticker)
-			if err == nil && len(results) > 0 {
+			// Results are cached per ticker to avoid repeated API calls across accounts.
+			if _, cached := symbolCache[ticker]; !cached {
+				results, err := client.SymbolSearch(ctx, ticker)
+				if err == nil {
+					symbolCache[ticker] = results
+				} else {
+					symbolCache[ticker] = nil
+				}
+			}
+			if results := symbolCache[ticker]; len(results) > 0 {
 				sr := results[0]
 				sec.Exchange = sr.Exchange
 				sec.Name = sr.Description

@@ -253,7 +253,7 @@ var fxEditTmpl = template.Must(template.New("fxedit").Parse(
 		`hx-get="/transactions/{{.ID}}/fx/cell" ` +
 		`hx-target="#fx-cell-{{.ID}}" ` +
 		`hx-swap="innerHTML" ` +
-		`class="outline secondary" style="padding:0.1rem 0.4rem;font-size:0.75rem;margin:0">✕</button>` +
+		`class="outline secondary" style="padding:0.1rem 0.4rem;font-size:0.75rem;margin:0" aria-label="Cancel edit" title="Cancel">✕</button>` +
 		`</form>`,
 ))
 
@@ -330,7 +330,7 @@ func (h *Handler) updateTransactionFX(w http.ResponseWriter, r *http.Request) {
 
 	fxRate, err := decimal.NewFromString(r.FormValue("fx_rate"))
 	if err != nil || !fxRate.IsPositive() {
-		http.Error(w, "fx rate must be greater than zero", http.StatusBadRequest)
+		http.Error(w, "FX rate must be greater than zero", http.StatusBadRequest)
 		return
 	}
 
