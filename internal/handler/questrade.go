@@ -764,6 +764,9 @@ func (h *Handler) questradeSync(w http.ResponseWriter, r *http.Request) {
 				sec.Exchange = sr.Exchange
 				sec.Name = sr.Description
 				sec.Type = mapQTSecurityType(sr.SecurityType)
+				if validCurrencies[sr.Currency] {
+					sec.Currency = sr.Currency
+				}
 			}
 			if err := h.securities.Create(ctx, sec); err != nil {
 				log.Error("questrade sync: create security", "ticker", ticker, "err", err)
