@@ -2,6 +2,7 @@
 <h2>Questrade Integration</h2>
 
 {{if .Error}}<p class="danger">{{.Error}}</p>{{end}}
+{{if .SyncResult}}<p style="color:var(--pico-color-green-550)">{{.SyncResult}}</p>{{end}}
 
 {{if .Configured}}
 
@@ -15,11 +16,29 @@
 </div>
 
 <article>
+  <h3>Sync Accounts &amp; Securities</h3>
+  <p>Fetch all Questrade accounts and positions to create any missing accounts and securities in Pacioli.</p>
+  <form method="post" action="/questrade/sync">
+    <button type="submit">Sync Now</button>
+  </form>
+</article>
+
+<article>
   <h3>Import Activities</h3>
   <form method="post" action="/questrade/preview">
     <div class="grid">
-      <label>Questrade Account Number
+      <label>Questrade Account
+        {{if .QTAccounts}}
+        <select name="qt_account" required>
+          <option value="">— select account —</option>
+          {{range .QTAccounts}}
+          <option value="{{.Number}}">{{.Name}}</option>
+          {{end}}
+        </select>
+        {{else}}
         <input type="text" name="qt_account" placeholder="e.g. 12345678" required>
+        <small>Run <strong>Sync</strong> above to populate this list automatically.</small>
+        {{end}}
       </label>
       <label>Import Into
         <select name="pacioli_account" required>

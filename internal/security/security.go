@@ -27,4 +27,6 @@ type Store interface {
 	GetByTickerExchange(ctx context.Context, ticker, exchange string) (*Security, error)
 	Search(ctx context.Context, query string) ([]*Security, error)
 	ListAll(ctx context.Context) ([]*Security, error)
+	Update(ctx context.Context, s *Security) error
+	Delete(ctx context.Context, id int64) error
 }

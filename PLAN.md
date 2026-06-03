@@ -73,14 +73,23 @@
 
 ---
 
-## Phase 4 — Questrade Integration ⬜
+## Phase 4 — Questrade Integration ✅
 
-- ⬜ Bank of Canada FX rate client (daily noon rates, cached in `fx_rates` table)
-- ⬜ Questrade OAuth2 flow
-- ⬜ Account + position sync
-- ⬜ Transaction sync (activities endpoint)
+- ✅ Bank of Canada FX rate client (daily noon rates, cached in `fx_rates` table)
+- ✅ Questrade OAuth2 flow (connect/disconnect, AES-256-GCM token encryption at rest)
+- ✅ Account + activity sync (activities endpoint with 30-day chunking)
+- ✅ Transaction sync — buy/sell/dividend/REI imported; FXT flagged for Norbert's Gambit review
 - ⬜ Norbert's Gambit detection heuristic (auto-link paired DLR.TO / DLR.U.TO legs)
 - ⬜ Manual FX rate override for historical entries
+
+---
+
+## Phase 4.1 — Data Management ✅
+
+- ✅ Security edit + delete (currently create-only)
+- ✅ Transaction FX rate edit — inline HTMX override of BoC rate on existing transactions; recalculates priceCAD/commCAD
+- ✅ Questrade "Sync accounts & securities" — POST `/questrade/sync`; fetches positions across all accounts, creates missing accounts (number/type/broker) and securities (ticker/currency); uses Questrade symbol search API to fill name/exchange/type
+- ✅ Security form symbol lookup — type a ticker, Questrade symbol search pre-fills exchange/name/type/currency via HTMX OOB swaps
 
 ---
 
