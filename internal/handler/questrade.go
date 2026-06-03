@@ -9,25 +9,36 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
+	"github.com/gordcurrie/pacioli/internal/account"
 	"github.com/gordcurrie/pacioli/internal/audit"
 	"github.com/gordcurrie/pacioli/internal/errs"
 	"github.com/gordcurrie/pacioli/internal/questrade"
+	"github.com/gordcurrie/pacioli/internal/security"
 	"github.com/gordcurrie/pacioli/internal/transaction"
 	"github.com/shopspring/decimal"
 )
 
 type qtPageData struct {
-	Configured bool
-	Connected  bool
-	Accounts   []qtAccountOption
-	Error      string
+	Configured    bool
+	Connected     bool
+	Accounts      []qtAccountOption  // Pacioli accounts for "import into" select
+	QTAccounts    []qtSourceAccount  // Questrade source accounts for "import from" select
+	SyncResult    string
+	Error         string
 }
 
 type qtAccountOption struct {
 	ID   int64
 	Name string
+}
+
+// qtSourceAccount is a Questrade account known to Pacioli (synced or manually created).
+type qtSourceAccount struct {
+	Number string
+	Name   string
 }
 
 const (
@@ -127,10 +138,25 @@ func (h *Handler) questradePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	opts := make([]qtAccountOption, len(accounts))
+	var qtAccounts []qtSourceAccount
 	for i, a := range accounts {
 		opts[i] = qtAccountOption{a.ID, a.Name}
+		if a.Broker == "Questrade" && a.AccountNumber != "" {
+			qtAccounts = append(qtAccounts, qtSourceAccount{Number: a.AccountNumber, Name: a.Name})
+		}
 	}
-	h.render(w, "questrade", qtPageData{Configured: true, Connected: connected, Accounts: opts})
+
+	var syncResult string
+	if sa := r.URL.Query().Get("sync_accounts"); sa != "" {
+		ss := r.URL.Query().Get("sync_securities")
+		syncResult = fmt.Sprintf("Sync complete — %s new account(s), %s new security(s) created.", sa, ss)
+	}
+
+	h.render(w, "questrade", qtPageData{
+		Configured: true, Connected: connected,
+		Accounts: opts, QTAccounts: qtAccounts,
+		SyncResult: syncResult,
+	})
 }
 
 func (h *Handler) questradeConnect(w http.ResponseWriter, r *http.Request) {
@@ -632,4 +658,154 @@ func (h *Handler) questradeCommit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.Redirect(w, r, "/transactions", http.StatusSeeOther)
+}
+
+// questradeSync fetches all Questrade accounts and their positions, creating any
+// missing Pacioli accounts and securities.
+func (h *Handler) questradeSync(w http.ResponseWriter, r *http.Request) {
+	if h.qtTokens == nil {
+		http.Redirect(w, r, "/questrade", http.StatusSeeOther)
+		return
+	}
+	ctx := r.Context()
+	log := loggerFromCtx(ctx)
+
+	token, err := h.activeToken(r)
+	if err != nil {
+		if errors.Is(err, errs.ErrNotFound) {
+			http.Redirect(w, r, "/questrade", http.StatusSeeOther)
+			return
+		}
+		h.serverError(w, r, err)
+		return
+	}
+
+	client := questrade.New(token)
+
+	qtAccounts, err := client.Accounts(ctx)
+	if err != nil {
+		log.Error("questrade sync: fetch accounts", "err", err)
+		h.serverError(w, r, err)
+		return
+	}
+
+	existing, err := h.accounts.ListByUser(ctx, h.userID)
+	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
+	byNumber := make(map[string]*account.Account, len(existing))
+	for _, a := range existing {
+		if a.AccountNumber != "" {
+			byNumber[a.AccountNumber] = a
+		}
+	}
+
+	var newAccounts, newSecurities int
+
+	for _, qa := range qtAccounts {
+		if _, ok := byNumber[qa.Number]; ok {
+			continue
+		}
+		acType := mapQTAccountType(qa.Type)
+		a := &account.Account{
+			UserID:        h.userID,
+			Name:          qa.Type + " " + qa.Number,
+			Type:          acType,
+			Broker:        "Questrade",
+			Currency:      "CAD",
+			AccountNumber: qa.Number,
+			Source:        string(audit.SourceQuestrade),
+		}
+		if err := h.accounts.Create(ctx, a); err != nil {
+			log.Error("questrade sync: create account", "number", qa.Number, "err", err)
+			continue
+		}
+		h.logAudit(r, audit.ActionCreate, audit.EntityAccount, a.ID, audit.SourceQuestrade, "")
+		byNumber[qa.Number] = a
+		newAccounts++
+	}
+
+	existingSecs, err := h.securities.ListAll(ctx)
+	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
+	secByTicker := make(map[string]*security.Security, len(existingSecs))
+	for _, s := range existingSecs {
+		secByTicker[s.Ticker] = s
+	}
+
+	for _, qa := range qtAccounts {
+		positions, err := client.Positions(ctx, qa.Number)
+		if err != nil {
+			log.Error("questrade sync: fetch positions", "account", qa.Number, "err", err)
+			continue
+		}
+		for _, p := range positions {
+			ticker := stripExchangeSuffix(p.Symbol)
+			if _, ok := secByTicker[ticker]; ok {
+				continue
+			}
+			currency := p.Currency
+			if !validCurrencies[currency] {
+				currency = "CAD"
+			}
+			sec := &security.Security{
+				Ticker:   ticker,
+				Name:     ticker,
+				Type:     security.TypeEquity,
+				Currency: currency,
+				Source:   string(audit.SourceQuestrade),
+			}
+			results, err := client.SymbolSearch(ctx, ticker)
+			if err == nil && len(results) > 0 {
+				sr := results[0]
+				sec.Exchange = sr.Exchange
+				sec.Name = sr.Description
+				sec.Type = mapQTSecurityType(sr.SecurityType)
+			}
+			if err := h.securities.Create(ctx, sec); err != nil {
+				log.Error("questrade sync: create security", "ticker", ticker, "err", err)
+				continue
+			}
+			h.logAudit(r, audit.ActionCreate, audit.EntitySecurity, sec.ID, audit.SourceQuestrade, "")
+			secByTicker[ticker] = sec
+			newSecurities++
+		}
+	}
+
+	http.Redirect(w, r,
+		fmt.Sprintf("/questrade?sync_accounts=%d&sync_securities=%d", newAccounts, newSecurities),
+		http.StatusSeeOther)
+}
+
+func mapQTAccountType(qt string) account.Type {
+	switch strings.ToUpper(qt) {
+	case "TFSA":
+		return account.TypeTFSA
+	case "RRSP", "SRRSP": // spousal RRSP
+		return account.TypeRRSP
+	case "LRRSP", "LRSP": // locked-in RRSP / LRSP
+		return account.TypeLRSP
+	case "RESP", "FRESP": // individual / family RESP
+		return account.TypeRESP
+	case "SRSP":
+		return account.TypeSRSP
+	case "MARGIN":
+		return account.TypeMargin
+	default:
+		return account.TypeCash
+	}
+}
+
+// stripExchangeSuffix removes exchange suffixes like .TO, .U.TO, .V from a Questrade symbol.
+func stripExchangeSuffix(symbol string) string {
+	// Handle multi-part suffixes like DLR.U.TO first
+	for _, suffix := range []string{".U.TO", ".U.V", ".TO", ".V", ".NE", ".CN"} {
+		if strings.HasSuffix(symbol, suffix) {
+			return strings.TrimSuffix(symbol, suffix)
+		}
+	}
+	return symbol
 }

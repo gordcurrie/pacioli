@@ -20,16 +20,29 @@
         <th>Name</th>
         <th>Type</th>
         <th>Currency</th>
+        <th></th>
       </tr>
     </thead>
     <tbody>
       {{range .Securities}}
-      <tr>
+      <tr id="sec-row-{{.ID}}">
         <td><strong>{{.Ticker}}</strong></td>
         <td>{{.Exchange}}</td>
         <td>{{.Name}}</td>
         <td>{{.Type}}</td>
         <td>{{.Currency}}</td>
+        <td class="actions" style="white-space:nowrap">
+          <a href="/securities/{{.ID}}/edit"
+             role="button" class="outline secondary"
+             style="padding:0.25rem 0.5rem;font-size:0.875rem">Edit</a>
+          <button
+            hx-delete="/securities/{{.ID}}"
+            hx-target="#sec-row-{{.ID}}"
+            hx-swap="outerHTML"
+            hx-confirm="Delete {{.Ticker}}? This cannot be undone."
+            class="outline danger"
+            style="padding:0.25rem 0.5rem;font-size:0.875rem">Delete</button>
+        </td>
       </tr>
       {{end}}
     </tbody>

@@ -56,4 +56,5 @@ type Store interface {
 	ListBySecurityNonRegistered(ctx context.Context, securityID, userID int64) ([]*Transaction, error)
 	ListByDateRange(ctx context.Context, accountID int64, from, to time.Time) ([]*Transaction, error)
 	Delete(ctx context.Context, id int64) error
+	UpdateFXRate(ctx context.Context, id int64, fxRate *decimal.Decimal, priceCAD, commCAD decimal.Decimal) error
 }
