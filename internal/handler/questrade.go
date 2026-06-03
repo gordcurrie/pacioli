@@ -349,6 +349,12 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 			totFlag++
 			baseRow.Status = qtStatusFlag
 			baseRow.StatusMsg = msg
+			if act.Action == "FXT" && !act.NetAmount.IsZero() {
+				baseRow.StatusMsg += fmt.Sprintf(" — net: %s %s", act.NetAmount.StringFixed(2), act.Currency)
+				if act.Type != "" {
+					baseRow.StatusMsg += " (" + act.Type + ")"
+				}
+			}
 			previewRows = append(previewRows, baseRow)
 			continue
 		}
