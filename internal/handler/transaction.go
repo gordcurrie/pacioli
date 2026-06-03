@@ -275,7 +275,7 @@ func (h *Handler) editTransactionFXForm(w http.ResponseWriter, r *http.Request) 
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := fxEditTmpl.Execute(w, tx); err != nil {
-		h.logger.Error("render fx edit form", "err", err)
+		loggerFromCtx(r.Context()).Error("render fx edit form", "err", err)
 	}
 }
 
@@ -297,7 +297,7 @@ func (h *Handler) transactionFXCell(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := fxCellTmpl.Execute(w, tx); err != nil {
-		h.logger.Error("render fx cell", "err", err)
+		loggerFromCtx(r.Context()).Error("render fx cell", "err", err)
 	}
 }
 
@@ -315,6 +315,11 @@ func (h *Handler) updateTransactionFX(w http.ResponseWriter, r *http.Request) {
 	acct, err := h.accounts.GetByID(r.Context(), tx.AccountID)
 	if err != nil || acct.UserID != h.userID {
 		http.NotFound(w, r)
+		return
+	}
+
+	if tx.FXRate == nil {
+		http.Error(w, "FX rate override not applicable to CAD transactions", http.StatusBadRequest)
 		return
 	}
 
@@ -336,6 +341,7 @@ func (h *Handler) updateTransactionFX(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, r, err)
 		return
 	}
+	h.logAudit(r, audit.ActionUpdate, audit.EntityTransaction, id, audit.Source(tx.Source), "")
 
 	tx.FXRate = &fxRate
 	tx.PriceCAD = priceCAD
@@ -343,7 +349,7 @@ func (h *Handler) updateTransactionFX(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := fxCellTmpl.Execute(w, tx); err != nil {
-		h.logger.Error("render fx cell after update", "err", err)
+		loggerFromCtx(r.Context()).Error("render fx cell after update", "err", err)
 	}
 }
 

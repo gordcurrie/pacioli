@@ -5,6 +5,7 @@ import (
 	"html/template"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gordcurrie/pacioli/internal/audit"
 	"github.com/gordcurrie/pacioli/internal/questrade"
@@ -91,9 +92,10 @@ func (h *Handler) editSecurity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.render(w, "security_form", securityFormData{
-		Security: sec,
-		Types:    securityTypes,
-		EditMode: true,
+		Security:    sec,
+		Types:       securityTypes,
+		EditMode:    true,
+		QTConnected: h.qtTokens != nil && h.isQTConnected(r),
 	})
 }
 
@@ -109,12 +111,14 @@ func (h *Handler) updateSecurity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	qtConnected := h.qtTokens != nil && h.isQTConnected(r)
 	renderForm := func(s *security.Security, errMsg string) {
 		h.render(w, "security_form", securityFormData{
-			Security: s,
-			Types:    securityTypes,
-			EditMode: true,
-			Error:    errMsg,
+			Security:    s,
+			Types:       securityTypes,
+			EditMode:    true,
+			QTConnected: qtConnected,
+			Error:       errMsg,
 		})
 	}
 
@@ -172,6 +176,10 @@ func (h *Handler) deleteSecurity(w http.ResponseWriter, r *http.Request) {
 		loggerFromCtx(r.Context()).Error("snapshot marshal", "entity", "security", "id", id, "err", err)
 	}
 	if err := h.securities.Delete(r.Context(), id); err != nil {
+		if strings.Contains(err.Error(), "FOREIGN KEY constraint failed") {
+			http.Error(w, "Security is referenced by existing transactions and cannot be deleted.", http.StatusConflict)
+			return
+		}
 		h.serverError(w, r, err)
 		return
 	}
@@ -242,7 +250,7 @@ func (h *Handler) qtSymbolLookup(w http.ResponseWriter, r *http.Request) {
 		SecType:     string(secType),
 		Currency:    currency,
 	}); err != nil {
-		h.logger.Error("render qt lookup", "err", err)
+		loggerFromCtx(r.Context()).Error("render qt lookup", "err", err)
 	}
 }
 

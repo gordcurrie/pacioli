@@ -74,7 +74,10 @@ func (r *SecurityStore) Update(ctx context.Context, s *security.Security) error 
 
 func (r *SecurityStore) Delete(ctx context.Context, id int64) error {
 	_, err := r.db.ExecContext(ctx, `DELETE FROM securities WHERE id=?`, id)
-	return err
+	if err != nil {
+		return fmt.Errorf("delete security: %w", err)
+	}
+	return nil
 }
 
 func (r *SecurityStore) ListAll(ctx context.Context) ([]*security.Security, error) {
