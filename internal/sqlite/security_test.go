@@ -79,4 +79,54 @@ func TestSecurityStore(t *testing.T) {
 			t.Errorf("expected at least 2 securities, got %d", len(all))
 		}
 	})
+
+	t.Run("update persists changes", func(t *testing.T) {
+		s := &security.Security{
+			Ticker:   "XIU.TO",
+			Exchange: "TSX",
+			Name:     "iShares S&P/TSX 60 Index ETF",
+			Type:     security.TypeETF,
+			Currency: "CAD",
+		}
+		if err := store.Create(ctx, s); err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+
+		s.Name = "iShares S&P/TSX 60 ETF (updated)"
+		s.Exchange = "TSX-V"
+		s.Currency = "USD"
+		if err := store.Update(ctx, s); err != nil {
+			t.Fatalf("Update: %v", err)
+		}
+
+		got, err := store.GetByID(ctx, s.ID)
+		if err != nil {
+			t.Fatalf("GetByID after update: %v", err)
+		}
+		if got.Name != s.Name {
+			t.Errorf("Name = %q, want %q", got.Name, s.Name)
+		}
+		if got.Exchange != s.Exchange {
+			t.Errorf("Exchange = %q, want %q", got.Exchange, s.Exchange)
+		}
+		if got.Currency != s.Currency {
+			t.Errorf("Currency = %q, want %q", got.Currency, s.Currency)
+		}
+	})
+
+	t.Run("delete removes row", func(t *testing.T) {
+		s := &security.Security{
+			Ticker: "DEL.TO", Exchange: "TSX", Name: "Delete Me", Type: security.TypeEquity, Currency: "CAD",
+		}
+		if err := store.Create(ctx, s); err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+		if err := store.Delete(ctx, s.ID); err != nil {
+			t.Fatalf("Delete: %v", err)
+		}
+		_, err := store.GetByID(ctx, s.ID)
+		if err == nil {
+			t.Error("expected error after delete, got nil")
+		}
+	})
 }

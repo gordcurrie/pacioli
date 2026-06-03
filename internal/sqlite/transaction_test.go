@@ -119,4 +119,55 @@ func TestTransactionStore(t *testing.T) {
 			t.Error("expected transactions in date range")
 		}
 	})
+
+	t.Run("UpdateFXRate persists and is readable", func(t *testing.T) {
+		usdSec := &security.Security{Ticker: "WMT", Exchange: "NYSE", Name: "Walmart", Type: security.TypeEquity, Currency: "USD"}
+		if err := securities.Create(ctx, usdSec); err != nil {
+			t.Fatalf("create USD security: %v", err)
+		}
+
+		origFX := decimal.NewFromFloat(1.25)
+		tx := &transaction.Transaction{
+			AccountID:        acc.ID,
+			SecurityID:       usdSec.ID,
+			Type:             transaction.TypeBuy,
+			TradeDate:        tradeDate,
+			SettledDate:      tradeDate.AddDate(0, 0, 2),
+			Quantity:         decimal.NewFromInt(10),
+			PriceNative:      decimal.NewFromFloat(50.00),
+			CommissionNative: decimal.NewFromFloat(1.00),
+			FXRate:           &origFX,
+			PriceCAD:         decimal.NewFromFloat(62.50),
+			CommissionCAD:    decimal.NewFromFloat(1.25),
+			Source:           transaction.SourceQuestrade,
+		}
+		if err := txStore.Create(ctx, tx); err != nil {
+			t.Fatalf("Create USD tx: %v", err)
+		}
+
+		newFX := decimal.NewFromFloat(1.38)
+		newPriceCAD := tx.PriceNative.Mul(newFX)
+		newCommCAD := tx.CommissionNative.Mul(newFX)
+
+		if err := txStore.UpdateFXRate(ctx, tx.ID, &newFX, newPriceCAD, newCommCAD); err != nil {
+			t.Fatalf("UpdateFXRate: %v", err)
+		}
+
+		got, err := txStore.GetByID(ctx, tx.ID)
+		if err != nil {
+			t.Fatalf("GetByID after UpdateFXRate: %v", err)
+		}
+		if got.FXRate == nil {
+			t.Fatal("FXRate is nil after update")
+		}
+		if !got.FXRate.Equal(newFX) {
+			t.Errorf("FXRate = %s, want %s", got.FXRate, newFX)
+		}
+		if !got.PriceCAD.Equal(newPriceCAD) {
+			t.Errorf("PriceCAD = %s, want %s", got.PriceCAD, newPriceCAD)
+		}
+		if !got.CommissionCAD.Equal(newCommCAD) {
+			t.Errorf("CommissionCAD = %s, want %s", got.CommissionCAD, newCommCAD)
+		}
+	})
 }
