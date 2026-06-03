@@ -27,7 +27,7 @@
       {{range .Securities}}
       <tr id="sec-row-{{.ID}}">
         <td><strong>{{.Ticker}}</strong></td>
-        <td>{{.Exchange}}</td>
+        <td>{{if .Exchange}}{{.Exchange}}{{else}}<span style="color:var(--pico-muted-color);font-size:0.85rem">unlisted</span>{{end}}</td>
         <td>{{.Name}}</td>
         <td>{{.Type}}</td>
         <td>{{.Currency}}</td>
