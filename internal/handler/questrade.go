@@ -469,7 +469,7 @@ const (
 )
 
 func classifyQTActivity(a *questrade.Activity) (qtStatus, string, transaction.Type) {
-	switch a.Action {
+	switch strings.TrimSpace(a.Action) {
 	case "Buy":
 		return qtImport, "", transaction.TypeBuy
 	case "Sell":
@@ -479,7 +479,7 @@ func classifyQTActivity(a *questrade.Activity) (qtStatus, string, transaction.Ty
 	case "REI":
 		// Dividend reinvestment: treated as a buy (acquires shares, increases ACB)
 		return qtImport, "", transaction.TypeBuy
-	case "CON", "WDR", "DEP", "TFI", "TFO", "EXP", "":
+	case "CON", "WDR", "DEP", "TFI", "TFO", "EXP", "BRW", "":
 		return qtSkip, "", ""
 	case "FXT":
 		return qtFlag, "FX conversion — may be Norbert's Gambit; enter manually", ""
