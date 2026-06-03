@@ -743,7 +743,7 @@ func (h *Handler) questradeSync(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		for _, p := range positions {
-			ticker := stripExchangeSuffix(p.Symbol)
+			ticker := p.Symbol
 			if _, ok := secByTicker[ticker]; ok {
 				continue
 			}
@@ -799,13 +799,3 @@ func mapQTAccountType(qt string) account.Type {
 	}
 }
 
-// stripExchangeSuffix removes exchange suffixes like .TO, .U.TO, .V from a Questrade symbol.
-func stripExchangeSuffix(symbol string) string {
-	// Handle multi-part suffixes like DLR.U.TO first
-	for _, suffix := range []string{".U.TO", ".U.V", ".TO", ".V", ".NE", ".CN"} {
-		if strings.HasSuffix(symbol, suffix) {
-			return strings.TrimSuffix(symbol, suffix)
-		}
-	}
-	return symbol
-}
