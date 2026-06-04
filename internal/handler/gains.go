@@ -31,13 +31,21 @@ type rocPreviewPageData struct {
 	Error string
 }
 
+func parseYear(r *http.Request) (int, bool) {
+	year, err := strconv.Atoi(r.PathValue("year"))
+	if err != nil || year < 1990 || year > 2100 {
+		return 0, false
+	}
+	return year, true
+}
+
 func (h *Handler) listGains(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, fmt.Sprintf("/gains/%d", time.Now().Year()), http.StatusSeeOther)
 }
 
 func (h *Handler) showGainsForYear(w http.ResponseWriter, r *http.Request) {
-	year, err := strconv.Atoi(r.PathValue("year"))
-	if err != nil || year < 1990 || year > 2100 {
+	year, ok := parseYear(r)
+	if !ok {
 		http.NotFound(w, r)
 		return
 	}
@@ -52,8 +60,8 @@ func (h *Handler) showGainsForYear(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) exportGainsCSV(w http.ResponseWriter, r *http.Request) {
-	year, err := strconv.Atoi(r.PathValue("year"))
-	if err != nil || year < 1990 || year > 2100 {
+	year, ok := parseYear(r)
+	if !ok {
 		http.NotFound(w, r)
 		return
 	}
@@ -98,8 +106,8 @@ func (h *Handler) exportGainsCSV(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) showGainsDetail(w http.ResponseWriter, r *http.Request) {
-	year, err := strconv.Atoi(r.PathValue("year"))
-	if err != nil || year < 1990 || year > 2100 {
+	year, ok := parseYear(r)
+	if !ok {
 		http.NotFound(w, r)
 		return
 	}
@@ -119,8 +127,8 @@ func (h *Handler) showGainsDetail(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) previewROC(w http.ResponseWriter, r *http.Request) {
-	year, err := strconv.Atoi(r.PathValue("year"))
-	if err != nil || year < 1990 || year > 2100 {
+	year, ok := parseYear(r)
+	if !ok {
 		http.NotFound(w, r)
 		return
 	}
@@ -135,8 +143,8 @@ func (h *Handler) previewROC(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) applyROC(w http.ResponseWriter, r *http.Request) {
-	year, err := strconv.Atoi(r.PathValue("year"))
-	if err != nil || year < 1990 || year > 2100 {
+	year, ok := parseYear(r)
+	if !ok {
 		http.NotFound(w, r)
 		return
 	}
@@ -146,5 +154,5 @@ func (h *Handler) applyROC(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.Redirect(w, r, fmt.Sprintf("/roc/%d", year), http.StatusSeeOther)
+	http.Redirect(w, r, fmt.Sprintf("/roc/%d", year), http.StatusSeeOther) //#nosec G710 -- year is a validated integer (1990–2100), not a user-controlled string
 }
