@@ -11,7 +11,7 @@
 {{if .Rows}}
 {{$year := .Year}}
 {{$hasPending := false}}
-{{range .Rows}}{{if not .AlreadyApplied}}{{$hasPending = true}}{{end}}{{end}}
+{{range .Rows}}{{if and (not .AlreadyApplied) .UnitsHeld.IsPositive}}{{$hasPending = true}}{{end}}{{end}}
 
 <figure>
   <table>

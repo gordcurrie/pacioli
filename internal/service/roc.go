@@ -45,14 +45,17 @@ func (s *ROCService) PreviewROC(ctx context.Context, userID int64, taxYear int) 
 			continue
 		}
 
-		sec, err := s.secStore.GetByID(ctx, d.SecurityID)
-		if err != nil {
-			return nil, fmt.Errorf("roc preview: get security %d: %w", d.SecurityID, err)
-		}
-
 		txs, err := s.txStore.ListBySecurityNonRegistered(ctx, d.SecurityID, userID)
 		if err != nil {
 			return nil, fmt.Errorf("roc preview: list txs for security %d: %w", d.SecurityID, err)
+		}
+		if len(txs) == 0 {
+			continue
+		}
+
+		sec, err := s.secStore.GetByID(ctx, d.SecurityID)
+		if err != nil {
+			return nil, fmt.Errorf("roc preview: get security %d: %w", d.SecurityID, err)
 		}
 
 		var upToYearEnd []*transaction.Transaction
