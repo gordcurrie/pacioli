@@ -4,7 +4,7 @@
   <a href="/gains/{{.Year}}" style="font-size:0.875rem">← Back to Capital Gains</a>
 </div>
 
-<p><small>Full ACB history for <strong>{{.Security.Ticker}}</strong> ({{.Security.Exchange}}) up to the last disposition in {{.Year}}. Highlighted rows are disposals.</small></p>
+<p><small>Full ACB history for <strong>{{.Security.Ticker}}</strong> ({{.Security.Exchange}}) leading up to each disposal in {{.Year}}. Shaded rows are disposals — they show the resulting gain or loss.</small></p>
 
 {{if .History}}
 <figure>
@@ -19,12 +19,16 @@
         <th style="text-align:right">Shares After</th>
         <th style="text-align:right">Running ACB</th>
         <th style="text-align:right">ACB / Share</th>
+        <th style="text-align:right">Gain / Loss</th>
       </tr>
     </thead>
     <tbody>
       {{range .History}}
-      {{$isDisposal := or (eq (printf "%s" .Tx.Type) "sell") (eq (printf "%s" .Tx.Type) "transfer_out")}}
-      <tr {{if $isDisposal}}class="contrast"{{end}}>
+      {{if .IsDisposal}}
+      <tr style="background:color-mix(in srgb, var(--pico-primary) 10%, transparent)">
+      {{else}}
+      <tr>
+      {{end}}
         <td>{{.Tx.TradeDate.Format "2006-01-02"}}</td>
         <td><small>{{.Tx.Type}}</small></td>
         <td style="text-align:right">{{.Tx.Quantity.StringFixed 4}}</td>
@@ -33,6 +37,15 @@
         <td style="text-align:right">{{.RunningShares.StringFixed 4}}</td>
         <td style="text-align:right">{{.RunningACB.StringFixed 2}}</td>
         <td style="text-align:right">{{.RunningACBPerShare.StringFixed 4}}</td>
+        <td style="text-align:right">
+          {{if .IsDisposal}}
+            {{if .GainLoss.IsNegative}}
+            <strong style="color:var(--pico-del-color)">{{.GainLoss.StringFixed 2}}</strong>
+            {{else}}
+            <strong style="color:var(--pico-ins-color)">+{{.GainLoss.StringFixed 2}}</strong>
+            {{end}}
+          {{end}}
+        </td>
       </tr>
       {{end}}
     </tbody>

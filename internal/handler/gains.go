@@ -14,7 +14,7 @@ import (
 type gainsDetailPageData struct {
 	Year     int
 	Security *security.Security
-	History  []service.HistoryRow
+	History  []service.GainsDetailRow
 }
 
 type gainsPageData struct {
