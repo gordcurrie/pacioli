@@ -91,6 +91,22 @@ func (r *TransactionStore) Delete(ctx context.Context, id int64) error {
 	return err
 }
 
+func (r *TransactionStore) UpdateFXRate(ctx context.Context, id int64, fxRate *decimal.Decimal, priceCAD, commCAD decimal.Decimal) error {
+	var fxStr *string
+	if fxRate != nil {
+		s := fxRate.String()
+		fxStr = &s
+	}
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE transactions SET fx_rate=?, price_cad=?, commission_cad=? WHERE id=?`,
+		fxStr, priceCAD.String(), commCAD.String(), id,
+	)
+	if err != nil {
+		return fmt.Errorf("update transaction fx rate: %w", err)
+	}
+	return nil
+}
+
 const txSelectSQL = `
 	SELECT t.id, t.account_id, t.security_id, t.type, t.trade_date, t.settled_date,
 	       t.quantity, t.price_native, t.commission_native, t.fx_rate,

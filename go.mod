@@ -2,6 +2,8 @@ module github.com/gordcurrie/pacioli
 
 go 1.26
 
+toolchain go1.26.4
+
 require (
 	github.com/golang-migrate/migrate/v4 v4.18.1
 	github.com/shopspring/decimal v1.4.0

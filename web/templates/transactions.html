@@ -32,7 +32,17 @@
         <td style="text-align:right">{{.PriceNative.StringFixed 4}}</td>
         <td style="text-align:right">{{.CommissionNative.StringFixed 2}}</td>
         <td style="text-align:right">{{.PriceCAD.StringFixed 4}}</td>
-        <td>{{if .FXRate}}{{.FXRate.StringFixed 4}}{{else}}—{{end}}</td>
+        <td id="fx-cell-{{.ID}}" style="white-space:nowrap">
+          {{if .FXRate}}
+            {{.FXRate.StringFixed 4}}
+            <button
+              hx-get="/transactions/{{.ID}}/fx/edit"
+              hx-target="#fx-cell-{{.ID}}"
+              hx-swap="innerHTML"
+              class="outline secondary"
+              style="padding:0.1rem 0.4rem;font-size:0.75rem;margin:0">edit</button>
+          {{else}}—{{end}}
+        </td>
         <td class="actions">
           <button
             hx-delete="/transactions/{{.ID}}"

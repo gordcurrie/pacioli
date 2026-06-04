@@ -125,12 +125,19 @@ func (h *Handler) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /securities", h.listSecurities)
 	mux.HandleFunc("GET /securities/new", h.newSecurity)
 	mux.HandleFunc("GET /securities/search", h.searchSecurities)
+	mux.HandleFunc("GET /securities/qt-lookup", h.qtSymbolLookup)
 	mux.HandleFunc("POST /securities", h.createSecurity)
+	mux.HandleFunc("GET /securities/{id}/edit", h.editSecurity)
+	mux.HandleFunc("POST /securities/{id}", h.updateSecurity)
+	mux.HandleFunc("DELETE /securities/{id}", h.deleteSecurity)
 
 	mux.HandleFunc("GET /transactions", h.listTransactions)
 	mux.HandleFunc("GET /transactions/new", h.newTransaction)
 	mux.HandleFunc("POST /transactions", h.createTransaction)
 	mux.HandleFunc("DELETE /transactions/{id}", h.deleteTransaction)
+	mux.HandleFunc("GET /transactions/{id}/fx/edit", h.editTransactionFXForm)
+	mux.HandleFunc("GET /transactions/{id}/fx/cell", h.transactionFXCell)
+	mux.HandleFunc("POST /transactions/{id}/fx", h.updateTransactionFX)
 
 	mux.HandleFunc("GET /acb", h.listACB)
 	mux.HandleFunc("GET /acb/{id}", h.showACB)
@@ -142,6 +149,7 @@ func (h *Handler) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /questrade", h.questradePage)
 	mux.HandleFunc("POST /questrade/connect", h.questradeConnect)
 	mux.HandleFunc("POST /questrade/disconnect", h.questradeDisconnect)
+	mux.HandleFunc("POST /questrade/sync", h.questradeSync)
 	mux.HandleFunc("POST /questrade/preview", h.questradePreview)
 	mux.HandleFunc("POST /questrade/commit", h.questradeCommit)
 }

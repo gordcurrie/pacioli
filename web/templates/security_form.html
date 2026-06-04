@@ -1,29 +1,40 @@
 {{define "content"}}
 <div style="display:flex; justify-content:space-between; align-items:center">
-  <h2>New Security</h2>
+  <h2>{{if .EditMode}}Edit Security{{else}}New Security{{end}}</h2>
   <a href="/securities" role="button" class="outline">Cancel</a>
 </div>
 {{if .Error}}<p class="danger">{{.Error}}</p>{{end}}
 <article>
-  <form method="POST" action="/securities">
-    <div class="grid">
-      <label>
-        Ticker
-        <input type="text" name="ticker" value="{{.Security.Ticker}}" required placeholder="e.g. VFV">
-      </label>
-      <label>
-        Exchange
-        <input type="text" name="exchange" value="{{.Security.Exchange}}" required placeholder="e.g. TSX">
-      </label>
-    </div>
+  <form method="POST" action="{{if .EditMode}}/securities/{{.Security.ID}}{{else}}/securities{{end}}">
+    {{if .QTConnected}}
+    <label>
+      Ticker
+      <input id="sec-ticker" type="text" name="ticker" value="{{.Security.Ticker}}" required placeholder="e.g. VFV"
+        hx-get="/securities/qt-lookup"
+        hx-trigger="input changed delay:600ms"
+        hx-target="#qt-lookup-msg"
+        hx-swap="outerHTML"
+        hx-include="[name='ticker']">
+    </label>
+    <span id="qt-lookup-msg" style="font-size:0.85rem;color:var(--pico-muted-color)"></span>
+    {{else}}
+    <label>
+      Ticker
+      <input id="sec-ticker" type="text" name="ticker" value="{{.Security.Ticker}}" required placeholder="e.g. VFV">
+    </label>
+    {{end}}
+    <label>
+      Exchange
+      <input id="sec-exchange" type="text" name="exchange" value="{{.Security.Exchange}}" required placeholder="e.g. TSX">
+    </label>
     <label>
       Name
-      <input type="text" name="name" value="{{.Security.Name}}" required placeholder="e.g. Vanguard S&P 500 ETF">
+      <input id="sec-name" type="text" name="name" value="{{.Security.Name}}" required placeholder="e.g. Vanguard S&P 500 ETF">
     </label>
     <div class="grid">
       <label>
         Type
-        <select name="type" required>
+        <select id="sec-type" name="type" required>
           {{range .Types}}
           <option value="{{.}}" {{if eq . $.Security.Type}}selected{{end}}>{{.}}</option>
           {{end}}
@@ -31,13 +42,13 @@
       </label>
       <label>
         Currency
-        <select name="currency" required>
+        <select id="sec-currency" name="currency" required>
           <option value="CAD" {{if eq .Security.Currency "CAD"}}selected{{end}}>CAD</option>
           <option value="USD" {{if eq .Security.Currency "USD"}}selected{{end}}>USD</option>
         </select>
       </label>
     </div>
-    <button type="submit">Add Security</button>
+    <button type="submit">{{if .EditMode}}Save Changes{{else}}Add Security{{end}}</button>
   </form>
 </article>
 {{end}}

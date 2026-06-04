@@ -133,6 +133,80 @@ func (c *Client) Accounts(ctx context.Context) ([]Account, error) {
 	return out, nil
 }
 
+// Position is a holding in a Questrade account.
+type Position struct {
+	Symbol       string
+	Currency     string
+	OpenQuantity decimal.Decimal
+}
+
+type positionsJSON struct {
+	Positions []struct {
+		Symbol       string      `json:"symbol"`
+		Currency     string      `json:"currency"`
+		OpenQuantity json.Number `json:"openQuantity"`
+	} `json:"positions"`
+}
+
+// Positions returns all open positions for accountNumber.
+func (c *Client) Positions(ctx context.Context, accountNumber string) ([]Position, error) {
+	var body positionsJSON
+	if err := c.get(ctx, "v1/accounts/"+url.PathEscape(accountNumber)+"/positions", &body); err != nil {
+		return nil, fmt.Errorf("questrade positions: %w", err)
+	}
+	out := make([]Position, 0, len(body.Positions))
+	for _, p := range body.Positions {
+		qty, err := numToDecimal(p.OpenQuantity)
+		if err != nil {
+			return nil, fmt.Errorf("questrade positions: parse quantity: %w", err)
+		}
+		if !qty.IsPositive() {
+			continue
+		}
+		out = append(out, Position{Symbol: p.Symbol, Currency: p.Currency, OpenQuantity: qty})
+	}
+	return out, nil
+}
+
+// SymbolInfo is a result from the Questrade symbol search endpoint.
+type SymbolInfo struct {
+	Symbol       string
+	Description  string
+	Exchange     string
+	SecurityType string
+	Currency     string
+}
+
+type symbolSearchJSON struct {
+	Symbols []struct {
+		Symbol          string `json:"symbol"`
+		Description     string `json:"description"`
+		ListingExchange string `json:"listingExchange"`
+		SecurityType    string `json:"securityType"`
+		Currency        string `json:"currency"`
+	} `json:"symbols"`
+}
+
+// SymbolSearch searches for securities by prefix (ticker prefix or name).
+func (c *Client) SymbolSearch(ctx context.Context, prefix string) ([]SymbolInfo, error) {
+	params := url.Values{"prefix": {prefix}}
+	var body symbolSearchJSON
+	if err := c.get(ctx, "v1/symbols/search?"+params.Encode(), &body); err != nil {
+		return nil, fmt.Errorf("questrade symbol search: %w", err)
+	}
+	out := make([]SymbolInfo, len(body.Symbols))
+	for i, s := range body.Symbols {
+		out[i] = SymbolInfo{
+			Symbol:       s.Symbol,
+			Description:  s.Description,
+			Exchange:     s.ListingExchange,
+			SecurityType: s.SecurityType,
+			Currency:     s.Currency,
+		}
+	}
+	return out, nil
+}
+
 // Activity is one entry from the Questrade activities endpoint.
 type Activity struct {
 	TradeDate   time.Time

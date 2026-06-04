@@ -3,6 +3,7 @@ package handler
 import (
 	"cmp"
 	"encoding/json"
+	"html/template"
 	"net/http"
 	"slices"
 	"strconv"
@@ -226,6 +227,130 @@ func (h *Handler) createTransaction(w http.ResponseWriter, r *http.Request) {
 	}
 	h.logAudit(r, audit.ActionCreate, audit.EntityTransaction, tx.ID, audit.Source(tx.Source), "")
 	http.Redirect(w, r, "/transactions", http.StatusSeeOther)
+}
+
+// fxCellTmpl renders the FX rate cell content (rate + edit button).
+var fxCellTmpl = template.Must(template.New("fxcell").Parse(
+	`{{if .FXRate}}{{.FXRate.StringFixed 4}} <button ` +
+		`hx-get="/transactions/{{.ID}}/fx/edit" ` +
+		`hx-target="#fx-cell-{{.ID}}" ` +
+		`hx-swap="innerHTML" ` +
+		`class="outline secondary" ` +
+		`style="padding:0.1rem 0.4rem;font-size:0.75rem;margin:0">edit</button>{{else}}—{{end}}`,
+))
+
+// fxEditTmpl renders an inline FX rate edit form.
+var fxEditTmpl = template.Must(template.New("fxedit").Parse(
+	`<form hx-post="/transactions/{{.ID}}/fx" ` +
+		`hx-target="#fx-cell-{{.ID}}" ` +
+		`hx-swap="innerHTML" ` +
+		`style="display:flex;gap:0.25rem;align-items:center">` +
+		`<input type="number" name="fx_rate" value="{{if .FXRate}}{{.FXRate.StringFixed 6}}{{end}}" ` +
+		`step="0.000001" min="0.000001" required ` +
+		`style="width:90px;padding:0.1rem 0.25rem;font-size:0.85rem;margin:0">` +
+		`<button type="submit" class="outline" style="padding:0.1rem 0.4rem;font-size:0.75rem;margin:0">save</button>` +
+		`<button type="button" ` +
+		`hx-get="/transactions/{{.ID}}/fx/cell" ` +
+		`hx-target="#fx-cell-{{.ID}}" ` +
+		`hx-swap="innerHTML" ` +
+		`class="outline secondary" style="padding:0.1rem 0.4rem;font-size:0.75rem;margin:0" aria-label="Cancel edit" title="Cancel">✕</button>` +
+		`</form>`,
+))
+
+func (h *Handler) editTransactionFXForm(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	tx, err := h.transactions.GetByID(r.Context(), id)
+	if err != nil {
+		h.notFoundOrError(w, r, err)
+		return
+	}
+	acct, err := h.accounts.GetByID(r.Context(), tx.AccountID)
+	if err != nil || acct.UserID != h.userID {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := fxEditTmpl.Execute(w, tx); err != nil {
+		loggerFromCtx(r.Context()).Error("render fx edit form", "err", err)
+	}
+}
+
+func (h *Handler) transactionFXCell(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	tx, err := h.transactions.GetByID(r.Context(), id)
+	if err != nil {
+		h.notFoundOrError(w, r, err)
+		return
+	}
+	acct, err := h.accounts.GetByID(r.Context(), tx.AccountID)
+	if err != nil || acct.UserID != h.userID {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := fxCellTmpl.Execute(w, tx); err != nil {
+		loggerFromCtx(r.Context()).Error("render fx cell", "err", err)
+	}
+}
+
+func (h *Handler) updateTransactionFX(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	tx, err := h.transactions.GetByID(r.Context(), id)
+	if err != nil {
+		h.notFoundOrError(w, r, err)
+		return
+	}
+	acct, err := h.accounts.GetByID(r.Context(), tx.AccountID)
+	if err != nil || acct.UserID != h.userID {
+		http.NotFound(w, r)
+		return
+	}
+
+	if tx.FXRate == nil {
+		http.Error(w, "FX rate override not applicable to CAD transactions", http.StatusBadRequest)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "invalid form", http.StatusBadRequest)
+		return
+	}
+
+	fxRate, err := decimal.NewFromString(r.FormValue("fx_rate"))
+	if err != nil || !fxRate.IsPositive() {
+		http.Error(w, "FX rate must be greater than zero", http.StatusBadRequest)
+		return
+	}
+
+	priceCAD := tx.PriceNative.Mul(fxRate)
+	commCAD := tx.CommissionNative.Mul(fxRate)
+
+	if err := h.transactions.UpdateFXRate(r.Context(), id, &fxRate, priceCAD, commCAD); err != nil {
+		h.serverError(w, r, err)
+		return
+	}
+	h.logAudit(r, audit.ActionUpdate, audit.EntityTransaction, id, audit.Source(tx.Source), "")
+
+	tx.FXRate = &fxRate
+	tx.PriceCAD = priceCAD
+	tx.CommissionCAD = commCAD
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := fxCellTmpl.Execute(w, tx); err != nil {
+		loggerFromCtx(r.Context()).Error("render fx cell after update", "err", err)
+	}
 }
 
 func (h *Handler) deleteTransaction(w http.ResponseWriter, r *http.Request) {

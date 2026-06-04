@@ -55,6 +55,27 @@ func TestAuditStore(t *testing.T) {
 		}
 	})
 
+	t.Run("log update entry", func(t *testing.T) {
+		e := &audit.Entry{
+			UserID:     1,
+			Action:     audit.ActionUpdate,
+			EntityType: audit.EntitySecurity,
+			EntityID:   77,
+			Source:     audit.SourceManual,
+		}
+		if err := store.Log(ctx, e); err != nil {
+			t.Fatalf("Log update: %v", err)
+		}
+		var action string
+		if err := db.QueryRowContext(ctx,
+			`SELECT action FROM audit_log WHERE entity_id=77`).Scan(&action); err != nil {
+			t.Fatalf("query: %v", err)
+		}
+		if action != "update" {
+			t.Errorf("action = %q, want update", action)
+		}
+	})
+
 	t.Run("log delete entry with snapshot", func(t *testing.T) {
 		snap := `{"id":99,"name":"old account"}`
 		e := &audit.Entry{

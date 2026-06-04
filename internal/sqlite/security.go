@@ -61,6 +61,25 @@ func (r *SecurityStore) Search(ctx context.Context, query string) ([]*security.S
 	return scanSecurities(rows)
 }
 
+func (r *SecurityStore) Update(ctx context.Context, s *security.Security) error {
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE securities SET ticker=?, exchange=?, name=?, type=?, currency=? WHERE id=?`,
+		s.Ticker, s.Exchange, s.Name, string(s.Type), s.Currency, s.ID,
+	)
+	if err != nil {
+		return fmt.Errorf("update security: %w", err)
+	}
+	return nil
+}
+
+func (r *SecurityStore) Delete(ctx context.Context, id int64) error {
+	_, err := r.db.ExecContext(ctx, `DELETE FROM securities WHERE id=?`, id)
+	if err != nil {
+		return fmt.Errorf("delete security: %w", err)
+	}
+	return nil
+}
+
 func (r *SecurityStore) ListAll(ctx context.Context) ([]*security.Security, error) {
 	rows, err := r.db.QueryContext(ctx,
 		`SELECT id, ticker, exchange, name, type, currency, source FROM securities ORDER BY ticker`)
