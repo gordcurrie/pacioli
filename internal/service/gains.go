@@ -132,8 +132,9 @@ func (s *GainsService) Calculate(ctx context.Context, userID int64, year int) (*
 // disposition detail page.
 type GainsDetailRow struct {
 	HistoryRow
-	IsDisposal bool
-	GainLoss   decimal.Decimal // non-zero only for disposal rows
+	IsDisposal  bool
+	NeedsReview bool            // disposal with no prior share position — ACB unknown, GainLoss suppressed
+	GainLoss    decimal.Decimal // zero for non-disposal rows and NeedsReview disposals
 }
 
 // HistoryForSecurity returns the ACB history for a security trimmed to all rows
@@ -142,12 +143,12 @@ type GainsDetailRow struct {
 func (s *GainsService) HistoryForSecurity(ctx context.Context, securityID, userID int64, year int) (*security.Security, []GainsDetailRow, error) {
 	sec, err := s.secStore.GetByID(ctx, securityID)
 	if err != nil {
-		return nil, nil, fmt.Errorf("history for security %d: %w", securityID, err)
+		return nil, nil, fmt.Errorf("history for security %d: get security: %w", securityID, err)
 	}
 
 	txs, err := s.txStore.ListBySecurityNonRegistered(ctx, securityID, userID)
 	if err != nil {
-		return nil, nil, fmt.Errorf("history for security %d: %w", securityID, err)
+		return nil, nil, fmt.Errorf("history for security %d: list transactions: %w", securityID, err)
 	}
 
 	_, history := CalculateACBWithHistory(securityID, txs)
@@ -167,13 +168,14 @@ func (s *GainsService) HistoryForSecurity(ctx context.Context, securityID, userI
 	out := make([]GainsDetailRow, len(trimmed))
 	for i, row := range trimmed {
 		isDisposal := row.Tx.Type == transaction.TypeSell || row.Tx.Type == transaction.TypeTransferOut
+		needsReview := isDisposal && row.PreTxShares.IsZero()
 		var gainLoss decimal.Decimal
-		if isDisposal {
+		if isDisposal && !needsReview {
 			proceeds := row.Tx.Quantity.Mul(row.Tx.PriceCAD).Sub(row.Tx.CommissionCAD)
 			acbAtSell := row.PreTxACBPerShare.Mul(row.Tx.Quantity)
 			gainLoss = proceeds.Sub(acbAtSell)
 		}
-		out[i] = GainsDetailRow{HistoryRow: row, IsDisposal: isDisposal, GainLoss: gainLoss}
+		out[i] = GainsDetailRow{HistoryRow: row, IsDisposal: isDisposal, NeedsReview: needsReview, GainLoss: gainLoss}
 	}
 	return sec, out, nil
 }

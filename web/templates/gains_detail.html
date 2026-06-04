@@ -38,11 +38,15 @@
         <td style="text-align:right">{{.RunningACB.StringFixed 2}}</td>
         <td style="text-align:right">{{.RunningACBPerShare.StringFixed 4}}</td>
         <td style="text-align:right">
-          {{if .IsDisposal}}
+          {{if .NeedsReview}}
+          <small><abbr title="No prior share position — ACB unknown. Add the corresponding buy transaction.">⚠ Needs review</abbr></small>
+          {{else if .IsDisposal}}
             {{if .GainLoss.IsNegative}}
             <strong style="color:var(--pico-del-color)">{{.GainLoss.StringFixed 2}}</strong>
-            {{else}}
+            {{else if .GainLoss.IsPositive}}
             <strong style="color:var(--pico-ins-color)">+{{.GainLoss.StringFixed 2}}</strong>
+            {{else}}
+            <strong>0.00</strong>
             {{end}}
           {{end}}
         </td>
