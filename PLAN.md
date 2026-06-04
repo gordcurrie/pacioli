@@ -93,13 +93,13 @@
 
 ---
 
-## Phase 5 — Reporting ⬜
+## Phase 5 — Reporting 🔄
 
-- ⬜ Capital gains / losses by tax year
-- ⬜ ACB history per security (full transaction log with running ACB)
-- ⬜ Superficial loss detection + flagging (30-day window, non-registered only)
-- ⬜ ROC adjustments from T3 distribution data
-- ⬜ Export to CSV (for accountant / tax software)
+- ✅ Capital gains / losses by tax year
+- ✅ ACB history per security (full transaction log with running ACB)
+- ✅ Superficial loss detection + flagging (30-day window, all accounts per CRA affiliated-person rule)
+- ✅ ROC adjustments from T3 distribution data (preview + apply flow)
+- ✅ Export to CSV (for accountant / tax software)
 
 ---
 

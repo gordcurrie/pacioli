@@ -488,7 +488,15 @@ func classifyQTActivity(a *questrade.Activity) (qtStatus, string, transaction.Ty
 	case "CON", "WDR", "DEP", "TFI", "TFO", "EXP", "BRW", "":
 		return qtSkip, "", ""
 	case "FXT":
-		return qtFlag, "FX conversion — may be Norbert's Gambit; enter manually", ""
+		// Norbert's Gambit journal: positive qty = receiving leg (e.g. DLR.TO acquired),
+		// negative qty = sending leg (e.g. DLR.U.TO disposed). Zero qty can't be processed.
+		if a.Quantity.IsPositive() {
+			return qtImport, "", transaction.TypeJournal
+		}
+		if a.Quantity.IsNegative() {
+			return qtImport, "", transaction.TypeTransferOut
+		}
+		return qtFlag, "FX conversion — zero quantity; enter manually", ""
 	default:
 		return qtFlag, "unknown action: " + a.Action, ""
 	}
@@ -496,9 +504,11 @@ func classifyQTActivity(a *questrade.Activity) (qtStatus, string, transaction.Ty
 
 // validQTTypes restricts commit to types the Questrade preview can actually produce.
 var validQTTypes = map[transaction.Type]bool{
-	transaction.TypeBuy:      true,
-	transaction.TypeSell:     true,
-	transaction.TypeDividend: true,
+	transaction.TypeBuy:         true,
+	transaction.TypeSell:        true,
+	transaction.TypeDividend:    true,
+	transaction.TypeJournal:     true,
+	transaction.TypeTransferOut: true,
 }
 
 func (h *Handler) questradeCommit(w http.ResponseWriter, r *http.Request) {

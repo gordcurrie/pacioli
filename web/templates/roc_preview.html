@@ -1,0 +1,61 @@
+{{define "content"}}
+<div style="display:flex; align-items:baseline; gap:1rem; flex-wrap:wrap; margin-bottom:1rem">
+  <h2 style="margin:0">ROC Adjustments — {{.Year}}</h2>
+  <a href="/gains/{{.Year}}" style="font-size:0.875rem">← Back to Capital Gains</a>
+</div>
+
+{{if .Error}}<p class="danger">{{.Error}}</p>{{end}}
+
+<p><small>Return of Capital reduces your Adjusted Cost Base. Generate <code>roc_adjustment</code> transactions from T3 distribution data for securities held in non-registered accounts.</small></p>
+
+{{if .Rows}}
+{{$year := .Year}}
+{{$hasPending := false}}
+{{range .Rows}}{{if and (not .AlreadyApplied) .UnitsHeld.IsPositive}}{{$hasPending = true}}{{end}}{{end}}
+
+<figure>
+  <table>
+    <thead>
+      <tr>
+        <th>Security</th>
+        <th style="text-align:right">ROC / Unit (CAD)</th>
+        <th style="text-align:right">Units Held at Year-End</th>
+        <th style="text-align:right">Total ROC (CAD)</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .Rows}}
+      <tr>
+        <td><strong>{{.Security.Ticker}}</strong> <small>{{.Security.Exchange}}</small></td>
+        <td style="text-align:right">{{.ROCPerUnit.StringFixed 4}}</td>
+        <td style="text-align:right">{{.UnitsHeld.StringFixed 4}}</td>
+        <td style="text-align:right">{{.TotalROC.StringFixed 2}}</td>
+        <td>
+          {{if .AlreadyApplied}}
+          <ins>Applied</ins>
+          {{else if not .UnitsHeld.IsPositive}}
+          <small>No units held</small>
+          {{else}}
+          <mark>Pending</mark>
+          {{end}}
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</figure>
+
+{{if $hasPending}}
+<form method="post" action="/roc/{{$year}}">
+  <button type="submit">Apply Pending ROC Adjustments</button>
+</form>
+{{end}}
+
+{{else}}
+<article>
+  <p>No distribution data with ROC for {{.Year}}.</p>
+  <p><small>Add T3 distribution data for your securities under the Securities page, then return here to apply ROC adjustments.</small></p>
+</article>
+{{end}}
+{{end}}

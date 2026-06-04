@@ -1,0 +1,119 @@
+{{define "content"}}
+<div style="display:flex; align-items:baseline; gap:1rem; flex-wrap:wrap; margin-bottom:1rem">
+  <h2 style="margin:0">Capital Gains — {{.Year}}</h2>
+  <nav style="display:flex; gap:0.5rem; align-items:center">
+    <a href="/gains/{{.PrevYear}}" role="button" class="outline" style="padding:0.25rem 0.5rem; font-size:0.875rem">← {{.PrevYear}}</a>
+    <a href="/gains/{{.NextYear}}" role="button" class="outline" style="padding:0.25rem 0.5rem; font-size:0.875rem">{{.NextYear}} →</a>
+  </nav>
+</div>
+
+{{if .Error}}<p class="danger">{{.Error}}</p>{{end}}
+
+{{if .Report}}
+<div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:1rem; margin-bottom:1.5rem">
+  <article style="margin:0; padding:1rem; text-align:center">
+    <small>Total Gains</small><br>
+    <strong style="font-size:1.25rem; color:var(--pico-ins-color)">${{.Report.TotalGains.StringFixed 2}}</strong>
+  </article>
+  <article style="margin:0; padding:1rem; text-align:center">
+    <small>Total Losses</small><br>
+    <strong style="font-size:1.25rem; color:var(--pico-del-color)">${{.Report.TotalLosses.StringFixed 2}}</strong>
+  </article>
+  <article style="margin:0; padding:1rem; text-align:center">
+    <small>Net Gain / Loss</small><br>
+    {{if .Report.NetGain.IsNegative}}
+    <strong style="font-size:1.25rem; color:var(--pico-del-color)">${{.Report.NetGain.StringFixed 2}}</strong>
+    {{else}}
+    <strong style="font-size:1.25rem; color:var(--pico-ins-color)">${{.Report.NetGain.StringFixed 2}}</strong>
+    {{end}}
+  </article>
+  {{if .Report.SuperficialLossTotal.IsPositive}}
+  <article style="margin:0; padding:1rem; text-align:center">
+    <small>Superficial Losses ⚠️</small><br>
+    <strong style="font-size:1.25rem" class="danger">${{.Report.SuperficialLossTotal.StringFixed 2}}</strong>
+  </article>
+  {{end}}
+</div>
+
+{{if .Report.Lines}}
+<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem">
+  <span><small>{{len .Report.Lines}} disposition(s)</small></span>
+  <div style="display:flex; gap:0.5rem">
+    <a href="/roc/{{.Year}}" role="button" class="outline" style="padding:0.25rem 0.5rem; font-size:0.875rem">ROC Adjustments</a>
+    <a href="/gains/{{.Year}}/export" role="button" class="outline" style="padding:0.25rem 0.5rem; font-size:0.875rem">Export CSV</a>
+  </div>
+</div>
+<figure>
+  <table>
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Security</th>
+        <th style="text-align:right">Shares</th>
+        <th style="text-align:right">Proceeds (CAD)</th>
+        <th style="text-align:right">ACB at Sell (CAD)</th>
+        <th style="text-align:right">Gain / Loss (CAD)</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .Report.Lines}}
+      <tr {{if .IsSuperficialLoss}}class="danger"{{end}}>
+        <td>{{.TradeDate.Format "2006-01-02"}}</td>
+        <td><strong>{{.Security.Ticker}}</strong> <small>{{.Security.Exchange}}</small></td>
+        <td style="text-align:right">{{.Shares.StringFixed 4}}</td>
+        <td style="text-align:right">{{.ProceedsCAD.StringFixed 2}}</td>
+        <td style="text-align:right">{{.ACBAtSell.StringFixed 2}}</td>
+        <td style="text-align:right">
+          {{if .GainLoss.IsNegative}}
+          <span class="danger">{{.GainLoss.StringFixed 2}}</span>
+          {{else}}
+          {{.GainLoss.StringFixed 2}}
+          {{end}}
+        </td>
+        <td>{{if .IsSuperficialLoss}}<abbr title="Superficial loss — repurchase within 30 days. This loss may be denied by CRA.">⚠️</abbr>{{end}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</figure>
+{{else}}
+<article>
+  <p>No dispositions in {{.Year}} from non-registered accounts.</p>
+  <a href="/roc/{{.Year}}" role="button" class="outline">ROC Adjustments for {{.Report.Year}}</a>
+</article>
+{{end}}
+
+{{if .Report.NeedsReviewLines}}
+<details style="margin-top:1.5rem">
+  <summary><strong>⚠️ {{len .Report.NeedsReviewLines}} disposition(s) excluded — missing ACB data</strong></summary>
+  <article style="margin-top:0.75rem">
+    <p><small>These sells have no corresponding buy transactions in the non-registered pool. Common causes: Norbert's Gambit (buy leg was a journalled FXT, not imported), or the buy was in a registered account. The gain/loss cannot be calculated until the ACB is recorded. <strong>These are not included in the totals above.</strong></small></p>
+    <figure>
+      <table>
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Security</th>
+            <th style="text-align:right">Shares</th>
+            <th style="text-align:right">Proceeds (CAD)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .Report.NeedsReviewLines}}
+          <tr>
+            <td>{{.TradeDate.Format "2006-01-02"}}</td>
+            <td><strong>{{.Security.Ticker}}</strong> <small>{{.Security.Exchange}}</small></td>
+            <td style="text-align:right">{{.Shares.StringFixed 4}}</td>
+            <td style="text-align:right">{{.ProceedsCAD.StringFixed 2}}</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </figure>
+  </article>
+</details>
+{{end}}
+
+{{end}}
+{{end}}

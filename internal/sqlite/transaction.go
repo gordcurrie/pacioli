@@ -74,6 +74,31 @@ func (r *TransactionStore) ListBySecurityNonRegistered(ctx context.Context, secu
 	return scanTransactions(rows)
 }
 
+func (r *TransactionStore) ListNonRegisteredDisposalsByUser(ctx context.Context, userID int64, from, to time.Time) ([]*transaction.Transaction, error) {
+	rows, err := r.db.QueryContext(ctx,
+		txSelectSQL+` WHERE a.user_id=? AND a.is_registered=0 AND t.type IN ('sell','transfer_out')
+		              AND t.trade_date BETWEEN ? AND ?
+		              ORDER BY t.trade_date, t.id`,
+		userID, from.Format(time.DateOnly), to.Format(time.DateOnly))
+	if err != nil {
+		return nil, fmt.Errorf("list non-registered disposals: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	return scanTransactions(rows)
+}
+
+func (r *TransactionStore) ListBySecurityAllAccounts(ctx context.Context, securityID, userID int64) ([]*transaction.Transaction, error) {
+	rows, err := r.db.QueryContext(ctx,
+		txSelectSQL+` WHERE t.security_id=? AND a.user_id=?
+		              ORDER BY t.trade_date, t.id`,
+		securityID, userID)
+	if err != nil {
+		return nil, fmt.Errorf("list transactions all accounts: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	return scanTransactions(rows)
+}
+
 func (r *TransactionStore) ListByDateRange(ctx context.Context, accountID int64, from, to time.Time) ([]*transaction.Transaction, error) {
 	rows, err := r.db.QueryContext(ctx,
 		txSelectSQL+` WHERE t.account_id=? AND t.trade_date BETWEEN ? AND ?

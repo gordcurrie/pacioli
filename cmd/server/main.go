@@ -64,8 +64,11 @@ func run() error {
 		logger.Warn("TOKEN_ENCRYPTION_KEY not set — Questrade integration disabled")
 	}
 
+	distStore := sqlite.NewDistributionStore(db)
 	acbSvc := service.NewACBService(txStore)
 	bocSvc := service.NewBOCFetcher(fxStore)
+	gainsSvc := service.NewGainsService(txStore, securityStore)
+	rocSvc := service.NewROCService(txStore, distStore, securityStore)
 
 	h, err := handler.New(&handler.Config{
 		Accounts:     accountStore,
@@ -75,6 +78,8 @@ func run() error {
 		QTTokens:     qtTokenStore,
 		BOCSvc:       bocSvc,
 		ACBSvc:       acbSvc,
+		GainsSvc:     gainsSvc,
+		ROCSvc:       rocSvc,
 		UserID:       userID,
 		Logger:       logger,
 		TemplateFS:   web.Templates,
