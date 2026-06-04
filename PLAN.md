@@ -101,7 +101,7 @@
 - ✅ ROC adjustments from T3 distribution data (preview + apply flow)
 - ✅ Export to CSV (for accountant / tax software)
 
-## Phase 5.1 — Disposition Detail Drill-Down 🔲
+## Phase 5.1 — Disposition Detail Drill-Down ✅
 
 **Goal**: Click a row on `/gains/{year}` to see the full ACB history for that security — which buys built the ACB, running ACB per share at each step, and each transaction's impact. Explains partial-fill rows and lets users verify gain/loss calculations.
 
