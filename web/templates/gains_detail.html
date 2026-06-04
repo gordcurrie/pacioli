@@ -1,0 +1,46 @@
+{{define "content"}}
+<div style="display:flex; align-items:baseline; gap:1rem; flex-wrap:wrap; margin-bottom:1rem">
+  <h2 style="margin:0">ACB History — {{.Security.Ticker}} ({{.Year}})</h2>
+  <a href="/gains/{{.Year}}" style="font-size:0.875rem">← Back to Capital Gains</a>
+</div>
+
+<p><small>Full ACB history for <strong>{{.Security.Ticker}}</strong> ({{.Security.Exchange}}) up to the last disposition in {{.Year}}. Highlighted rows are disposals.</small></p>
+
+{{if .History}}
+<figure>
+  <table>
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Type</th>
+        <th style="text-align:right">Qty</th>
+        <th style="text-align:right">Price (CAD)</th>
+        <th style="text-align:right">Commission</th>
+        <th style="text-align:right">Shares After</th>
+        <th style="text-align:right">Running ACB</th>
+        <th style="text-align:right">ACB / Share</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .History}}
+      {{$isDisposal := or (eq (printf "%s" .Tx.Type) "sell") (eq (printf "%s" .Tx.Type) "transfer_out")}}
+      <tr {{if $isDisposal}}class="contrast"{{end}}>
+        <td>{{.Tx.TradeDate.Format "2006-01-02"}}</td>
+        <td><small>{{.Tx.Type}}</small></td>
+        <td style="text-align:right">{{.Tx.Quantity.StringFixed 4}}</td>
+        <td style="text-align:right">{{.Tx.PriceCAD.StringFixed 4}}</td>
+        <td style="text-align:right">{{.Tx.CommissionCAD.StringFixed 2}}</td>
+        <td style="text-align:right">{{.RunningShares.StringFixed 4}}</td>
+        <td style="text-align:right">{{.RunningACB.StringFixed 2}}</td>
+        <td style="text-align:right">{{.RunningACBPerShare.StringFixed 4}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</figure>
+{{else}}
+<article>
+  <p>No ACB history found for {{.Security.Ticker}} in {{.Year}}.</p>
+</article>
+{{end}}
+{{end}}

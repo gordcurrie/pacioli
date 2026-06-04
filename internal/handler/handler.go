@@ -109,6 +109,7 @@ func (h *Handler) parseTemplates(fsys fs.FS) error {
 		"transactions", "transaction_form",
 		"acb", "acb_list",
 		"gains",
+		"gains_detail",
 		"roc_preview",
 		"import", "import_preview",
 		"questrade", "questrade_preview",
@@ -157,6 +158,7 @@ func (h *Handler) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /gains", h.listGains)
 	mux.HandleFunc("GET /gains/{year}", h.showGainsForYear)
 	mux.HandleFunc("GET /gains/{year}/export", h.exportGainsCSV)
+	mux.HandleFunc("GET /gains/{year}/{security_id}", h.showGainsDetail)
 	mux.HandleFunc("GET /roc/{year}", h.previewROC)
 	mux.HandleFunc("POST /roc/{year}", h.applyROC)
 

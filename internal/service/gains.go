@@ -128,6 +128,35 @@ func (s *GainsService) Calculate(ctx context.Context, userID int64, year int) (*
 	return report, nil
 }
 
+// HistoryForSecurity returns the ACB history for a security trimmed to all rows
+// up to and including the last disposal in year. Returns nil history when no
+// disposals exist for that year.
+func (s *GainsService) HistoryForSecurity(ctx context.Context, securityID, userID int64, year int) (*security.Security, []HistoryRow, error) {
+	sec, err := s.secStore.GetByID(ctx, securityID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("history for security %d: %w", securityID, err)
+	}
+
+	txs, err := s.txStore.ListBySecurityNonRegistered(ctx, securityID, userID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("history for security %d: %w", securityID, err)
+	}
+
+	_, history := CalculateACBWithHistory(securityID, txs)
+
+	lastIdx := -1
+	for i, row := range history {
+		isDisposal := row.Tx.Type == transaction.TypeSell || row.Tx.Type == transaction.TypeTransferOut
+		if isDisposal && row.Tx.TradeDate.Year() == year {
+			lastIdx = i
+		}
+	}
+	if lastIdx == -1 {
+		return sec, nil, nil
+	}
+	return sec, history[:lastIdx+1], nil
+}
+
 func (s *GainsService) isSuperficialLoss(ctx context.Context, securityID, userID int64, sellDate time.Time) (bool, error) {
 	allTxs, err := s.txStore.ListBySecurityAllAccounts(ctx, securityID, userID)
 	if err != nil {

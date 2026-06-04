@@ -7,8 +7,15 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/gordcurrie/pacioli/internal/security"
 	"github.com/gordcurrie/pacioli/internal/service"
 )
+
+type gainsDetailPageData struct {
+	Year     int
+	Security *security.Security
+	History  []service.HistoryRow
+}
 
 type gainsPageData struct {
 	Year     int
@@ -88,6 +95,27 @@ func (h *Handler) exportGainsCSV(w http.ResponseWriter, r *http.Request) {
 	if err := cw.Error(); err != nil {
 		h.serverError(w, r, err)
 	}
+}
+
+func (h *Handler) showGainsDetail(w http.ResponseWriter, r *http.Request) {
+	year, err := strconv.Atoi(r.PathValue("year"))
+	if err != nil || year < 1990 || year > 2100 {
+		http.NotFound(w, r)
+		return
+	}
+	secID, err := strconv.ParseInt(r.PathValue("security_id"), 10, 64)
+	if err != nil || secID <= 0 {
+		http.NotFound(w, r)
+		return
+	}
+
+	sec, history, err := h.gainsSvc.HistoryForSecurity(r.Context(), secID, h.userID, year)
+	if err != nil {
+		h.notFoundOrError(w, r, err)
+		return
+	}
+
+	h.render(w, "gains_detail", gainsDetailPageData{Year: year, Security: sec, History: history})
 }
 
 func (h *Handler) previewROC(w http.ResponseWriter, r *http.Request) {
