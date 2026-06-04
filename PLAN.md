@@ -93,7 +93,7 @@
 
 ---
 
-## Phase 5 — Reporting 🔄
+## Phase 5 — Reporting ✅
 
 - ✅ Capital gains / losses by tax year
 - ✅ ACB history per security (full transaction log with running ACB)
@@ -103,25 +103,11 @@
 
 ## Phase 5.1 — Disposition Detail Drill-Down ✅
 
-**Goal**: Click a row on `/gains/{year}` to see the full ACB history for that security — which buys built the ACB, running ACB per share at each step, and each transaction's impact. Explains partial-fill rows and lets users verify gain/loss calculations.
-
-**Route**: `GET /gains/{year}/{security_id}`
-
-**Handler** (`internal/handler/gains.go`):
-- Parse and validate `year` (1990–2100) and `security_id`
-- Call `ListBySecurityNonRegistered` + `CalculateACBWithHistory`
-- Render table of all history rows up to and including the last sell in the year
-
-**Template** (`web/templates/gains_detail.html`):
-- Header: security ticker + year
-- Table: Date | Type | Qty | Price (CAD) | Commission | Running Shares | Running ACB | ACB/Share
-- Highlight TypeSell / TypeTransferOut rows (the disposition events)
-- Back link to `/gains/{year}`
-
-**Notes**:
-- No new store methods needed — `ListBySecurityNonRegistered` already exists
-- Data already computed by `CalculateACBWithHistory`; purely a display concern
-- Partial fills (same-security same-date multiple sells) show as separate highlighted rows — expected
+- ✅ `GET /gains/{year}/{security_id}` — full ACB history up to last disposal in year
+- ✅ Security ticker on gains report links to detail page
+- ✅ Disposal rows highlighted; gain/loss shown inline on disposal rows only
+- ✅ `GainsService.HistoryForSecurity` — fetches, computes, and trims history to last disposal
+- ✅ `gains_detail.html` — Date | Type | Qty | Price | Commission | Shares After | Running ACB | ACB/Share | Gain/Loss
 
 ---
 
