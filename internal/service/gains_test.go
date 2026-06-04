@@ -28,7 +28,7 @@ func (m *mockTxStore) ListByAccount(_ context.Context, _ int64) ([]*transaction.
 func (m *mockTxStore) ListBySecurityNonRegistered(_ context.Context, securityID, _ int64) ([]*transaction.Transaction, error) {
 	return m.nonRegistered[securityID], nil
 }
-func (m *mockTxStore) ListNonRegisteredSellsByUser(_ context.Context, _ int64, from, to time.Time) ([]*transaction.Transaction, error) {
+func (m *mockTxStore) ListNonRegisteredDisposalsByUser(_ context.Context, _ int64, from, to time.Time) ([]*transaction.Transaction, error) {
 	var out []*transaction.Transaction
 	for _, tx := range m.sellsByUser {
 		if !tx.TradeDate.Before(from) && !tx.TradeDate.After(to) {

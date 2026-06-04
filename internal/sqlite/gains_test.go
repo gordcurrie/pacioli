@@ -13,7 +13,7 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-func TestTransactionStore_ListNonRegisteredSellsByUser(t *testing.T) {
+func TestTransactionStore_ListNonRegisteredDisposalsByUser(t *testing.T) {
 	db := newTestDB(t)
 	accounts := sqlite.NewAccountStore(db)
 	securities := sqlite.NewSecurityStore(db)
@@ -57,9 +57,9 @@ func TestTransactionStore_ListNonRegisteredSellsByUser(t *testing.T) {
 	from := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
 	to := time.Date(2024, 12, 31, 0, 0, 0, 0, time.UTC)
 
-	got, err := txStore.ListNonRegisteredSellsByUser(ctx, 1, from, to)
+	got, err := txStore.ListNonRegisteredDisposalsByUser(ctx, 1, from, to)
 	if err != nil {
-		t.Fatalf("ListNonRegisteredSellsByUser: %v", err)
+		t.Fatalf("ListNonRegisteredDisposalsByUser: %v", err)
 	}
 	if len(got) != 1 {
 		t.Errorf("expected 1 result, got %d", len(got))

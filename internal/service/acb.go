@@ -17,6 +17,7 @@ type ACBResult struct {
 
 type HistoryRow struct {
 	Tx                 *transaction.Transaction
+	PreTxShares        decimal.Decimal // shares held before this transaction was applied
 	PreTxACBPerShare   decimal.Decimal // ACB/share before this transaction was applied
 	RunningShares      decimal.Decimal
 	RunningACB         decimal.Decimal
@@ -45,6 +46,7 @@ func CalculateACBWithHistory(securityID int64, txs []*transaction.Transaction) (
 	r := &ACBResult{SecurityID: securityID}
 	rows := make([]HistoryRow, 0, len(txs))
 	for _, tx := range txs {
+		preTxShares := r.Shares
 		var preTxACBPerShare decimal.Decimal
 		if r.Shares.IsPositive() {
 			preTxACBPerShare = r.TotalACB.Div(r.Shares)
@@ -79,6 +81,7 @@ func CalculateACBWithHistory(securityID int64, txs []*transaction.Transaction) (
 		}
 		rows = append(rows, HistoryRow{
 			Tx:                 tx,
+			PreTxShares:        preTxShares,
 			PreTxACBPerShare:   preTxACBPerShare,
 			RunningShares:      r.Shares,
 			RunningACB:         r.TotalACB,

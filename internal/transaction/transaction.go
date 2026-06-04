@@ -54,9 +54,9 @@ type Store interface {
 	// ListBySecurityNonRegistered returns all transactions for a security across
 	// non-registered accounts — used for ACB calculation.
 	ListBySecurityNonRegistered(ctx context.Context, securityID, userID int64) ([]*Transaction, error)
-	// ListNonRegisteredSellsByUser returns all sell transactions in non-registered
-	// accounts for a user within [from, to] — used to discover taxable dispositions.
-	ListNonRegisteredSellsByUser(ctx context.Context, userID int64, from, to time.Time) ([]*Transaction, error)
+	// ListNonRegisteredDisposalsByUser returns all sell and transfer-out transactions
+	// in non-registered accounts for a user within [from, to] — used to discover taxable dispositions.
+	ListNonRegisteredDisposalsByUser(ctx context.Context, userID int64, from, to time.Time) ([]*Transaction, error)
 	// ListBySecurityAllAccounts returns all transactions for a security across all
 	// accounts (including registered) — used for superficial loss window checks.
 	ListBySecurityAllAccounts(ctx context.Context, securityID, userID int64) ([]*Transaction, error)

@@ -18,9 +18,9 @@ type GainsLine struct {
 	ACBAtSell         decimal.Decimal
 	GainLoss          decimal.Decimal
 	IsSuperficialLoss bool
-	// NeedsReview is set when no ACB-contributing buy transactions exist for this
-	// security in the non-registered pool (e.g. Norbert's Gambit where the buy leg
-	// was a journalled FXT action that was skipped by the importer). These lines are
+	// NeedsReview is set when no shares were held at the time of this sell (PreTxShares==0),
+	// indicating missing buy/transfer history (e.g. Norbert's Gambit FXT journal not yet
+	// imported, or a buy recorded after this sell in the transaction log). These lines are
 	// excluded from totals — the user must supply the correct ACB before they're valid.
 	NeedsReview bool
 }
@@ -48,7 +48,7 @@ func (s *GainsService) Calculate(ctx context.Context, userID int64, year int) (*
 	from := time.Date(year, 1, 1, 0, 0, 0, 0, time.UTC)
 	to := time.Date(year, 12, 31, 0, 0, 0, 0, time.UTC)
 
-	sells, err := s.txStore.ListNonRegisteredSellsByUser(ctx, userID, from, to)
+	sells, err := s.txStore.ListNonRegisteredDisposalsByUser(ctx, userID, from, to)
 	if err != nil {
 		return nil, fmt.Errorf("gains calculate: %w", err)
 	}
@@ -76,18 +76,11 @@ func (s *GainsService) Calculate(ctx context.Context, userID int64, year int) (*
 			return nil, fmt.Errorf("gains calculate: list txs for security %d: %w", secID, err)
 		}
 
-		hasACBBuy := false
-		for _, tx := range txs {
-			if tx.Type == transaction.TypeBuy || tx.Type == transaction.TypeTransferIn || tx.Type == transaction.TypeJournal {
-				hasACBBuy = true
-				break
-			}
-		}
-
 		_, history := CalculateACBWithHistory(secID, txs)
 
 		for _, row := range history {
-			if row.Tx.Type != transaction.TypeSell || row.Tx.TradeDate.Year() != year {
+			isDisposal := row.Tx.Type == transaction.TypeSell || row.Tx.Type == transaction.TypeTransferOut
+			if !isDisposal || row.Tx.TradeDate.Year() != year {
 				continue
 			}
 
@@ -102,7 +95,7 @@ func (s *GainsService) Calculate(ctx context.Context, userID int64, year int) (*
 				ProceedsCAD: proceeds,
 				ACBAtSell:   acbAtSell,
 				GainLoss:    gainLoss,
-				NeedsReview: !hasACBBuy,
+				NeedsReview: row.PreTxShares.IsZero(),
 			}
 
 			if line.NeedsReview {
@@ -147,7 +140,7 @@ func (s *GainsService) isSuperficialLoss(ctx context.Context, securityID, userID
 	// (2) a positive position at the end of the 30-day period after the sale.
 	hasWindowBuy := false
 	for _, tx := range allTxs {
-		if tx.Type != transaction.TypeBuy && tx.Type != transaction.TypeTransferIn {
+		if tx.Type != transaction.TypeBuy && tx.Type != transaction.TypeTransferIn && tx.Type != transaction.TypeJournal {
 			continue
 		}
 		if !tx.TradeDate.Before(windowStart) && !tx.TradeDate.After(windowEnd) {

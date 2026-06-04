@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/gordcurrie/pacioli/internal/distribution"
@@ -25,6 +26,7 @@ type ROCService struct {
 	txStore   transaction.Store
 	distStore distribution.Store
 	secStore  security.Store
+	mu        sync.Mutex // serialises ApplyROC to prevent duplicate transactions
 }
 
 func NewROCService(txStore transaction.Store, distStore distribution.Store, secStore security.Store) *ROCService {
@@ -68,7 +70,10 @@ func (s *ROCService) PreviewROC(ctx context.Context, userID int64, taxYear int) 
 					lastAccountID = tx.AccountID
 				}
 			}
-			if tx.Type == transaction.TypeROCAdjustment && tx.TradeDate.Year() == taxYear {
+			// Match on exact yearEnd date (not just calendar year) to avoid
+		// false positives from a ROC adj for a different year accidentally
+		// dated within this calendar year.
+		if tx.Type == transaction.TypeROCAdjustment && tx.TradeDate.Equal(yearEnd) {
 				alreadyApplied = true
 			}
 		}
@@ -93,6 +98,9 @@ func (s *ROCService) PreviewROC(ctx context.Context, userID int64, taxYear int) 
 }
 
 func (s *ROCService) ApplyROC(ctx context.Context, userID int64, taxYear int) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	rows, err := s.PreviewROC(ctx, userID, taxYear)
 	if err != nil {
 		return err

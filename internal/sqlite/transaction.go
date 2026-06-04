@@ -74,14 +74,14 @@ func (r *TransactionStore) ListBySecurityNonRegistered(ctx context.Context, secu
 	return scanTransactions(rows)
 }
 
-func (r *TransactionStore) ListNonRegisteredSellsByUser(ctx context.Context, userID int64, from, to time.Time) ([]*transaction.Transaction, error) {
+func (r *TransactionStore) ListNonRegisteredDisposalsByUser(ctx context.Context, userID int64, from, to time.Time) ([]*transaction.Transaction, error) {
 	rows, err := r.db.QueryContext(ctx,
-		txSelectSQL+` WHERE a.user_id=? AND a.is_registered=0 AND t.type='sell'
+		txSelectSQL+` WHERE a.user_id=? AND a.is_registered=0 AND t.type IN ('sell','transfer_out')
 		              AND t.trade_date BETWEEN ? AND ?
 		              ORDER BY t.trade_date, t.id`,
 		userID, from.Format(time.DateOnly), to.Format(time.DateOnly))
 	if err != nil {
-		return nil, fmt.Errorf("list non-registered sells: %w", err)
+		return nil, fmt.Errorf("list non-registered disposals: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 	return scanTransactions(rows)
