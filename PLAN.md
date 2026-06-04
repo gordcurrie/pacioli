@@ -101,6 +101,28 @@
 - ✅ ROC adjustments from T3 distribution data (preview + apply flow)
 - ✅ Export to CSV (for accountant / tax software)
 
+## Phase 5.1 — Disposition Detail Drill-Down 🔲
+
+**Goal**: Click a row on `/gains/{year}` to see the full ACB history for that security — which buys built the ACB, running ACB per share at each step, and each transaction's impact. Explains partial-fill rows and lets users verify gain/loss calculations.
+
+**Route**: `GET /gains/{year}/{security_id}`
+
+**Handler** (`internal/handler/gains.go`):
+- Parse and validate `year` (1990–2100) and `security_id`
+- Call `ListBySecurityNonRegistered` + `CalculateACBWithHistory`
+- Render table of all history rows up to and including the last sell in the year
+
+**Template** (`web/templates/gains_detail.html`):
+- Header: security ticker + year
+- Table: Date | Type | Qty | Price (CAD) | Commission | Running Shares | Running ACB | ACB/Share
+- Highlight TypeSell / TypeTransferOut rows (the disposition events)
+- Back link to `/gains/{year}`
+
+**Notes**:
+- No new store methods needed — `ListBySecurityNonRegistered` already exists
+- Data already computed by `CalculateACBWithHistory`; purely a display concern
+- Partial fills (same-security same-date multiple sells) show as separate highlighted rows — expected
+
 ---
 
 ## Phase 6 — Deferred 🔲
