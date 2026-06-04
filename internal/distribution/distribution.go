@@ -22,4 +22,5 @@ type Store interface {
 	Upsert(ctx context.Context, d *Distribution) error
 	GetBySecurityYear(ctx context.Context, securityID int64, taxYear int) (*Distribution, error)
 	ListBySecurity(ctx context.Context, securityID int64) ([]*Distribution, error)
+	ListByTaxYear(ctx context.Context, taxYear int) ([]*Distribution, error)
 }

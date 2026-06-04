@@ -62,6 +62,27 @@ func (r *DistributionStore) ListBySecurity(ctx context.Context, securityID int64
 	return out, rows.Err()
 }
 
+func (r *DistributionStore) ListByTaxYear(ctx context.Context, taxYear int) ([]*distribution.Distribution, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT id, security_id, tax_year, roc_per_unit, total_distribution_per_unit, record_date, source, notes
+		 FROM distributions WHERE tax_year=? ORDER BY security_id`,
+		taxYear)
+	if err != nil {
+		return nil, fmt.Errorf("list distributions by year: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var out []*distribution.Distribution
+	for rows.Next() {
+		d, err := scanDistribution(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
 type distScanner interface {
 	Scan(dest ...any) error
 }

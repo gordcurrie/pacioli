@@ -26,6 +26,8 @@ type Handler struct {
 	qtTokens     questrade.Store
 	bocSvc       *service.BOCFetcher
 	acbSvc       *service.ACBService
+	gainsSvc     *service.GainsService
+	rocSvc       *service.ROCService
 	userID       int64
 	logger       *slog.Logger
 	tmpls        map[string]*template.Template
@@ -41,6 +43,8 @@ type Config struct {
 	QTTokens     questrade.Store
 	BOCSvc       *service.BOCFetcher
 	ACBSvc       *service.ACBService
+	GainsSvc     *service.GainsService
+	ROCSvc       *service.ROCService
 	UserID       int64
 	Logger       *slog.Logger
 	TemplateFS   fs.FS
@@ -58,6 +62,10 @@ func (cfg *Config) validate() error {
 		return fmt.Errorf("handler: Audits is required")
 	case cfg.ACBSvc == nil:
 		return fmt.Errorf("handler: ACBSvc is required")
+	case cfg.GainsSvc == nil:
+		return fmt.Errorf("handler: GainsSvc is required")
+	case cfg.ROCSvc == nil:
+		return fmt.Errorf("handler: ROCSvc is required")
 	case cfg.Logger == nil:
 		return fmt.Errorf("handler: Logger is required")
 	case cfg.TemplateFS == nil:
@@ -83,6 +91,8 @@ func New(cfg *Config) (*Handler, error) {
 		qtTokens:     cfg.QTTokens,
 		bocSvc:       cfg.BOCSvc,
 		acbSvc:       cfg.ACBSvc,
+		gainsSvc:     cfg.GainsSvc,
+		rocSvc:       cfg.ROCSvc,
 		userID:       cfg.UserID,
 		logger:       cfg.Logger,
 	}
@@ -98,6 +108,8 @@ func (h *Handler) parseTemplates(fsys fs.FS) error {
 		"securities", "security_form",
 		"transactions", "transaction_form",
 		"acb", "acb_list",
+		"gains",
+		"roc_preview",
 		"import", "import_preview",
 		"questrade", "questrade_preview",
 	}
@@ -141,6 +153,12 @@ func (h *Handler) Routes(mux *http.ServeMux) {
 
 	mux.HandleFunc("GET /acb", h.listACB)
 	mux.HandleFunc("GET /acb/{id}", h.showACB)
+
+	mux.HandleFunc("GET /gains", h.listGains)
+	mux.HandleFunc("GET /gains/{year}", h.showGainsForYear)
+	mux.HandleFunc("GET /gains/{year}/export", h.exportGainsCSV)
+	mux.HandleFunc("GET /roc/{year}", h.previewROC)
+	mux.HandleFunc("POST /roc/{year}", h.applyROC)
 
 	mux.HandleFunc("GET /import", h.importPage)
 	mux.HandleFunc("POST /import/preview", h.importPreview)
