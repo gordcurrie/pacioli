@@ -18,11 +18,17 @@ type GainsLine struct {
 	ACBAtSell         decimal.Decimal
 	GainLoss          decimal.Decimal
 	IsSuperficialLoss bool
+	// NeedsReview is set when no ACB-contributing buy transactions exist for this
+	// security in the non-registered pool (e.g. Norbert's Gambit where the buy leg
+	// was a journalled FXT action that was skipped by the importer). These lines are
+	// excluded from totals — the user must supply the correct ACB before they're valid.
+	NeedsReview bool
 }
 
 type GainsReport struct {
 	Year                 int
 	Lines                []GainsLine
+	NeedsReviewLines     []GainsLine
 	TotalGains           decimal.Decimal
 	TotalLosses          decimal.Decimal
 	NetGain              decimal.Decimal
@@ -66,6 +72,14 @@ func (s *GainsService) Calculate(ctx context.Context, userID int64, year int) (*
 			return nil, fmt.Errorf("gains calculate: list txs for security %d: %w", secID, err)
 		}
 
+		hasACBBuy := false
+		for _, tx := range txs {
+			if tx.Type == transaction.TypeBuy || tx.Type == transaction.TypeTransferIn || tx.Type == transaction.TypeJournal {
+				hasACBBuy = true
+				break
+			}
+		}
+
 		_, history := CalculateACBWithHistory(secID, txs)
 
 		for _, row := range history {
@@ -84,6 +98,12 @@ func (s *GainsService) Calculate(ctx context.Context, userID int64, year int) (*
 				ProceedsCAD: proceeds,
 				ACBAtSell:   acbAtSell,
 				GainLoss:    gainLoss,
+				NeedsReview: !hasACBBuy,
+			}
+
+			if line.NeedsReview {
+				report.NeedsReviewLines = append(report.NeedsReviewLines, line)
+				continue
 			}
 
 			if gainLoss.IsNegative() {

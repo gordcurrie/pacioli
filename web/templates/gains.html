@@ -83,5 +83,37 @@
   <a href="/roc/{{.Year}}" role="button" class="outline">ROC Adjustments for {{.Report.Year}}</a>
 </article>
 {{end}}
+
+{{if .Report.NeedsReviewLines}}
+<details style="margin-top:1.5rem">
+  <summary><strong>⚠️ {{len .Report.NeedsReviewLines}} disposition(s) excluded — missing ACB data</strong></summary>
+  <article style="margin-top:0.75rem">
+    <p><small>These sells have no corresponding buy transactions in the non-registered pool. Common causes: Norbert's Gambit (buy leg was a journalled FXT, not imported), or the buy was in a registered account. The gain/loss cannot be calculated until the ACB is recorded. <strong>These are not included in the totals above.</strong></small></p>
+    <figure>
+      <table>
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Security</th>
+            <th style="text-align:right">Shares</th>
+            <th style="text-align:right">Proceeds (CAD)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .Report.NeedsReviewLines}}
+          <tr>
+            <td>{{.TradeDate.Format "2006-01-02"}}</td>
+            <td><strong>{{.Security.Ticker}}</strong> <small>{{.Security.Exchange}}</small></td>
+            <td style="text-align:right">{{.Shares.StringFixed 4}}</td>
+            <td style="text-align:right">{{.ProceedsCAD.StringFixed 2}}</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </figure>
+  </article>
+</details>
+{{end}}
+
 {{end}}
 {{end}}

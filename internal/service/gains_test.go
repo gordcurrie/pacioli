@@ -229,3 +229,36 @@ func TestGainsService_WithCommission(t *testing.T) {
 		t.Errorf("gain/loss: got %s want %s", report.Lines[0].GainLoss, expected)
 	}
 }
+
+func TestGainsService_NeedsReview_NoACBBuy(t *testing.T) {
+	// Norbert's Gambit scenario: sell of DLR.TO with no corresponding buy
+	// (buy was DLR.U.TO → journalled via FXT, which is skipped by importer)
+	sec := &security.Security{ID: 5, Ticker: "DLR.TO", Exchange: "TSX"}
+	sellOnly := []*transaction.Transaction{
+		{ID: 1, SecurityID: 5, Type: transaction.TypeSell, TradeDate: date("2024-03-25"),
+			Quantity: d("1000"), PriceCAD: d("14.05"), CommissionCAD: d("0")},
+	}
+	store := &mockTxStore{
+		nonRegistered: map[int64][]*transaction.Transaction{5: sellOnly},
+		allAccounts:   map[int64][]*transaction.Transaction{5: sellOnly},
+		sellsByUser:   sellOnly,
+	}
+	svc := service.NewGainsService(store, &mockSecStore{secs: map[int64]*security.Security{5: sec}})
+
+	report, err := svc.Calculate(context.Background(), 1, 2024)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(report.Lines) != 0 {
+		t.Errorf("expected 0 confirmed lines, got %d", len(report.Lines))
+	}
+	if len(report.NeedsReviewLines) != 1 {
+		t.Fatalf("expected 1 NeedsReview line, got %d", len(report.NeedsReviewLines))
+	}
+	if !report.NeedsReviewLines[0].NeedsReview {
+		t.Error("NeedsReview flag should be true")
+	}
+	if !report.TotalGains.IsZero() {
+		t.Errorf("NeedsReview sells must not inflate totals: TotalGains=%s", report.TotalGains)
+	}
+}
