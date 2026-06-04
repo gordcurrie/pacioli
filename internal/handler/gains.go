@@ -61,13 +61,16 @@ func (h *Handler) exportGainsCSV(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="capital-gains-%d.csv"`, year))
 
 	cw := csv.NewWriter(w)
-	_ = cw.Write([]string{"Date", "Ticker", "Exchange", "Shares", "Proceeds (CAD)", "ACB at Sell (CAD)", "Gain/Loss (CAD)", "Superficial Loss"})
+	if err := cw.Write([]string{"Date", "Ticker", "Exchange", "Shares", "Proceeds (CAD)", "ACB at Sell (CAD)", "Gain/Loss (CAD)", "Superficial Loss"}); err != nil {
+		h.serverError(w, r, err)
+		return
+	}
 	for _, line := range report.Lines {
 		superficial := ""
 		if line.IsSuperficialLoss {
 			superficial = "YES"
 		}
-		_ = cw.Write([]string{
+		if err := cw.Write([]string{
 			line.TradeDate.Format(time.DateOnly),
 			line.Security.Ticker,
 			line.Security.Exchange,
@@ -76,9 +79,15 @@ func (h *Handler) exportGainsCSV(w http.ResponseWriter, r *http.Request) {
 			line.ACBAtSell.StringFixed(2),
 			line.GainLoss.StringFixed(2),
 			superficial,
-		})
+		}); err != nil {
+			h.serverError(w, r, err)
+			return
+		}
 	}
 	cw.Flush()
+	if err := cw.Error(); err != nil {
+		h.serverError(w, r, err)
+	}
 }
 
 func (h *Handler) previewROC(w http.ResponseWriter, r *http.Request) {

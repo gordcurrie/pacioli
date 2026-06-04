@@ -53,15 +53,19 @@ func (s *GainsService) Calculate(ctx context.Context, userID int64, year int) (*
 		return nil, fmt.Errorf("gains calculate: %w", err)
 	}
 
-	// collect distinct security IDs that had sells this year
+	// collect distinct security IDs in first-seen order to keep report stable
 	seen := make(map[int64]struct{})
+	var secIDs []int64
 	for _, tx := range sells {
-		seen[tx.SecurityID] = struct{}{}
+		if _, ok := seen[tx.SecurityID]; !ok {
+			seen[tx.SecurityID] = struct{}{}
+			secIDs = append(secIDs, tx.SecurityID)
+		}
 	}
 
 	report := &GainsReport{Year: year}
 
-	for secID := range seen {
+	for _, secID := range secIDs {
 		sec, err := s.secStore.GetByID(ctx, secID)
 		if err != nil {
 			return nil, fmt.Errorf("gains calculate: get security %d: %w", secID, err)
@@ -138,13 +142,37 @@ func (s *GainsService) isSuperficialLoss(ctx context.Context, securityID, userID
 	}
 	windowStart := sellDate.AddDate(0, 0, -30)
 	windowEnd := sellDate.AddDate(0, 0, 30)
+
+	// CRA requires both: (1) an acquisition within the ±30-day window AND
+	// (2) a positive position at the end of the 30-day period after the sale.
+	hasWindowBuy := false
 	for _, tx := range allTxs {
 		if tx.Type != transaction.TypeBuy && tx.Type != transaction.TypeTransferIn {
 			continue
 		}
 		if !tx.TradeDate.Before(windowStart) && !tx.TradeDate.After(windowEnd) {
-			return true, nil
+			hasWindowBuy = true
+			break
 		}
 	}
-	return false, nil
+	if !hasWindowBuy {
+		return false, nil
+	}
+
+	// Compute net position across all accounts at end of window.
+	var shares decimal.Decimal
+	for _, tx := range allTxs {
+		if tx.TradeDate.After(windowEnd) {
+			break
+		}
+		switch tx.Type {
+		case transaction.TypeBuy, transaction.TypeTransferIn, transaction.TypeJournal:
+			shares = shares.Add(tx.Quantity)
+		case transaction.TypeSell, transaction.TypeTransferOut:
+			shares = shares.Sub(tx.Quantity)
+		case transaction.TypeDividend, transaction.TypeROCAdjustment, transaction.TypeFXConversion:
+			// no share count impact
+		}
+	}
+	return shares.IsPositive(), nil
 }

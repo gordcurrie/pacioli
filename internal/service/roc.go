@@ -99,6 +99,12 @@ func (s *ROCService) ApplyROC(ctx context.Context, userID int64, taxYear int) er
 		if row.AlreadyApplied || !row.UnitsHeld.IsPositive() || row.accountID == 0 {
 			continue
 		}
+		// T3 distribution data is always reported in CAD. Non-CAD securities
+		// would require an FX rate to derive PriceCAD correctly; skip them
+		// rather than silently treating a foreign-currency amount as CAD.
+		if row.Security.Currency != "CAD" {
+			continue
+		}
 		tx := &transaction.Transaction{
 			AccountID:    row.accountID,
 			SecurityID:   row.Security.ID,

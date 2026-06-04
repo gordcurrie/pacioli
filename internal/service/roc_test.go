@@ -172,7 +172,7 @@ func TestROCService_PreviewROC_NoSharesHeld(t *testing.T) {
 }
 
 func TestROCService_ApplyROC_CreatesTransaction(t *testing.T) {
-	sec := &security.Security{ID: 1, Ticker: "XYZ", Exchange: "TSX"}
+	sec := &security.Security{ID: 1, Ticker: "XYZ", Exchange: "TSX", Currency: "CAD"}
 	var created []*transaction.Transaction
 
 	// custom store that captures Create calls
