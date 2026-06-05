@@ -117,6 +117,17 @@ func run() error {
 		}
 	}()
 
+	// Purge expired sessions daily so the sessions table doesn't grow unbounded.
+	go func() {
+		ticker := time.NewTicker(24 * time.Hour)
+		defer ticker.Stop()
+		for range ticker.C {
+			if err := sessionStore.DeleteExpired(context.Background()); err != nil {
+				logger.Warn("delete expired sessions", "err", err)
+			}
+		}
+	}()
+
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 

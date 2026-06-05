@@ -9,6 +9,10 @@ import (
 	"io"
 )
 
+// Encrypt and Decrypt are exported wrappers for use outside the sqlite package (e.g. handler layer).
+func Encrypt(key []byte, plaintext string) (string, error) { return encrypt(key, plaintext) }
+func Decrypt(key []byte, encoded string) (string, error)   { return decrypt(key, encoded) }
+
 // encrypt encrypts plaintext with AES-256-GCM using key. Returns base64(nonce||ciphertext).
 func encrypt(key []byte, plaintext string) (string, error) {
 	if len(key) != 32 {

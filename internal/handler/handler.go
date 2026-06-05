@@ -13,6 +13,7 @@ import (
 
 	"github.com/gordcurrie/pacioli/internal/account"
 	"github.com/gordcurrie/pacioli/internal/audit"
+	"github.com/gordcurrie/pacioli/internal/errs"
 	"github.com/gordcurrie/pacioli/internal/questrade"
 	"github.com/gordcurrie/pacioli/internal/security"
 	"github.com/gordcurrie/pacioli/internal/service"
@@ -242,7 +243,7 @@ func (h *Handler) serverError(w http.ResponseWriter, r *http.Request, err error)
 }
 
 func (h *Handler) notFoundOrError(w http.ResponseWriter, r *http.Request, err error) {
-	if errors.Is(err, sql.ErrNoRows) {
+	if errors.Is(err, sql.ErrNoRows) || errors.Is(err, errs.ErrNotFound) {
 		http.NotFound(w, r)
 		return
 	}

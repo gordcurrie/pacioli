@@ -75,6 +75,11 @@ func (h *Handler) setupSubmit(w http.ResponseWriter, r *http.Request) {
 	existing, err := h.users.GetByEmail(r.Context(), email)
 	var userID int64
 	if err == nil {
+		// Only reuse users that have no password set — never overwrite a configured account.
+		if existing.PasswordHash != "" {
+			h.render(w, r, "setup", map[string]string{"Error": "An account with that email already exists."})
+			return
+		}
 		// Update existing user.
 		if err2 := h.users.UpdatePassword(r.Context(), existing.ID, string(hash)); err2 != nil {
 			h.serverError(w, r, err2)
@@ -217,6 +222,8 @@ func (h *Handler) totpSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Throttle failed attempts — limits brute-force against recovery code bcrypt chain.
+	time.Sleep(500 * time.Millisecond)
 	h.render(w, r, "login_2fa", totpPageData{Error: "Invalid code. Try again."})
 }
 

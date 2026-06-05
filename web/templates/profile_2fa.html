@@ -39,7 +39,7 @@
   {{if .QRDataURI}}
   <img src="{{.QRDataURI}}" alt="TOTP QR code" style="display:block;margin:1rem 0;image-rendering:pixelated">
   <form method="POST" action="/profile/2fa/enable">
-    <input type="hidden" name="pending_secret" value="{{.PendingSecret}}">
+    <input type="hidden" name="pending_token" value="{{.PendingToken}}">
     <label>
       Verification code
       <input type="text" name="code" inputmode="numeric" autocomplete="one-time-code"

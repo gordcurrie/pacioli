@@ -8,8 +8,11 @@ import (
 	"fmt"
 	"image/png"
 	"net/http"
+	"strings"
 
+	"github.com/gordcurrie/pacioli/internal/sqlite"
 	"github.com/gordcurrie/pacioli/internal/user"
+	"github.com/pquerna/otp"
 	"github.com/pquerna/otp/totp"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -63,14 +66,14 @@ func (h *Handler) updatePassword(w http.ResponseWriter, r *http.Request) {
 // --- TOTP setup ---
 
 type totpSetupPageData struct {
-	TOTPEnabled    bool
-	QRDataURI      string
-	PendingSecret  string // hidden field, passed back on enable submit
-	RecoveryCount  int    // unused codes remaining
-	RecoveryCodes  []string
-	Error          string
-	TOTPDisabled   bool   // flash after disable
-	EncKeyMissing  bool
+	TOTPEnabled   bool
+	QRDataURI     string
+	PendingToken  string // AES-encrypted "secret::userID" — server-bound, tamper-proof
+	RecoveryCount int    // unused codes remaining
+	RecoveryCodes []string
+	Error         string
+	TOTPDisabled  bool // flash after disable
+	EncKeyMissing bool
 }
 
 func (h *Handler) totpSetupPage(w http.ResponseWriter, r *http.Request) {
@@ -100,18 +103,20 @@ func (h *Handler) totpSetupPage(w http.ResponseWriter, r *http.Request) {
 			h.serverError(w, r, err)
 			return
 		}
-		img, err := key.Image(200, 200)
+		qrURI, err := keyToQRDataURI(key)
 		if err != nil {
 			h.serverError(w, r, err)
 			return
 		}
-		var buf bytes.Buffer
-		if err := png.Encode(&buf, img); err != nil {
+		// Encrypt "secret::userID" so the browser-round-tripped token is server-bound.
+		// An attacker cannot substitute an arbitrary secret without forging this ciphertext.
+		tok, err := sqlite.Encrypt(h.encKey, fmt.Sprintf("%s::%d", key.Secret(), u.ID))
+		if err != nil {
 			h.serverError(w, r, err)
 			return
 		}
-		data.QRDataURI = "data:image/png;base64," + base64.StdEncoding.EncodeToString(buf.Bytes())
-		data.PendingSecret = key.Secret()
+		data.QRDataURI = qrURI
+		data.PendingToken = tok
 	}
 
 	h.render(w, r, "profile_2fa", data)
@@ -125,11 +130,27 @@ func (h *Handler) totpEnable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	secret := r.FormValue("pending_secret")
+	// Decrypt and validate the server-bound token.
+	tok := r.FormValue("pending_token")
+	if tok == "" {
+		h.render(w, r, "profile_2fa", totpSetupPageData{Error: "Invalid request. Please start over."})
+		return
+	}
+	plaintext, err := sqlite.Decrypt(h.encKey, tok)
+	if err != nil {
+		h.render(w, r, "profile_2fa", totpSetupPageData{Error: "Invalid request. Please start over."})
+		return
+	}
+	parts := strings.SplitN(plaintext, "::", 2)
+	if len(parts) != 2 || parts[1] != fmt.Sprintf("%d", u.ID) {
+		h.render(w, r, "profile_2fa", totpSetupPageData{Error: "Invalid request. Please start over."})
+		return
+	}
+	secret := parts[0]
 	code := r.FormValue("code")
 
 	if !totp.Validate(code, secret) {
-		// Regenerate QR from the same secret so user can retry without starting over.
+		// Re-generate QR for the same secret so the user can retry.
 		rawSecret, err := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(secret)
 		if err != nil {
 			h.serverError(w, r, err)
@@ -144,17 +165,20 @@ func (h *Handler) totpEnable(w http.ResponseWriter, r *http.Request) {
 			h.serverError(w, r, err)
 			return
 		}
-		img, err := key.Image(200, 200)
+		qrURI, err := keyToQRDataURI(key)
 		if err != nil {
 			h.serverError(w, r, err)
 			return
 		}
-		var buf bytes.Buffer
-		_ = png.Encode(&buf, img)
+		retryTok, err := sqlite.Encrypt(h.encKey, fmt.Sprintf("%s::%d", secret, u.ID))
+		if err != nil {
+			h.serverError(w, r, err)
+			return
+		}
 		h.render(w, r, "profile_2fa", totpSetupPageData{
-			QRDataURI:     "data:image/png;base64," + base64.StdEncoding.EncodeToString(buf.Bytes()),
-			PendingSecret: secret,
-			Error:         "Invalid code. Scan the QR again and try once more.",
+			QRDataURI:    qrURI,
+			PendingToken: retryTok,
+			Error:        "Invalid code. Scan the QR again and try once more.",
 		})
 		return
 	}
@@ -164,7 +188,6 @@ func (h *Handler) totpEnable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Generate 10 recovery codes.
 	plainCodes, dbCodes, err := generateRecoveryCodes(u.ID)
 	if err != nil {
 		h.serverError(w, r, err)
@@ -208,6 +231,8 @@ func (h *Handler) totpDisable(w http.ResponseWriter, r *http.Request) {
 }
 
 // generateRecoveryCodes produces 10 random codes (plain + bcrypt-hashed versions).
+// Both forms use the formatted "XXXXX-XXXXX" string so bcrypt.CompareHashAndPassword
+// works correctly against what the user types.
 func generateRecoveryCodes(userID int64) ([]string, []*user.RecoveryCode, error) {
 	plain := make([]string, 10)
 	codes := make([]*user.RecoveryCode, 10)
@@ -217,14 +242,27 @@ func generateRecoveryCodes(userID int64) ([]string, []*user.RecoveryCode, error)
 			return nil, nil, fmt.Errorf("generate recovery code: %w", err)
 		}
 		p := fmt.Sprintf("%X", b)
-		// Format as XXXXX-XXXXX (10 hex chars, hyphen in middle)
-		formatted := p[:5] + "-" + p[5:]
+		formatted := p[:5] + "-" + p[5:] // always 11 chars: XXXXX-XXXXX
 		plain[i] = formatted
-		hash, err := bcrypt.GenerateFromPassword([]byte(p), bcryptCost)
+		// Hash the formatted string — exactly what the user will enter.
+		hash, err := bcrypt.GenerateFromPassword([]byte(formatted), bcryptCost)
 		if err != nil {
 			return nil, nil, fmt.Errorf("hash recovery code: %w", err)
 		}
 		codes[i] = &user.RecoveryCode{UserID: userID, Hash: string(hash)}
 	}
 	return plain, codes, nil
+}
+
+// keyToQRDataURI renders a TOTP key's QR code as a PNG data URI.
+func keyToQRDataURI(key *otp.Key) (string, error) {
+	img, err := key.Image(200, 200)
+	if err != nil {
+		return "", fmt.Errorf("totp key image: %w", err)
+	}
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		return "", fmt.Errorf("totp key png: %w", err)
+	}
+	return "data:image/png;base64," + base64.StdEncoding.EncodeToString(buf.Bytes()), nil
 }

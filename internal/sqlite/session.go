@@ -61,6 +61,10 @@ func (s *SessionStore) GetByTokenHash(ctx context.Context, hash string) (*sessio
 	sess.TOTPVerified = totpVerified == 1
 	sess.ExpiresAt = time.UnixMilli(expiresAtUnix).UTC()
 	sess.LastSeenAt = time.UnixMilli(lastSeenAtUnix).UTC()
+	// created_at is a SQLite DEFAULT CURRENT_TIMESTAMP text value.
+	if t, err := time.Parse("2006-01-02 15:04:05", createdAtStr); err == nil {
+		sess.CreatedAt = t.UTC()
+	}
 	return &sess, nil
 }
 
