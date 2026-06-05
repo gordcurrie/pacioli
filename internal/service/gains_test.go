@@ -230,6 +230,118 @@ func TestGainsService_WithCommission(t *testing.T) {
 	}
 }
 
+func TestGainsService_HistoryForSecurity_Trimmed(t *testing.T) {
+	// Buy Jan, sell Jun, buy Aug (future relative to sell) — history for 2024 should stop at the sell.
+	txs := []*transaction.Transaction{
+		{ID: 1, SecurityID: 10, Type: transaction.TypeBuy, TradeDate: date("2024-01-10"), Quantity: d("100"), PriceCAD: d("10"), CommissionCAD: d("0")},
+		{ID: 2, SecurityID: 10, Type: transaction.TypeSell, TradeDate: date("2024-06-01"), Quantity: d("50"), PriceCAD: d("15"), CommissionCAD: d("0")},
+		{ID: 3, SecurityID: 10, Type: transaction.TypeBuy, TradeDate: date("2024-08-01"), Quantity: d("30"), PriceCAD: d("14"), CommissionCAD: d("0")},
+	}
+	sec := &security.Security{ID: 10, Ticker: "TRIM", Exchange: "TSX"}
+	store := &mockTxStore{
+		nonRegistered: map[int64][]*transaction.Transaction{10: txs},
+	}
+	svc := service.NewGainsService(store, &mockSecStore{secs: map[int64]*security.Security{10: sec}})
+
+	gotSec, history, err := svc.HistoryForSecurity(context.Background(), 10, 1, 2024)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if gotSec == nil || gotSec.Ticker != "TRIM" {
+		t.Errorf("security: got %v", gotSec)
+	}
+	// Only the buy + sell rows; Aug buy excluded.
+	if len(history) != 2 {
+		t.Fatalf("expected 2 history rows, got %d", len(history))
+	}
+	if history[1].Tx.Type != transaction.TypeSell {
+		t.Errorf("last row should be sell, got %s", history[1].Tx.Type)
+	}
+}
+
+func TestGainsService_HistoryForSecurity_NoDisposalsInYear(t *testing.T) {
+	txs := []*transaction.Transaction{
+		{ID: 1, SecurityID: 11, Type: transaction.TypeBuy, TradeDate: date("2024-01-10"), Quantity: d("100"), PriceCAD: d("10"), CommissionCAD: d("0")},
+	}
+	sec := &security.Security{ID: 11, Ticker: "HOLD", Exchange: "TSX"}
+	store := &mockTxStore{
+		nonRegistered: map[int64][]*transaction.Transaction{11: txs},
+	}
+	svc := service.NewGainsService(store, &mockSecStore{secs: map[int64]*security.Security{11: sec}})
+
+	gotSec, history, err := svc.HistoryForSecurity(context.Background(), 11, 1, 2024)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if gotSec == nil {
+		t.Fatal("expected security, got nil")
+	}
+	if history != nil {
+		t.Errorf("expected nil history when no disposals in year, got %d rows", len(history))
+	}
+}
+
+func TestGainsService_HistoryForSecurity_TrimmedAtLastDisposal(t *testing.T) {
+	// Sell Jan, buy Feb, sell Mar, buy Apr — history for 2024 stops at Mar sell.
+	txs := []*transaction.Transaction{
+		{ID: 1, SecurityID: 12, Type: transaction.TypeBuy, TradeDate: date("2023-12-01"), Quantity: d("200"), PriceCAD: d("10"), CommissionCAD: d("0")},
+		{ID: 2, SecurityID: 12, Type: transaction.TypeSell, TradeDate: date("2024-01-15"), Quantity: d("50"), PriceCAD: d("12"), CommissionCAD: d("0")},
+		{ID: 3, SecurityID: 12, Type: transaction.TypeBuy, TradeDate: date("2024-02-01"), Quantity: d("20"), PriceCAD: d("11"), CommissionCAD: d("0")},
+		{ID: 4, SecurityID: 12, Type: transaction.TypeSell, TradeDate: date("2024-03-10"), Quantity: d("30"), PriceCAD: d("13"), CommissionCAD: d("0")},
+		{ID: 5, SecurityID: 12, Type: transaction.TypeBuy, TradeDate: date("2024-04-01"), Quantity: d("10"), PriceCAD: d("12"), CommissionCAD: d("0")},
+	}
+	sec := &security.Security{ID: 12, Ticker: "MULTI", Exchange: "TSX"}
+	store := &mockTxStore{
+		nonRegistered: map[int64][]*transaction.Transaction{12: txs},
+	}
+	svc := service.NewGainsService(store, &mockSecStore{secs: map[int64]*security.Security{12: sec}})
+
+	_, history, err := svc.HistoryForSecurity(context.Background(), 12, 1, 2024)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// expect: 2023 buy + Jan sell + Feb buy + Mar sell = 4 rows; Apr buy excluded
+	if len(history) != 4 {
+		t.Fatalf("expected 4 history rows, got %d", len(history))
+	}
+	last := history[len(history)-1]
+	if last.Tx.Type != transaction.TypeSell || last.Tx.TradeDate.Month() != 3 {
+		t.Errorf("last row should be Mar sell, got type=%s date=%s", last.Tx.Type, last.Tx.TradeDate.Format(time.DateOnly))
+	}
+}
+
+func TestGainsService_HistoryForSecurity_RunningACBCorrect(t *testing.T) {
+	// Buy 100 @ $10 (ACB = $10/share), sell 50 @ $15.
+	// At sell row: PreTxACBPerShare = 10, RunningShares = 50, RunningACB = 500.
+	txs := []*transaction.Transaction{
+		{ID: 1, SecurityID: 13, Type: transaction.TypeBuy, TradeDate: date("2024-01-10"), Quantity: d("100"), PriceCAD: d("10"), CommissionCAD: d("0")},
+		{ID: 2, SecurityID: 13, Type: transaction.TypeSell, TradeDate: date("2024-06-01"), Quantity: d("50"), PriceCAD: d("15"), CommissionCAD: d("0")},
+	}
+	sec := &security.Security{ID: 13, Ticker: "ACB", Exchange: "TSX"}
+	store := &mockTxStore{
+		nonRegistered: map[int64][]*transaction.Transaction{13: txs},
+	}
+	svc := service.NewGainsService(store, &mockSecStore{secs: map[int64]*security.Security{13: sec}})
+
+	_, history, err := svc.HistoryForSecurity(context.Background(), 13, 1, 2024)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(history) != 2 {
+		t.Fatalf("expected 2 rows, got %d", len(history))
+	}
+	sellRow := history[1]
+	if !sellRow.RunningShares.Equal(d("50")) {
+		t.Errorf("RunningShares after sell: got %s want 50", sellRow.RunningShares)
+	}
+	if !sellRow.RunningACB.Equal(d("500")) {
+		t.Errorf("RunningACB after sell: got %s want 500", sellRow.RunningACB)
+	}
+	if !sellRow.PreTxACBPerShare.Equal(d("10")) {
+		t.Errorf("PreTxACBPerShare at sell: got %s want 10", sellRow.PreTxACBPerShare)
+	}
+}
+
 func TestGainsService_NeedsReview_NoACBBuy(t *testing.T) {
 	// Norbert's Gambit scenario: sell of DLR.TO with no corresponding buy
 	// (buy was DLR.U.TO → journalled via FXT, which is skipped by importer)

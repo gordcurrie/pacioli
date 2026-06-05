@@ -44,6 +44,16 @@ func NewGainsService(txStore transaction.Store, secStore security.Store) *GainsS
 	return &GainsService{txStore: txStore, secStore: secStore}
 }
 
+func isDisposalType(t transaction.Type) bool {
+	return t == transaction.TypeSell || t == transaction.TypeTransferOut
+}
+
+// proceedsCAD computes net disposal proceeds: qty × priceCAD − commissionCAD.
+// Single source of truth for this formula so Calculate and HistoryForSecurity stay in sync.
+func proceedsCAD(tx *transaction.Transaction) decimal.Decimal {
+	return tx.Quantity.Mul(tx.PriceCAD).Sub(tx.CommissionCAD)
+}
+
 func (s *GainsService) Calculate(ctx context.Context, userID int64, year int) (*GainsReport, error) {
 	from := time.Date(year, 1, 1, 0, 0, 0, 0, time.UTC)
 	to := time.Date(year, 12, 31, 0, 0, 0, 0, time.UTC)
@@ -79,12 +89,11 @@ func (s *GainsService) Calculate(ctx context.Context, userID int64, year int) (*
 		_, history := CalculateACBWithHistory(secID, txs)
 
 		for _, row := range history {
-			isDisposal := row.Tx.Type == transaction.TypeSell || row.Tx.Type == transaction.TypeTransferOut
-			if !isDisposal || row.Tx.TradeDate.Year() != year {
+			if !isDisposalType(row.Tx.Type) || row.Tx.TradeDate.Year() != year {
 				continue
 			}
 
-			proceeds := row.Tx.Quantity.Mul(row.Tx.PriceCAD).Sub(row.Tx.CommissionCAD)
+			proceeds := proceedsCAD(row.Tx)
 			acbAtSell := row.PreTxACBPerShare.Mul(row.Tx.Quantity)
 			gainLoss := proceeds.Sub(acbAtSell)
 
@@ -126,6 +135,67 @@ func (s *GainsService) Calculate(ctx context.Context, userID int64, year int) (*
 
 	report.NetGain = report.TotalGains.Sub(report.TotalLosses)
 	return report, nil
+}
+
+// GainsDetailRow wraps HistoryRow with pre-computed display fields for the
+// disposition detail page.
+type GainsDetailRow struct {
+	HistoryRow
+	IsDisposal  bool
+	NeedsReview bool            // disposal with no prior share position — ACB unknown, GainLoss suppressed
+	GainLoss    decimal.Decimal // zero for non-disposal rows and NeedsReview disposals
+}
+
+// HistoryForSecurity returns the ACB history for a security trimmed to all rows
+// up to and including the last disposal in year. Returns nil history when no
+// disposals exist for that year.
+func (s *GainsService) HistoryForSecurity(ctx context.Context, securityID, userID int64, year int) (*security.Security, []GainsDetailRow, error) {
+	sec, err := s.secStore.GetByID(ctx, securityID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("history for security %d: get security: %w", securityID, err)
+	}
+
+	txs, err := s.txStore.ListBySecurityNonRegistered(ctx, securityID, userID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("history for security %d: list transactions: %w", securityID, err)
+	}
+
+	// Fast path: skip O(n) ACB computation when no disposals exist in the target year.
+	hasDisposal := false
+	for _, tx := range txs {
+		if isDisposalType(tx.Type) && tx.TradeDate.Year() == year {
+			hasDisposal = true
+			break
+		}
+	}
+	if !hasDisposal {
+		return sec, nil, nil
+	}
+
+	_, history := CalculateACBWithHistory(securityID, txs)
+
+	lastIdx := -1
+	for i, row := range history {
+		if isDisposalType(row.Tx.Type) && row.Tx.TradeDate.Year() == year {
+			lastIdx = i
+		}
+	}
+	if lastIdx == -1 {
+		return sec, nil, nil
+	}
+
+	trimmed := history[:lastIdx+1]
+	out := make([]GainsDetailRow, len(trimmed))
+	for i, row := range trimmed {
+		isDisposal := isDisposalType(row.Tx.Type)
+		needsReview := isDisposal && row.PreTxShares.IsZero()
+		var gainLoss decimal.Decimal
+		if isDisposal && !needsReview {
+			gainLoss = proceedsCAD(row.Tx).Sub(row.PreTxACBPerShare.Mul(row.Tx.Quantity))
+		}
+		out[i] = GainsDetailRow{HistoryRow: row, IsDisposal: isDisposal, NeedsReview: needsReview, GainLoss: gainLoss}
+	}
+	return sec, out, nil
 }
 
 func (s *GainsService) isSuperficialLoss(ctx context.Context, securityID, userID int64, sellDate time.Time) (bool, error) {

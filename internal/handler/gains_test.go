@@ -1,19 +1,33 @@
 package handler_test
 
 import (
+	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/gordcurrie/pacioli/internal/account"
 	"github.com/gordcurrie/pacioli/internal/handler"
+	"github.com/gordcurrie/pacioli/internal/security"
 	"github.com/gordcurrie/pacioli/internal/service"
 	"github.com/gordcurrie/pacioli/internal/sqlite"
+	"github.com/gordcurrie/pacioli/internal/transaction"
 	"github.com/gordcurrie/pacioli/web"
+	"github.com/shopspring/decimal"
 )
 
-func newTestHandler(t *testing.T) *handler.Handler {
+type testEnv struct {
+	handler      *handler.Handler
+	accounts     *sqlite.AccountStore
+	securities   *sqlite.SecurityStore
+	transactions *sqlite.TransactionStore
+}
+
+func newTestEnv(t *testing.T) *testEnv {
 	t.Helper()
 	db, err := sqlite.Open(":memory:")
 	if err != nil {
@@ -46,7 +60,17 @@ func newTestHandler(t *testing.T) *handler.Handler {
 	if err != nil {
 		t.Fatalf("new handler: %v", err)
 	}
-	return h
+	return &testEnv{
+		handler:      h,
+		accounts:     accountStore,
+		securities:   secStore,
+		transactions: txStore,
+	}
+}
+
+func newTestHandler(t *testing.T) *handler.Handler {
+	t.Helper()
+	return newTestEnv(t).handler
 }
 
 func TestGainsHandler_ShowGainsForYear(t *testing.T) {
@@ -150,6 +174,117 @@ func TestGainsHandler_PreviewROC(t *testing.T) {
 	body := rr.Body.String()
 	if !strings.Contains(body, "ROC Adjustments") {
 		t.Error("response body missing 'ROC Adjustments'")
+	}
+}
+
+func TestGainsHandler_ShowGainsDetail_InvalidArgs(t *testing.T) {
+	h := newTestHandler(t)
+	mux := http.NewServeMux()
+	h.Routes(mux)
+
+	cases := []struct {
+		path string
+		want int
+	}{
+		{"/gains/abc/1", http.StatusNotFound},
+		{"/gains/1989/1", http.StatusNotFound},
+		{"/gains/2101/1", http.StatusNotFound},
+		{"/gains/2024/0", http.StatusNotFound},
+		{"/gains/2024/-1", http.StatusNotFound},
+		{"/gains/2024/abc", http.StatusNotFound},
+	}
+	for _, tc := range cases {
+		req := httptest.NewRequest(http.MethodGet, tc.path, http.NoBody)
+		rr := httptest.NewRecorder()
+		mux.ServeHTTP(rr, req)
+		if rr.Code != tc.want {
+			t.Errorf("path %s: got %d want %d", tc.path, rr.Code, tc.want)
+		}
+	}
+}
+
+func TestGainsHandler_ShowGainsDetail_SecurityNotFound(t *testing.T) {
+	h := newTestHandler(t)
+	mux := http.NewServeMux()
+	h.Routes(mux)
+
+	req := httptest.NewRequest(http.MethodGet, "/gains/2024/9999", http.NoBody)
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, req)
+	if rr.Code != http.StatusNotFound {
+		t.Errorf("got %d want 404", rr.Code)
+	}
+}
+
+func TestGainsHandler_ShowGainsDetail_NoDisposalsInYear(t *testing.T) {
+	env := newTestEnv(t)
+	ctx := context.Background()
+
+	sec := &security.Security{Ticker: "HOLD", Exchange: "TSX", Name: "Hold Co", Type: security.TypeEquity, Currency: "CAD"}
+	if err := env.securities.Create(ctx, sec); err != nil {
+		t.Fatalf("create security: %v", err)
+	}
+	// No transactions — no disposals in 2024.
+
+	mux := http.NewServeMux()
+	env.handler.Routes(mux)
+
+	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/gains/2024/%d", sec.ID), http.NoBody)
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Errorf("got %d want 200", rr.Code)
+	}
+	if !strings.Contains(rr.Body.String(), "HOLD") {
+		t.Error("response should contain security ticker")
+	}
+}
+
+func TestGainsHandler_ShowGainsDetail_WithDisposals(t *testing.T) {
+	env := newTestEnv(t)
+	ctx := context.Background()
+
+	acc := &account.Account{UserID: 1, Name: "Margin", Type: account.TypeMargin, Broker: "B", Currency: "CAD"}
+	if err := env.accounts.Create(ctx, acc); err != nil {
+		t.Fatalf("create account: %v", err)
+	}
+	sec := &security.Security{Ticker: "XYZ", Exchange: "TSX", Name: "XYZ Co", Type: security.TypeEquity, Currency: "CAD"}
+	if err := env.securities.Create(ctx, sec); err != nil {
+		t.Fatalf("create security: %v", err)
+	}
+
+	tradeDate := time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC)
+	for _, typ := range []transaction.Type{transaction.TypeBuy, transaction.TypeSell} {
+		tx := &transaction.Transaction{
+			AccountID: acc.ID, SecurityID: sec.ID, Type: typ,
+			TradeDate: tradeDate, SettledDate: tradeDate,
+			Quantity: decimal.NewFromInt(10), PriceCAD: decimal.NewFromFloat(20),
+			Source: transaction.SourceManual,
+		}
+		if err := env.transactions.Create(ctx, tx); err != nil {
+			t.Fatalf("create tx: %v", err)
+		}
+		tradeDate = tradeDate.AddDate(0, 3, 0)
+	}
+
+	mux := http.NewServeMux()
+	env.handler.Routes(mux)
+
+	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/gains/2024/%d", sec.ID), http.NoBody)
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Errorf("got %d want 200", rr.Code)
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, "XYZ") {
+		t.Error("response missing ticker XYZ")
+	}
+	if !strings.Contains(body, "buy") {
+		t.Error("response missing 'buy' row")
+	}
+	if !strings.Contains(body, "sell") {
+		t.Error("response missing 'sell' row")
 	}
 }
 

@@ -36,11 +36,12 @@
 </div>
 
 {{if .Report.Lines}}
+{{$year := .Year}}
 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem">
   <span><small>{{len .Report.Lines}} disposition(s)</small></span>
   <div style="display:flex; gap:0.5rem">
-    <a href="/roc/{{.Year}}" role="button" class="outline" style="padding:0.25rem 0.5rem; font-size:0.875rem">ROC Adjustments</a>
-    <a href="/gains/{{.Year}}/export" role="button" class="outline" style="padding:0.25rem 0.5rem; font-size:0.875rem">Export CSV</a>
+    <a href="/roc/{{$year}}" role="button" class="outline" style="padding:0.25rem 0.5rem; font-size:0.875rem">ROC Adjustments</a>
+    <a href="/gains/{{$year}}/export" role="button" class="outline" style="padding:0.25rem 0.5rem; font-size:0.875rem">Export CSV</a>
   </div>
 </div>
 <figure>
@@ -60,7 +61,7 @@
       {{range .Report.Lines}}
       <tr {{if .IsSuperficialLoss}}class="danger"{{end}}>
         <td>{{.TradeDate.Format "2006-01-02"}}</td>
-        <td><strong>{{.Security.Ticker}}</strong> <small>{{.Security.Exchange}}</small></td>
+        <td><a href="/gains/{{$year}}/{{.Security.ID}}"><strong>{{.Security.Ticker}}</strong></a> <small>{{.Security.Exchange}}</small></td>
         <td style="text-align:right">{{.Shares.StringFixed 4}}</td>
         <td style="text-align:right">{{.ProceedsCAD.StringFixed 2}}</td>
         <td style="text-align:right">{{.ACBAtSell.StringFixed 2}}</td>
