@@ -1,0 +1,21 @@
+ALTER TABLE users ADD COLUMN password_hash TEXT;
+ALTER TABLE users ADD COLUMN is_admin      INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE users ADD COLUMN totp_secret   TEXT;
+ALTER TABLE users ADD COLUMN totp_enabled  INTEGER NOT NULL DEFAULT 0;
+
+CREATE TABLE sessions (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token_hash    TEXT    NOT NULL UNIQUE,
+    totp_verified INTEGER NOT NULL DEFAULT 0,
+    created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    expires_at    DATETIME NOT NULL,
+    last_seen_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE recovery_codes (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    code_hash TEXT    NOT NULL,
+    used_at   DATETIME
+);

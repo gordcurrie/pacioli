@@ -38,12 +38,22 @@ func run() error {
 	}
 	defer func() { _ = db.Close() }()
 
-	userStore := sqlite.NewUserStore(db)
-	userID, err := userStore.EnsureDefault(context.Background(), envOrDefault("USER_EMAIL", "admin@pacioli.local"))
-	if err != nil {
-		return fmt.Errorf("ensure default user: %w", err)
+	var tokenKey []byte
+	if tokenKeyHex := strings.TrimSpace(os.Getenv("TOKEN_ENCRYPTION_KEY")); tokenKeyHex != "" {
+		key, err := hex.DecodeString(tokenKeyHex)
+		if err != nil {
+			return fmt.Errorf("TOKEN_ENCRYPTION_KEY: invalid hex: %w", err)
+		}
+		if len(key) != 32 {
+			return fmt.Errorf("TOKEN_ENCRYPTION_KEY: got %d bytes, need 32 (64 hex chars)", len(key))
+		}
+		tokenKey = key
+	} else {
+		logger.Warn("TOKEN_ENCRYPTION_KEY not set — Questrade integration and 2FA disabled")
 	}
 
+	userStore := sqlite.NewUserStore(db, tokenKey)
+	sessionStore := sqlite.NewSessionStore(db)
 	accountStore := sqlite.NewAccountStore(db)
 	securityStore := sqlite.NewSecurityStore(db)
 	txStore := sqlite.NewTransactionStore(db)
@@ -51,17 +61,8 @@ func run() error {
 	fxStore := sqlite.NewFXStore(db)
 
 	var qtTokenStore questrade.Store
-	if tokenKeyHex := strings.TrimSpace(os.Getenv("TOKEN_ENCRYPTION_KEY")); tokenKeyHex != "" {
-		tokenKey, err := hex.DecodeString(tokenKeyHex)
-		if err != nil {
-			return fmt.Errorf("TOKEN_ENCRYPTION_KEY: invalid hex: %w", err)
-		}
-		if len(tokenKey) != 32 {
-			return fmt.Errorf("TOKEN_ENCRYPTION_KEY: got %d bytes, need 32 (64 hex chars)", len(tokenKey))
-		}
+	if tokenKey != nil {
 		qtTokenStore = sqlite.NewQTokenStore(db, tokenKey)
-	} else {
-		logger.Warn("TOKEN_ENCRYPTION_KEY not set — Questrade integration disabled")
 	}
 
 	distStore := sqlite.NewDistributionStore(db)
@@ -70,17 +71,22 @@ func run() error {
 	gainsSvc := service.NewGainsService(txStore, securityStore)
 	rocSvc := service.NewROCService(txStore, distStore, securityStore)
 
+	secureCookie := strings.ToLower(strings.TrimSpace(os.Getenv("SECURE_COOKIES"))) == "true"
+
 	h, err := handler.New(&handler.Config{
 		Accounts:     accountStore,
 		Securities:   securityStore,
 		Transactions: txStore,
 		Audits:       auditStore,
 		QTTokens:     qtTokenStore,
+		Users:        userStore,
+		Sessions:     sessionStore,
 		BOCSvc:       bocSvc,
 		ACBSvc:       acbSvc,
 		GainsSvc:     gainsSvc,
 		ROCSvc:       rocSvc,
-		UserID:       userID,
+		EncKey:       tokenKey,
+		SecureCookie: secureCookie,
 		Logger:       logger,
 		TemplateFS:   web.Templates,
 	})
@@ -97,7 +103,7 @@ func run() error {
 	addr := envOrDefault("ADDR", ":8080")
 	srv := &http.Server{
 		Addr:         addr,
-		Handler:      handler.RequestLogger(logger)(mux),
+		Handler:      handler.RequestLogger(logger)(h.SetupGate(mux)),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 30 * time.Second,
 		IdleTimeout:  120 * time.Second,

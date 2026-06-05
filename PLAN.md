@@ -111,11 +111,22 @@
 
 ---
 
-## Phase 6 — Deferred 🔲
+## Phase 6 — Multi-User Auth + TOTP 2FA ✅
+
+- ✅ Migration 000005 — extend `users` table (password_hash, is_admin, totp_secret, totp_enabled); add `sessions` + `recovery_codes` tables
+- ✅ Session-based auth — 30-day sessions; raw token in cookie, SHA-256 hash in DB; HttpOnly + SameSite=Strict; configurable `Secure` via `SECURE_COOKIES` env
+- ✅ First-run setup flow — `/setup` locked after first configured user; upserts existing unconfigured user to preserve data
+- ✅ Login / logout — bcrypt cost 12; `/login` and `/logout`
+- ✅ TOTP 2FA — `pquerna/otp` (RFC 6238); QR code rendered as `data:image/png;base64` (no external service); 10 single-use recovery codes; encrypted at rest via `TOKEN_ENCRYPTION_KEY`
+- ✅ Admin-managed user creation — `/admin/users`; admin can reset passwords
+- ✅ Profile — password change (`/profile/password`), 2FA enable/disable (`/profile/2fa`)
+- ✅ Auth middleware — `RequireAuth`, `RequireAdmin`, `SetupGate`; all existing routes protected
+- ✅ `h.userID` removed — user comes from request context set by `RequireAuth`
+
+## Phase 7 — Deferred 🔲
 
 - 🔲 Options support
 - 🔲 Corporate actions (splits, mergers, spin-offs)
-- 🔲 Multi-user (users table already in schema; needs auth layer)
 - 🔲 Additional broker CSV parsers
 
 ---

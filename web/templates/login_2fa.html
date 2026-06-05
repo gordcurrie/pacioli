@@ -1,0 +1,16 @@
+{{define "content"}}
+<div style="max-width:400px;margin:4rem auto">
+  <h2>Two-factor authentication</h2>
+  <p><small>Enter the 6-digit code from your authenticator app, or one of your recovery codes.</small></p>
+  {{if .Error}}<p style="color:var(--pico-del-color)">{{.Error}}</p>{{end}}
+  <form method="POST" action="/login/2fa">
+    <label>
+      Code
+      <input type="text" name="code" inputmode="numeric" autocomplete="one-time-code"
+             pattern="\d{6}|[0-9A-Fa-f]{5}-[0-9A-Fa-f]{5}"
+             placeholder="000000" required autofocus style="letter-spacing:0.2em">
+    </label>
+    <button type="submit">Verify</button>
+  </form>
+</div>
+{{end}}

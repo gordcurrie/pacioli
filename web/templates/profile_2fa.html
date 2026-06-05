@@ -1,0 +1,55 @@
+{{define "content"}}
+<div style="max-width:520px">
+  <h2>Two-factor authentication</h2>
+
+  {{if .EncKeyMissing}}
+  <article>
+    <p><strong>2FA unavailable.</strong> Set <code>TOKEN_ENCRYPTION_KEY</code> in your environment to enable two-factor authentication.</p>
+  </article>
+  {{else if .RecoveryCodes}}
+  <article>
+    <p><strong>2FA enabled.</strong> Save these recovery codes — they will not be shown again.</p>
+    <pre style="font-size:1.1rem;line-height:2">{{range .RecoveryCodes}}{{.}}
+{{end}}</pre>
+    <p><small>Each code can be used once. Store them somewhere safe.</small></p>
+    <p><a href="/profile/2fa" role="button" class="outline">Done</a></p>
+  </article>
+  {{else if .TOTPDisabled}}
+  <p style="color:var(--pico-ins-color)">Two-factor authentication has been disabled.</p>
+  <p><a href="/profile/password">← Back to profile</a></p>
+  {{else if .TOTPEnabled}}
+  <p>Two-factor authentication is <strong>enabled</strong>.</p>
+  {{if .RecoveryCount}}<p><small>{{.RecoveryCount}} recovery codes remaining.</small></p>{{end}}
+  {{if .Error}}<p style="color:var(--pico-del-color)">{{.Error}}</p>{{end}}
+  <details>
+    <summary>Disable 2FA</summary>
+    <form method="POST" action="/profile/2fa/disable" style="margin-top:1rem;max-width:320px">
+      <label>
+        Authenticator code
+        <input type="text" name="code" inputmode="numeric" autocomplete="one-time-code"
+               placeholder="000000" required style="letter-spacing:0.2em">
+      </label>
+      <button type="submit" class="secondary outline">Disable 2FA</button>
+    </form>
+  </details>
+  {{else}}
+  <p>Two-factor authentication is <strong>not enabled</strong>.</p>
+  <p>Scan the QR code with your authenticator app (Google Authenticator, Authy, 1Password, etc.), then enter the 6-digit code to confirm.</p>
+  {{if .Error}}<p style="color:var(--pico-del-color)">{{.Error}}</p>{{end}}
+  {{if .QRDataURI}}
+  <img src="{{.QRDataURI}}" alt="TOTP QR code" style="display:block;margin:1rem 0;image-rendering:pixelated">
+  <form method="POST" action="/profile/2fa/enable">
+    <input type="hidden" name="pending_secret" value="{{.PendingSecret}}">
+    <label>
+      Verification code
+      <input type="text" name="code" inputmode="numeric" autocomplete="one-time-code"
+             placeholder="000000" required autofocus style="letter-spacing:0.2em;max-width:180px">
+    </label>
+    <button type="submit">Enable 2FA</button>
+  </form>
+  {{end}}
+  {{end}}
+
+  <p style="margin-top:2rem"><small><a href="/profile/password">← Back to profile</a></small></p>
+</div>
+{{end}}

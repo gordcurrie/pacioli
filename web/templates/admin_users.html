@@ -1,0 +1,57 @@
+{{define "content"}}
+<h2>User Management</h2>
+
+{{if .Success}}<p style="color:var(--pico-ins-color)">{{.Success}}</p>{{end}}
+{{if .Error}}<p style="color:var(--pico-del-color)">{{.Error}}</p>{{end}}
+
+<figure>
+  <table>
+    <thead>
+      <tr>
+        <th>Email</th>
+        <th>Admin</th>
+        <th>2FA</th>
+        <th>Created</th>
+        <th>Reset password</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .Users}}
+      <tr>
+        <td>{{.Email}}</td>
+        <td>{{if .IsAdmin}}✓{{end}}</td>
+        <td>{{if .TOTPEnabled}}✓{{end}}</td>
+        <td><small>{{.CreatedAt.Format "2006-01-02"}}</small></td>
+        <td>
+          <form method="POST" action="/admin/users/{{.ID}}/reset-password"
+                style="display:flex;gap:0.5rem;align-items:center;margin:0">
+            <input type="password" name="password" placeholder="New password" minlength="8" required
+                   style="width:160px;padding:0.2rem 0.4rem;font-size:0.85rem;margin:0">
+            <button type="submit" class="outline" style="padding:0.2rem 0.6rem;font-size:0.85rem;margin:0">Reset</button>
+          </form>
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</figure>
+
+<details>
+  <summary>Add user</summary>
+  <form method="POST" action="/admin/users" style="max-width:480px;margin-top:1rem">
+    <label>
+      Email
+      <input type="email" name="email" required>
+    </label>
+    <label>
+      Password
+      <input type="password" name="password" required minlength="8">
+    </label>
+    <label>
+      <input type="checkbox" name="is_admin">
+      Admin
+    </label>
+    <button type="submit">Create user</button>
+  </form>
+</details>
+{{end}}

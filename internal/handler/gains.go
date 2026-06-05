@@ -50,13 +50,13 @@ func (h *Handler) showGainsForYear(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	report, err := h.gainsSvc.Calculate(r.Context(), h.userID, year)
+	report, err := h.gainsSvc.Calculate(r.Context(), userFromCtx(r.Context()).ID, year)
 	if err != nil {
 		h.serverError(w, r, err)
 		return
 	}
 
-	h.render(w, "gains", gainsPageData{Year: year, PrevYear: year - 1, NextYear: year + 1, Report: report})
+	h.render(w, r,"gains", gainsPageData{Year: year, PrevYear: year - 1, NextYear: year + 1, Report: report})
 }
 
 func (h *Handler) exportGainsCSV(w http.ResponseWriter, r *http.Request) {
@@ -66,7 +66,7 @@ func (h *Handler) exportGainsCSV(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	report, err := h.gainsSvc.Calculate(r.Context(), h.userID, year)
+	report, err := h.gainsSvc.Calculate(r.Context(), userFromCtx(r.Context()).ID, year)
 	if err != nil {
 		h.serverError(w, r, err)
 		return
@@ -117,13 +117,13 @@ func (h *Handler) showGainsDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sec, history, err := h.gainsSvc.HistoryForSecurity(r.Context(), secID, h.userID, year)
+	sec, history, err := h.gainsSvc.HistoryForSecurity(r.Context(), secID, userFromCtx(r.Context()).ID, year)
 	if err != nil {
 		h.notFoundOrError(w, r, err)
 		return
 	}
 
-	h.render(w, "gains_detail", gainsDetailPageData{Year: year, Security: sec, History: history})
+	h.render(w, r,"gains_detail", gainsDetailPageData{Year: year, Security: sec, History: history})
 }
 
 func (h *Handler) previewROC(w http.ResponseWriter, r *http.Request) {
@@ -133,13 +133,13 @@ func (h *Handler) previewROC(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows, err := h.rocSvc.PreviewROC(r.Context(), h.userID, year)
+	rows, err := h.rocSvc.PreviewROC(r.Context(), userFromCtx(r.Context()).ID, year)
 	if err != nil {
 		h.serverError(w, r, err)
 		return
 	}
 
-	h.render(w, "roc_preview", rocPreviewPageData{Year: year, Rows: rows})
+	h.render(w, r,"roc_preview", rocPreviewPageData{Year: year, Rows: rows})
 }
 
 func (h *Handler) applyROC(w http.ResponseWriter, r *http.Request) {
@@ -149,7 +149,7 @@ func (h *Handler) applyROC(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.rocSvc.ApplyROC(r.Context(), h.userID, year); err != nil {
+	if err := h.rocSvc.ApplyROC(r.Context(), userFromCtx(r.Context()).ID, year); err != nil {
 		h.serverError(w, r, err)
 		return
 	}
