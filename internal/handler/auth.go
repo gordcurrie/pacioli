@@ -3,10 +3,12 @@ package handler
 import (
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
 
+	"github.com/gordcurrie/pacioli/internal/errs"
 	"github.com/gordcurrie/pacioli/internal/session"
 	"github.com/gordcurrie/pacioli/internal/sqlite"
 	"github.com/gordcurrie/pacioli/internal/user"
@@ -20,7 +22,11 @@ const (
 	cookieName      = "pacioli_session"
 )
 
-// setupPage shows the first-run setup form. Redirects to / if already configured.
+type setupPageData struct {
+	Error string
+}
+
+// setupPage shows the first-run setup form. Redirects to /login if already configured.
 func (h *Handler) setupPage(w http.ResponseWriter, r *http.Request) {
 	n, err := h.users.CountConfigured(r.Context())
 	if err != nil {
@@ -31,7 +37,7 @@ func (h *Handler) setupPage(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 		return
 	}
-	h.render(w, r, "setup", nil)
+	h.render(w, r, "setup", setupPageData{})
 }
 
 // setupSubmit handles first-run admin account creation.
@@ -52,16 +58,18 @@ func (h *Handler) setupSubmit(w http.ResponseWriter, r *http.Request) {
 	password := r.FormValue("password")
 	confirm := r.FormValue("confirm")
 
+	renderErr := func(msg string) { h.render(w, r, "setup", setupPageData{Error: msg}) }
+
 	if email == "" || password == "" {
-		h.render(w, r, "setup", map[string]string{"Error": "Email and password are required."})
+		renderErr("Email and password are required.")
 		return
 	}
 	if password != confirm {
-		h.render(w, r, "setup", map[string]string{"Error": "Passwords do not match."})
+		renderErr("Passwords do not match.")
 		return
 	}
 	if len(password) < 8 {
-		h.render(w, r, "setup", map[string]string{"Error": "Password must be at least 8 characters."})
+		renderErr("Password must be at least 8 characters.")
 		return
 	}
 
@@ -74,10 +82,11 @@ func (h *Handler) setupSubmit(w http.ResponseWriter, r *http.Request) {
 	// Reuse existing unconfigured user if present, else create new.
 	existing, err := h.users.GetByEmail(r.Context(), email)
 	var userID int64
-	if err == nil {
+	switch {
+	case err == nil:
 		// Only reuse users that have no password set — never overwrite a configured account.
 		if existing.PasswordHash != "" {
-			h.render(w, r, "setup", map[string]string{"Error": "An account with that email already exists."})
+			renderErr("An account with that email already exists.")
 			return
 		}
 		// Update existing user.
@@ -90,7 +99,7 @@ func (h *Handler) setupSubmit(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		userID = existing.ID
-	} else {
+	case errors.Is(err, errs.ErrNotFound):
 		// Create new admin user.
 		newUser := &user.User{Email: email, PasswordHash: string(hash), IsAdmin: true}
 		id, err2 := h.users.Create(r.Context(), newUser)
@@ -99,6 +108,9 @@ func (h *Handler) setupSubmit(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		userID = id
+	default:
+		h.serverError(w, r, err)
+		return
 	}
 
 	raw, err := generateToken()

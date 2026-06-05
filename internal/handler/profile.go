@@ -6,6 +6,7 @@ import (
 	"encoding/base32"
 	"encoding/base64"
 	"fmt"
+	"html/template"
 	"image/png"
 	"net/http"
 	"strings"
@@ -67,7 +68,7 @@ func (h *Handler) updatePassword(w http.ResponseWriter, r *http.Request) {
 
 type totpSetupPageData struct {
 	TOTPEnabled   bool
-	QRDataURI     string
+	QRDataURI     template.URL
 	PendingToken  string // AES-encrypted "secret::userID" — server-bound, tamper-proof
 	RecoveryCount int    // unused codes remaining
 	RecoveryCodes []string
@@ -255,7 +256,8 @@ func generateRecoveryCodes(userID int64) ([]string, []*user.RecoveryCode, error)
 }
 
 // keyToQRDataURI renders a TOTP key's QR code as a PNG data URI.
-func keyToQRDataURI(key *otp.Key) (string, error) {
+// Returns template.URL so html/template does not filter the data: scheme.
+func keyToQRDataURI(key *otp.Key) (template.URL, error) {
 	img, err := key.Image(200, 200)
 	if err != nil {
 		return "", fmt.Errorf("totp key image: %w", err)
@@ -264,5 +266,5 @@ func keyToQRDataURI(key *otp.Key) (string, error) {
 	if err := png.Encode(&buf, img); err != nil {
 		return "", fmt.Errorf("totp key png: %w", err)
 	}
-	return "data:image/png;base64," + base64.StdEncoding.EncodeToString(buf.Bytes()), nil
+	return template.URL("data:image/png;base64," + base64.StdEncoding.EncodeToString(buf.Bytes())), nil //#nosec G203 -- data URI is server-generated PNG, no user input
 }

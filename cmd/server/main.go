@@ -50,6 +50,12 @@ func run() error {
 		tokenKey = key
 	} else {
 		logger.Warn("TOKEN_ENCRYPTION_KEY not set — Questrade integration and 2FA disabled")
+		// Fail fast if any user has 2FA enabled: without the key their TOTP secret
+		// can't be decrypted and they'd be locked out with no recovery path.
+		var n int
+		if err := db.QueryRowContext(context.Background(), `SELECT COUNT(*) FROM users WHERE totp_enabled=1`).Scan(&n); err == nil && n > 0 {
+			return fmt.Errorf("TOKEN_ENCRYPTION_KEY required: %d user(s) have 2FA enabled", n)
+		}
 	}
 
 	userStore := sqlite.NewUserStore(db, tokenKey)

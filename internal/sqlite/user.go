@@ -79,11 +79,18 @@ func (s *UserStore) List(ctx context.Context) ([]*user.User, error) {
 }
 
 func (s *UserStore) UpdatePassword(ctx context.Context, userID int64, hash string) error {
-	_, err := s.db.ExecContext(ctx,
+	res, err := s.db.ExecContext(ctx,
 		`UPDATE users SET password_hash=? WHERE id=?`, hash, userID,
 	)
 	if err != nil {
 		return fmt.Errorf("user update password: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("user update password: rows affected: %w", err)
+	}
+	if n == 0 {
+		return errs.ErrNotFound
 	}
 	return nil
 }
