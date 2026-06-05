@@ -21,15 +21,22 @@ func NewSessionStore(db *sql.DB) *SessionStore {
 	return &SessionStore{db: db}
 }
 
+// HashToken returns the hex-encoded SHA-256 hash of a raw session token.
+// The raw token is stored only in the cookie; only its hash lives in the DB.
 func HashToken(raw string) string {
 	sum := sha256.Sum256([]byte(raw))
 	return hex.EncodeToString(sum[:])
 }
 
 func (s *SessionStore) Create(ctx context.Context, sess *session.Session) error {
+	totpVerified := 0
+	if sess.TOTPVerified {
+		totpVerified = 1
+	}
+	now := time.Now().UnixMilli()
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO sessions (user_id, token_hash, totp_verified, expires_at) VALUES (?, ?, ?, ?)`,
-		sess.UserID, sess.TokenHash, sess.TOTPVerified, sess.ExpiresAt,
+		`INSERT INTO sessions (user_id, token_hash, totp_verified, expires_at, last_seen_at) VALUES (?, ?, ?, ?, ?)`,
+		sess.UserID, sess.TokenHash, totpVerified, sess.ExpiresAt.UTC().UnixMilli(), now,
 	)
 	if err != nil {
 		return fmt.Errorf("session create: %w", err)
@@ -40,9 +47,11 @@ func (s *SessionStore) Create(ctx context.Context, sess *session.Session) error 
 func (s *SessionStore) GetByTokenHash(ctx context.Context, hash string) (*session.Session, error) {
 	var sess session.Session
 	var totpVerified int
+	var expiresAtUnix, lastSeenAtUnix int64
+	var createdAtStr string // created_at is DEFAULT CURRENT_TIMESTAMP (SQLite text)
 	err := s.db.QueryRowContext(ctx,
 		`SELECT id, user_id, token_hash, totp_verified, created_at, expires_at, last_seen_at FROM sessions WHERE token_hash=?`, hash,
-	).Scan(&sess.ID, &sess.UserID, &sess.TokenHash, &totpVerified, &sess.CreatedAt, &sess.ExpiresAt, &sess.LastSeenAt)
+	).Scan(&sess.ID, &sess.UserID, &sess.TokenHash, &totpVerified, &createdAtStr, &expiresAtUnix, &lastSeenAtUnix)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, errs.ErrNotFound
 	}
@@ -50,6 +59,8 @@ func (s *SessionStore) GetByTokenHash(ctx context.Context, hash string) (*sessio
 		return nil, fmt.Errorf("session get: %w", err)
 	}
 	sess.TOTPVerified = totpVerified == 1
+	sess.ExpiresAt = time.UnixMilli(expiresAtUnix).UTC()
+	sess.LastSeenAt = time.UnixMilli(lastSeenAtUnix).UTC()
 	return &sess, nil
 }
 
@@ -63,7 +74,7 @@ func (s *SessionStore) SetTOTPVerified(ctx context.Context, sessionID int64) err
 
 func (s *SessionStore) UpdateLastSeen(ctx context.Context, sessionID int64) error {
 	_, err := s.db.ExecContext(ctx,
-		`UPDATE sessions SET last_seen_at=? WHERE id=?`, time.Now().UTC(), sessionID,
+		`UPDATE sessions SET last_seen_at=? WHERE id=?`, time.Now().UnixMilli(), sessionID,
 	)
 	if err != nil {
 		return fmt.Errorf("session update last seen: %w", err)
@@ -80,7 +91,7 @@ func (s *SessionStore) Delete(ctx context.Context, sessionID int64) error {
 }
 
 func (s *SessionStore) DeleteExpired(ctx context.Context) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE expires_at <= ?`, time.Now().UTC())
+	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE expires_at <= ?`, time.Now().UnixMilli())
 	if err != nil {
 		return fmt.Errorf("session delete expired: %w", err)
 	}

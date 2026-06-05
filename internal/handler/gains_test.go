@@ -21,6 +21,7 @@ import (
 	"github.com/gordcurrie/pacioli/internal/user"
 	"github.com/gordcurrie/pacioli/web"
 	"github.com/shopspring/decimal"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type testEnv struct {
@@ -28,8 +29,11 @@ type testEnv struct {
 	accounts     *sqlite.AccountStore
 	securities   *sqlite.SecurityStore
 	transactions *sqlite.TransactionStore
+	users        *sqlite.UserStore
+	sessions     *sqlite.SessionStore
 	userID       int64
 	rawToken     string // session cookie value
+	password     string // plaintext password for login tests
 }
 
 // newRequest creates a test request with the test session cookie attached.
@@ -57,10 +61,14 @@ func newTestEnv(t *testing.T) *testEnv {
 
 	ctx := context.Background()
 
-	// Create a test user with a known password hash (cost 4 for speed).
+	const testPassword = "test-password-123"
+	hash, err := bcrypt.GenerateFromPassword([]byte(testPassword), 4) // cost 4 for test speed
+	if err != nil {
+		t.Fatalf("bcrypt: %v", err)
+	}
 	userID, err := userStore.Create(ctx, &user.User{
 		Email:        "test@example.com",
-		PasswordHash: "$2a$04$testhashplaceholderxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", // dummy; not used in handler tests
+		PasswordHash: string(hash),
 		IsAdmin:      true,
 	})
 	if err != nil {
@@ -103,8 +111,11 @@ func newTestEnv(t *testing.T) *testEnv {
 		accounts:     accountStore,
 		securities:   secStore,
 		transactions: txStore,
+		users:        userStore,
+		sessions:     sessionStore,
 		userID:       userID,
 		rawToken:     rawToken,
+		password:     testPassword,
 	}
 }
 

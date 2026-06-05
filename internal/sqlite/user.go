@@ -26,7 +26,7 @@ func (s *UserStore) Create(ctx context.Context, u *user.User) (int64, error) {
 		isAdmin = 1
 	}
 	res, err := s.db.ExecContext(ctx,
-		`INSERT INTO users (email, password_hash, is_admin) VALUES (?, ?, ?)`,
+		`INSERT INTO users (email, password_hash, is_admin) VALUES (?, NULLIF(?,''), ?)`,
 		u.Email, u.PasswordHash, isAdmin,
 	)
 	if err != nil {
