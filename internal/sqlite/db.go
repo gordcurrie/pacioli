@@ -19,14 +19,15 @@ var migrationsFS embed.FS
 
 // Open opens a SQLite database at dsn, sets a busy timeout and WAL mode, and runs all pending migrations.
 func Open(dsn string) (*sql.DB, error) {
-	// Embed foreign_keys pragma in the DSN so every new connection from the pool
-	// has FK enforcement regardless of SetMaxOpenConns. PRAGMA foreign_keys is
-	// per-connection in SQLite; without this, pool expansion silently disables it.
+	// Embed per-connection PRAGMAs in the DSN so every new pool connection has
+	// them regardless of SetMaxOpenConns. PRAGMA foreign_keys and busy_timeout are
+	// per-connection in SQLite; without DSN params, pool expansion silently drops them.
+	// journal_mode=WAL is file-persisted and does not need to be here.
 	sep := "?"
 	if strings.Contains(dsn, "?") {
 		sep = "&"
 	}
-	db, err := sql.Open("sqlite", dsn+sep+"_pragma=foreign_keys(1)")
+	db, err := sql.Open("sqlite", dsn+sep+"_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)")
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}

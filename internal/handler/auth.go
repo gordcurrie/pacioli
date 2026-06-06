@@ -22,6 +22,20 @@ const (
 	cookieName      = "pacioli_session"
 )
 
+// sentinelHash is computed once at startup and used to equalize the timing of
+// failed login attempts where the email is not found. Without this, an attacker
+// can enumerate registered addresses by measuring response latency: not-found
+// returns in microseconds; wrong-password runs bcrypt (~100ms at cost 12).
+var sentinelHash []byte
+
+func init() {
+	var err error
+	sentinelHash, err = bcrypt.GenerateFromPassword([]byte("pacioli-sentinel"), bcryptCost)
+	if err != nil {
+		panic("failed to generate sentinel hash: " + err.Error())
+	}
+}
+
 type setupPageData struct {
 	Error string
 }
@@ -161,10 +175,14 @@ func (h *Handler) loginSubmit(w http.ResponseWriter, r *http.Request) {
 			h.serverError(w, r, err)
 			return
 		}
+		// Equalize timing with the found-but-wrong-password path to prevent
+		// email enumeration via response latency differences.
+		_ = bcrypt.CompareHashAndPassword(sentinelHash, []byte(password))
 		h.render(w, r, "login", loginPageData{Error: "Invalid email or password."})
 		return
 	}
 	if u.PasswordHash == "" {
+		_ = bcrypt.CompareHashAndPassword(sentinelHash, []byte(password))
 		h.render(w, r, "login", loginPageData{Error: "Invalid email or password."})
 		return
 	}
@@ -220,6 +238,7 @@ func (h *Handler) totpSubmit(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if !errors.Is(err, errs.ErrNotFound) {
 			loggerFromCtx(r.Context()).Error("session lookup in totp submit", "err", err)
+			http.SetCookie(w, h.sessionCookie("", -1))
 			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return
 		}
@@ -238,6 +257,7 @@ func (h *Handler) totpSubmit(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if !errors.Is(err, errs.ErrNotFound) {
 			loggerFromCtx(r.Context()).Error("user lookup in totp submit", "err", err)
+			http.SetCookie(w, h.sessionCookie("", -1))
 			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return
 		}
