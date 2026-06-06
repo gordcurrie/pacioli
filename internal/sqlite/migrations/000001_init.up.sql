@@ -79,7 +79,7 @@ CREATE TABLE audit_log (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id     INTEGER NOT NULL REFERENCES users(id),
     action      TEXT    NOT NULL CHECK(action IN ('create', 'update', 'delete')),
-    entity_type TEXT    NOT NULL CHECK(entity_type IN ('account', 'security', 'transaction')),
+    entity_type TEXT    NOT NULL CHECK(entity_type IN ('account', 'security', 'transaction', 'user')),
     entity_id   INTEGER NOT NULL,
     source      TEXT    NOT NULL DEFAULT 'manual',
     snapshot    TEXT,
