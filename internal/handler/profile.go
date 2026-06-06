@@ -10,7 +10,9 @@ import (
 	"image/png"
 	"net/http"
 	"strings"
+	"time"
 
+	"github.com/gordcurrie/pacioli/internal/session"
 	"github.com/gordcurrie/pacioli/internal/sqlite"
 	"github.com/gordcurrie/pacioli/internal/user"
 	"github.com/pquerna/otp"
@@ -61,6 +63,25 @@ func (h *Handler) updatePassword(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, r, err)
 		return
 	}
+
+	// Revoke all sessions (including current) then issue a fresh one so stolen
+	// cookies can't be reused while the user stays logged in.
+	_ = h.sessions.DeleteByUserID(r.Context(), u.ID)
+	raw, err := generateToken()
+	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
+	if err := h.sessions.Create(r.Context(), &session.Session{
+		UserID:       u.ID,
+		TokenHash:    sqlite.HashToken(raw),
+		TOTPVerified: true,
+		ExpiresAt:    time.Now().Add(sessionDuration),
+	}); err != nil {
+		h.serverError(w, r, err)
+		return
+	}
+	http.SetCookie(w, h.sessionCookie(raw, int(sessionDuration.Seconds())))
 	h.render(w, r, "profile_password", passwordPageData{Success: "Password updated."})
 }
 

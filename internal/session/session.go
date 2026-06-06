@@ -21,5 +21,6 @@ type Store interface {
 	SetTOTPVerified(ctx context.Context, sessionID int64) error
 	UpdateLastSeen(ctx context.Context, sessionID int64) error
 	Delete(ctx context.Context, sessionID int64) error
+	DeleteByUserID(ctx context.Context, userID int64) error
 	DeleteExpired(ctx context.Context) error
 }

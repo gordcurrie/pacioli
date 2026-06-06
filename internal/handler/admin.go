@@ -120,8 +120,13 @@ func (h *Handler) adminResetPassword(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.users.UpdatePassword(r.Context(), id, string(hash)); err != nil {
-		h.serverError(w, r, err)
+		h.notFoundOrError(w, r, err)
 		return
+	}
+
+	// Invalidate all existing sessions so stolen cookies can't be reused.
+	if err := h.sessions.DeleteByUserID(r.Context(), id); err != nil {
+		loggerFromCtx(r.Context()).Error("delete sessions after password reset", "user_id", id, "err", err)
 	}
 
 	users, _ := h.users.List(r.Context())

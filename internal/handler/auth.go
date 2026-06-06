@@ -100,14 +100,36 @@ func (h *Handler) setupSubmit(w http.ResponseWriter, r *http.Request) {
 		}
 		userID = existing.ID
 	case errors.Is(err, errs.ErrNotFound):
-		// Create new admin user.
-		newUser := &user.User{Email: email, PasswordHash: string(hash), IsAdmin: true}
-		id, err2 := h.users.Create(r.Context(), newUser)
-		if err2 != nil {
+		// No user with this email. Reuse any unconfigured user to preserve linked data
+		// (e.g. accounts/transactions from a previous install that had no password set).
+		unconfigured, err2 := h.users.GetFirstUnconfigured(r.Context())
+		switch {
+		case err2 == nil:
+			if err3 := h.users.UpdateEmail(r.Context(), unconfigured.ID, email); err3 != nil {
+				h.serverError(w, r, err3)
+				return
+			}
+			if err3 := h.users.UpdatePassword(r.Context(), unconfigured.ID, string(hash)); err3 != nil {
+				h.serverError(w, r, err3)
+				return
+			}
+			if err3 := h.users.SetAdmin(r.Context(), unconfigured.ID, true); err3 != nil {
+				h.serverError(w, r, err3)
+				return
+			}
+			userID = unconfigured.ID
+		case errors.Is(err2, errs.ErrNotFound):
+			// Truly fresh install — create the first admin.
+			id, err3 := h.users.Create(r.Context(), &user.User{Email: email, PasswordHash: string(hash), IsAdmin: true})
+			if err3 != nil {
+				h.serverError(w, r, err3)
+				return
+			}
+			userID = id
+		default:
 			h.serverError(w, r, err2)
 			return
 		}
-		userID = id
 	default:
 		h.serverError(w, r, err)
 		return

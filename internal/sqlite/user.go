@@ -78,6 +78,16 @@ func (s *UserStore) List(ctx context.Context) ([]*user.User, error) {
 	return users, rows.Err()
 }
 
+func (s *UserStore) GetFirstUnconfigured(ctx context.Context) (*user.User, error) {
+	u, err := s.scan(s.db.QueryRowContext(ctx,
+		`SELECT id, email, COALESCE(password_hash,''), is_admin, COALESCE(totp_secret,''), totp_enabled, created_at FROM users WHERE password_hash IS NULL LIMIT 1`,
+	))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, errs.ErrNotFound
+	}
+	return u, err
+}
+
 func (s *UserStore) Delete(ctx context.Context, userID int64) error {
 	res, err := s.db.ExecContext(ctx, `DELETE FROM users WHERE id=?`, userID)
 	if err != nil {
@@ -89,6 +99,14 @@ func (s *UserStore) Delete(ctx context.Context, userID int64) error {
 	}
 	if n == 0 {
 		return errs.ErrNotFound
+	}
+	return nil
+}
+
+func (s *UserStore) UpdateEmail(ctx context.Context, userID int64, email string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE users SET email=? WHERE id=?`, email, userID)
+	if err != nil {
+		return fmt.Errorf("user update email: %w", err)
 	}
 	return nil
 }
@@ -158,14 +176,21 @@ func (s *UserStore) CountConfigured(ctx context.Context) (int, error) {
 }
 
 func (s *UserStore) CreateRecoveryCodes(ctx context.Context, codes []*user.RecoveryCode) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("recovery codes create: begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
 	for _, c := range codes {
-		_, err := s.db.ExecContext(ctx,
+		if _, err := tx.ExecContext(ctx,
 			`INSERT INTO recovery_codes (user_id, code_hash) VALUES (?, ?)`,
 			c.UserID, c.Hash,
-		)
-		if err != nil {
+		); err != nil {
 			return fmt.Errorf("recovery code create: %w", err)
 		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("recovery codes create: commit: %w", err)
 	}
 	return nil
 }

@@ -94,6 +94,14 @@ func (s *SessionStore) Delete(ctx context.Context, sessionID int64) error {
 	return nil
 }
 
+func (s *SessionStore) DeleteByUserID(ctx context.Context, userID int64) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE user_id=?`, userID)
+	if err != nil {
+		return fmt.Errorf("session delete by user: %w", err)
+	}
+	return nil
+}
+
 func (s *SessionStore) DeleteExpired(ctx context.Context) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE expires_at <= ?`, time.Now().UnixMilli())
 	if err != nil {
