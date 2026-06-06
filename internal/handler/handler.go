@@ -208,6 +208,7 @@ func (h *Handler) Routes(mux *http.ServeMux) {
 	mux.Handle("GET /admin/users", admin(http.HandlerFunc(h.adminListUsers)))
 	mux.Handle("POST /admin/users", admin(http.HandlerFunc(h.adminCreateUser)))
 	mux.Handle("POST /admin/users/{id}/reset-password", admin(http.HandlerFunc(h.adminResetPassword)))
+	mux.Handle("POST /admin/users/{id}/delete", admin(http.HandlerFunc(h.adminDeleteUser)))
 
 	mux.Handle("GET /profile/password", auth(http.HandlerFunc(h.passwordPage)))
 	mux.Handle("POST /profile/password", auth(http.HandlerFunc(h.updatePassword)))

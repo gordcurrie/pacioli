@@ -78,6 +78,21 @@ func (s *UserStore) List(ctx context.Context) ([]*user.User, error) {
 	return users, rows.Err()
 }
 
+func (s *UserStore) Delete(ctx context.Context, userID int64) error {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM users WHERE id=?`, userID)
+	if err != nil {
+		return fmt.Errorf("user delete: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("user delete: rows affected: %w", err)
+	}
+	if n == 0 {
+		return errs.ErrNotFound
+	}
+	return nil
+}
+
 func (s *UserStore) UpdatePassword(ctx context.Context, userID int64, hash string) error {
 	res, err := s.db.ExecContext(ctx,
 		`UPDATE users SET password_hash=? WHERE id=?`, hash, userID,

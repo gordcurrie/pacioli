@@ -19,6 +19,7 @@ const (
 	EntityAccount     EntityType = "account"
 	EntitySecurity    EntityType = "security"
 	EntityTransaction EntityType = "transaction"
+	EntityUser        EntityType = "user"
 )
 
 type Source string

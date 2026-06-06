@@ -1,9 +1,11 @@
 package handler
 
 import (
+	"encoding/json"
 	"net/http"
 	"strconv"
 
+	"github.com/gordcurrie/pacioli/internal/audit"
 	"github.com/gordcurrie/pacioli/internal/user"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -58,6 +60,38 @@ func (h *Handler) adminCreateUser(w http.ResponseWriter, r *http.Request) {
 
 	users, _ := h.users.List(r.Context())
 	h.render(w, r, "admin_users", adminUsersPageData{Users: users, Success: "User created."})
+}
+
+func (h *Handler) adminDeleteUser(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	actor := userFromCtx(r.Context())
+	if id == actor.ID {
+		users, _ := h.users.List(r.Context())
+		h.render(w, r, "admin_users", adminUsersPageData{Users: users, Error: "Cannot delete your own account."})
+		return
+	}
+
+	target, err := h.users.GetByID(r.Context(), id)
+	if err != nil {
+		h.notFoundOrError(w, r, err)
+		return
+	}
+
+	snapshot, _ := json.Marshal(target)
+	if err := h.users.Delete(r.Context(), id); err != nil {
+		h.serverError(w, r, err)
+		return
+	}
+
+	h.logAudit(r, audit.ActionDelete, audit.EntityUser, id, audit.SourceManual, string(snapshot))
+
+	users, _ := h.users.List(r.Context())
+	h.render(w, r, "admin_users", adminUsersPageData{Users: users, Success: "User deleted."})
 }
 
 func (h *Handler) adminResetPassword(w http.ResponseWriter, r *http.Request) {

@@ -27,6 +27,7 @@ type Store interface {
 	GetByID(ctx context.Context, id int64) (*User, error)
 	GetByEmail(ctx context.Context, email string) (*User, error)
 	List(ctx context.Context) ([]*User, error)
+	Delete(ctx context.Context, userID int64) error
 	UpdatePassword(ctx context.Context, userID int64, hash string) error
 	SetAdmin(ctx context.Context, userID int64, isAdmin bool) error
 	UpdateTOTP(ctx context.Context, userID int64, secret string, enabled bool) error
