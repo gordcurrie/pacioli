@@ -209,7 +209,14 @@ func (h *Handler) totpSubmit(w http.ResponseWriter, r *http.Request) {
 
 	hash := sqlite.HashToken(cookie.Value)
 	sess, err := h.sessions.GetByTokenHash(r.Context(), hash)
-	if err != nil || time.Now().After(sess.ExpiresAt) {
+	if err != nil {
+		http.SetCookie(w, h.sessionCookie("", -1))
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+	if time.Now().After(sess.ExpiresAt) {
+		_ = h.sessions.Delete(r.Context(), sess.ID)
+		http.SetCookie(w, h.sessionCookie("", -1))
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 		return
 	}
@@ -281,7 +288,13 @@ func (h *Handler) consumeRecoveryCode(r *http.Request, userID int64, code string
 			continue
 		}
 		if err := bcrypt.CompareHashAndPassword([]byte(rc.Hash), []byte(code)); err == nil {
-			return true, h.users.MarkRecoveryCodeUsed(r.Context(), rc.ID)
+			if err := h.users.MarkRecoveryCodeUsed(r.Context(), rc.ID); err != nil {
+				if errors.Is(err, errs.ErrNotFound) {
+					continue // race: another concurrent request already consumed this code
+				}
+				return false, err
+			}
+			return true, nil
 		}
 	}
 	return false, nil

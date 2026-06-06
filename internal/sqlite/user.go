@@ -238,7 +238,7 @@ func (s *UserStore) EnableTOTPWithCodes(ctx context.Context, userID int64, secre
 	}
 	for _, c := range codes {
 		if _, err := tx.ExecContext(ctx,
-			`INSERT INTO recovery_codes (user_id, code_hash) VALUES (?, ?)`, c.UserID, c.Hash,
+			`INSERT INTO recovery_codes (user_id, code_hash) VALUES (?, ?)`, userID, c.Hash,
 		); err != nil {
 			return fmt.Errorf("enable totp: insert code: %w", err)
 		}
@@ -303,11 +303,18 @@ func (s *UserStore) ListRecoveryCodes(ctx context.Context, userID int64) ([]*use
 }
 
 func (s *UserStore) MarkRecoveryCodeUsed(ctx context.Context, codeID int64) error {
-	_, err := s.db.ExecContext(ctx,
-		`UPDATE recovery_codes SET used_at=? WHERE id=?`, time.Now().UTC(), codeID,
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE recovery_codes SET used_at=? WHERE id=? AND used_at IS NULL`, time.Now().UTC(), codeID,
 	)
 	if err != nil {
 		return fmt.Errorf("recovery code mark used: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("recovery code mark used: rows affected: %w", err)
+	}
+	if n == 0 {
+		return errs.ErrNotFound // code already used (concurrent request won the race)
 	}
 	return nil
 }

@@ -33,6 +33,10 @@ func Open(dsn string) (*sql.DB, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("set WAL mode: %w", err)
 	}
+	if _, err := db.ExecContext(context.Background(), `PRAGMA foreign_keys = ON`); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("enable foreign keys: %w", err)
+	}
 
 	if err := runMigrations(db); err != nil {
 		_ = db.Close()

@@ -18,6 +18,10 @@ func TestAccountStore(t *testing.T) {
 	store := sqlite.NewAccountStore(db)
 	ctx := context.Background()
 
+	if _, err := db.ExecContext(ctx, `INSERT INTO users (email) VALUES ('test@test.com')`); err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+
 	t.Run("create and get", func(t *testing.T) {
 		a := &account.Account{
 			UserID:   1,
