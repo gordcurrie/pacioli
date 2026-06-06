@@ -33,6 +33,8 @@ type Store interface {
 	UpdatePassword(ctx context.Context, userID int64, hash string) error
 	SetAdmin(ctx context.Context, userID int64, isAdmin bool) error
 	UpdateTOTP(ctx context.Context, userID int64, secret string, enabled bool) error
+	// EnableTOTPWithCodes atomically enables TOTP and replaces recovery codes in one transaction.
+	EnableTOTPWithCodes(ctx context.Context, userID int64, secret string, codes []*RecoveryCode) error
 	CountConfigured(ctx context.Context) (int, error) // COUNT WHERE password_hash IS NOT NULL
 
 	// Recovery codes

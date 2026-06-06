@@ -166,6 +166,44 @@ func (s *UserStore) UpdateTOTP(ctx context.Context, userID int64, secret string,
 	return nil
 }
 
+// EnableTOTPWithCodes atomically enables TOTP and replaces recovery codes in one
+// transaction, so a partial failure cannot leave the user with TOTP on but no codes.
+func (s *UserStore) EnableTOTPWithCodes(ctx context.Context, userID int64, secret string, codes []*user.RecoveryCode) error {
+	if len(s.key) != 32 {
+		return fmt.Errorf("enable totp: TOKEN_ENCRYPTION_KEY required")
+	}
+	encSecret, err := encrypt(s.key, secret)
+	if err != nil {
+		return fmt.Errorf("enable totp: encrypt: %w", err)
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("enable totp: begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE users SET totp_secret=?, totp_enabled=1 WHERE id=?`, encSecret, userID,
+	); err != nil {
+		return fmt.Errorf("enable totp: update user: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx,
+		`DELETE FROM recovery_codes WHERE user_id=?`, userID,
+	); err != nil {
+		return fmt.Errorf("enable totp: delete codes: %w", err)
+	}
+	for _, c := range codes {
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO recovery_codes (user_id, code_hash) VALUES (?, ?)`, c.UserID, c.Hash,
+		); err != nil {
+			return fmt.Errorf("enable totp: insert code: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("enable totp: commit: %w", err)
+	}
+	return nil
+}
+
 func (s *UserStore) CountConfigured(ctx context.Context) (int, error) {
 	var n int
 	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM users WHERE password_hash IS NOT NULL`).Scan(&n)

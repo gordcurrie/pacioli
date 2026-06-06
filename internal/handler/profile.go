@@ -64,24 +64,32 @@ func (h *Handler) updatePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Revoke all sessions (including current) then issue a fresh one so stolen
-	// cookies can't be reused while the user stays logged in.
-	_ = h.sessions.DeleteByUserID(r.Context(), u.ID)
+	// Revoke all sessions then issue a fresh one. Treat delete failure as hard error —
+	// if old sessions can't be cleared, don't issue a new one and don't claim success.
+	if err := h.sessions.DeleteByUserID(r.Context(), u.ID); err != nil {
+		h.serverError(w, r, err)
+		return
+	}
 	raw, err := generateToken()
 	if err != nil {
 		h.serverError(w, r, err)
 		return
 	}
+	// Mirror loginSubmit: TOTP-enabled users must complete the 2FA step again.
 	if err := h.sessions.Create(r.Context(), &session.Session{
 		UserID:       u.ID,
 		TokenHash:    sqlite.HashToken(raw),
-		TOTPVerified: true,
+		TOTPVerified: !u.TOTPEnabled,
 		ExpiresAt:    time.Now().Add(sessionDuration),
 	}); err != nil {
 		h.serverError(w, r, err)
 		return
 	}
 	http.SetCookie(w, h.sessionCookie(raw, int(sessionDuration.Seconds())))
+	if u.TOTPEnabled {
+		http.Redirect(w, r, "/login/2fa", http.StatusSeeOther)
+		return
+	}
 	h.render(w, r, "profile_password", passwordPageData{Success: "Password updated."})
 }
 
@@ -208,18 +216,14 @@ func (h *Handler) totpEnable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.users.UpdateTOTP(r.Context(), u.ID, secret, true); err != nil {
-		h.serverError(w, r, err)
-		return
-	}
-
 	plainCodes, dbCodes, err := generateRecoveryCodes(u.ID)
 	if err != nil {
 		h.serverError(w, r, err)
 		return
 	}
-	_ = h.users.DeleteRecoveryCodes(r.Context(), u.ID)
-	if err := h.users.CreateRecoveryCodes(r.Context(), dbCodes); err != nil {
+	// EnableTOTPWithCodes is atomic: TOTP secret + recovery codes are written in one
+	// transaction so a partial failure cannot leave the user with TOTP on but no codes.
+	if err := h.users.EnableTOTPWithCodes(r.Context(), u.ID, secret, dbCodes); err != nil {
 		h.serverError(w, r, err)
 		return
 	}
@@ -251,7 +255,24 @@ func (h *Handler) totpDisable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = h.users.DeleteRecoveryCodes(r.Context(), u.ID)
-
+	// Delete all sessions so any pending totp_verified=false session (created during
+	// a login that was never completed) can't gain full access now that TOTP is off.
+	_ = h.sessions.DeleteByUserID(r.Context(), u.ID)
+	raw, err := generateToken()
+	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
+	if err := h.sessions.Create(r.Context(), &session.Session{
+		UserID:       u.ID,
+		TokenHash:    sqlite.HashToken(raw),
+		TOTPVerified: true,
+		ExpiresAt:    time.Now().Add(sessionDuration),
+	}); err != nil {
+		h.serverError(w, r, err)
+		return
+	}
+	http.SetCookie(w, h.sessionCookie(raw, int(sessionDuration.Seconds())))
 	h.render(w, r, "profile_2fa", totpSetupPageData{TOTPDisabled: true})
 }
 
