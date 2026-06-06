@@ -88,7 +88,10 @@ func (h *Handler) totpSetupPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	codes, _ := h.users.ListRecoveryCodes(r.Context(), u.ID)
+	codes, err := h.users.ListRecoveryCodes(r.Context(), u.ID)
+	if err != nil {
+		loggerFromCtx(r.Context()).Error("list recovery codes", "err", err)
+	}
 	for _, c := range codes {
 		if c.UsedAt == nil {
 			data.RecoveryCount++

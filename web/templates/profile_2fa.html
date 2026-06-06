@@ -47,6 +47,8 @@
     </label>
     <button type="submit">Enable 2FA</button>
   </form>
+  {{else if .Error}}
+  <p><a href="/profile/2fa">Start over →</a></p>
   {{end}}
   {{end}}
 

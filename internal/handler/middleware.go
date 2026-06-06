@@ -135,7 +135,11 @@ func (h *Handler) SetupGate(next http.Handler) http.Handler {
 			return
 		}
 		n, err := h.users.CountConfigured(r.Context())
-		if err != nil || n == 0 {
+		if err != nil {
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+		if n == 0 {
 			http.Redirect(w, r, "/setup", http.StatusSeeOther)
 			return
 		}
