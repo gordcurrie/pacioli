@@ -156,7 +156,15 @@ func (h *Handler) loginSubmit(w http.ResponseWriter, r *http.Request) {
 	password := r.FormValue("password")
 
 	u, err := h.users.GetByEmail(r.Context(), email)
-	if err != nil || u.PasswordHash == "" {
+	if err != nil {
+		if !errors.Is(err, errs.ErrNotFound) {
+			h.serverError(w, r, err)
+			return
+		}
+		h.render(w, r, "login", loginPageData{Error: "Invalid email or password."})
+		return
+	}
+	if u.PasswordHash == "" {
 		h.render(w, r, "login", loginPageData{Error: "Invalid email or password."})
 		return
 	}
@@ -210,6 +218,11 @@ func (h *Handler) totpSubmit(w http.ResponseWriter, r *http.Request) {
 	hash := sqlite.HashToken(cookie.Value)
 	sess, err := h.sessions.GetByTokenHash(r.Context(), hash)
 	if err != nil {
+		if !errors.Is(err, errs.ErrNotFound) {
+			loggerFromCtx(r.Context()).Error("session lookup in totp submit", "err", err)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
 		http.SetCookie(w, h.sessionCookie("", -1))
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 		return
