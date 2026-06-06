@@ -242,6 +242,16 @@ func (h *Handler) totpDisable(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/profile/2fa", http.StatusSeeOther)
 		return
 	}
+	// TOTPSecret is empty when TOKEN_ENCRYPTION_KEY is absent or rotated.
+	// totp.Validate would always return false in this state, permanently trapping
+	// the user. Surface a clear error rather than a misleading "Invalid code."
+	if u.TOTPSecret == "" {
+		h.render(w, r, "profile_2fa", totpSetupPageData{
+			TOTPEnabled: true,
+			Error:       "Cannot disable 2FA: encryption key unavailable. Ask your administrator to set TOKEN_ENCRYPTION_KEY.",
+		})
+		return
+	}
 	if !totp.Validate(code, u.TOTPSecret) {
 		h.render(w, r, "profile_2fa", totpSetupPageData{
 			TOTPEnabled: true,

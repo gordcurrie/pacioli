@@ -103,6 +103,12 @@ func (h *Handler) RequireAuth(next http.Handler) http.Handler {
 
 		u, err := h.users.GetByID(r.Context(), sess.UserID)
 		if err != nil {
+			if !errors.Is(err, errs.ErrNotFound) {
+				loggerFromCtx(r.Context()).Error("user lookup", "err", err)
+				http.Error(w, "internal server error", http.StatusInternalServerError)
+				return
+			}
+			// User was deleted — treat as expired session.
 			http.SetCookie(w, h.sessionCookie("", -1))
 			http.Redirect(w, r, "/login", http.StatusSeeOther)
 			return

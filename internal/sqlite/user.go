@@ -88,6 +88,24 @@ func (s *UserStore) GetFirstUnconfigured(ctx context.Context) (*user.User, error
 	return u, err
 }
 
+func (s *UserStore) ConfigureUser(ctx context.Context, userID int64, email, passwordHash string) error {
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE users SET email=?, password_hash=?, is_admin=1 WHERE id=?`,
+		email, passwordHash, userID,
+	)
+	if err != nil {
+		return fmt.Errorf("user configure: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("user configure: rows affected: %w", err)
+	}
+	if n == 0 {
+		return errs.ErrNotFound
+	}
+	return nil
+}
+
 func (s *UserStore) Delete(ctx context.Context, userID int64) error {
 	res, err := s.db.ExecContext(ctx, `DELETE FROM users WHERE id=?`, userID)
 	if err != nil {
@@ -202,10 +220,16 @@ func (s *UserStore) EnableTOTPWithCodes(ctx context.Context, userID int64, secre
 		return fmt.Errorf("enable totp: begin tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	if _, err := tx.ExecContext(ctx,
+	res, err := tx.ExecContext(ctx,
 		`UPDATE users SET totp_secret=?, totp_enabled=1 WHERE id=?`, encSecret, userID,
-	); err != nil {
+	)
+	if err != nil {
 		return fmt.Errorf("enable totp: update user: %w", err)
+	}
+	if n, err := res.RowsAffected(); err != nil {
+		return fmt.Errorf("enable totp: rows affected: %w", err)
+	} else if n == 0 {
+		return errs.ErrNotFound
 	}
 	if _, err := tx.ExecContext(ctx,
 		`DELETE FROM recovery_codes WHERE user_id=?`, userID,

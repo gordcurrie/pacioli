@@ -89,12 +89,9 @@ func (h *Handler) setupSubmit(w http.ResponseWriter, r *http.Request) {
 			renderErr("An account with that email already exists.")
 			return
 		}
-		// Update existing user.
-		if err2 := h.users.UpdatePassword(r.Context(), existing.ID, string(hash)); err2 != nil {
-			h.serverError(w, r, err2)
-			return
-		}
-		if err2 := h.users.SetAdmin(r.Context(), existing.ID, true); err2 != nil {
+		// ConfigureUser atomically sets email, password, and is_admin=1 in one UPDATE,
+		// preventing partial-update races (e.g. password committed but admin flag not set).
+		if err2 := h.users.ConfigureUser(r.Context(), existing.ID, email, string(hash)); err2 != nil {
 			h.serverError(w, r, err2)
 			return
 		}
@@ -105,15 +102,7 @@ func (h *Handler) setupSubmit(w http.ResponseWriter, r *http.Request) {
 		unconfigured, err2 := h.users.GetFirstUnconfigured(r.Context())
 		switch {
 		case err2 == nil:
-			if err3 := h.users.UpdateEmail(r.Context(), unconfigured.ID, email); err3 != nil {
-				h.serverError(w, r, err3)
-				return
-			}
-			if err3 := h.users.UpdatePassword(r.Context(), unconfigured.ID, string(hash)); err3 != nil {
-				h.serverError(w, r, err3)
-				return
-			}
-			if err3 := h.users.SetAdmin(r.Context(), unconfigured.ID, true); err3 != nil {
+			if err3 := h.users.ConfigureUser(r.Context(), unconfigured.ID, email, string(hash)); err3 != nil {
 				h.serverError(w, r, err3)
 				return
 			}
