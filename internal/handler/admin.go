@@ -82,7 +82,13 @@ func (h *Handler) adminDeleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	snapshot, _ := json.Marshal(target)
+	// Snapshot only non-sensitive fields — PasswordHash and TOTPSecret must not persist in audit log.
+	snapshot, _ := json.Marshal(struct {
+		ID          int64  `json:"id"`
+		Email       string `json:"email"`
+		IsAdmin     bool   `json:"is_admin"`
+		TOTPEnabled bool   `json:"totp_enabled"`
+	}{target.ID, target.Email, target.IsAdmin, target.TOTPEnabled})
 	if err := h.users.Delete(r.Context(), id); err != nil {
 		h.serverError(w, r, err)
 		return

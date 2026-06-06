@@ -4,10 +4,12 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"log/slog"
 	"net/http"
 	"time"
 
+	"github.com/gordcurrie/pacioli/internal/errs"
 	"github.com/gordcurrie/pacioli/internal/sqlite"
 )
 
@@ -73,7 +75,7 @@ func RequestLogger(logger *slog.Logger) func(http.Handler) http.Handler {
 // redirect to /login/2fa. On success the user is stored in context.
 func (h *Handler) RequireAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		cookie, err := r.Cookie("pacioli_session")
+		cookie, err := r.Cookie(cookieName)
 		if err != nil {
 			http.Redirect(w, r, "/login", http.StatusSeeOther)
 			return
@@ -82,6 +84,11 @@ func (h *Handler) RequireAuth(next http.Handler) http.Handler {
 		hash := sqlite.HashToken(cookie.Value)
 		sess, err := h.sessions.GetByTokenHash(r.Context(), hash)
 		if err != nil {
+			if !errors.Is(err, errs.ErrNotFound) {
+				loggerFromCtx(r.Context()).Error("session lookup", "err", err)
+				http.Error(w, "internal server error", http.StatusInternalServerError)
+				return
+			}
 			http.SetCookie(w, h.sessionCookie("", -1))
 			http.Redirect(w, r, "/login", http.StatusSeeOther)
 			return

@@ -9,3 +9,5 @@ import/
 .env.local
 .envrc
 dist/
+.DS_Store
+coverage.out

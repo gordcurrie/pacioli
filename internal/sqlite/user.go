@@ -104,9 +104,16 @@ func (s *UserStore) Delete(ctx context.Context, userID int64) error {
 }
 
 func (s *UserStore) UpdateEmail(ctx context.Context, userID int64, email string) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE users SET email=? WHERE id=?`, email, userID)
+	res, err := s.db.ExecContext(ctx, `UPDATE users SET email=? WHERE id=?`, email, userID)
 	if err != nil {
 		return fmt.Errorf("user update email: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("user update email: rows affected: %w", err)
+	}
+	if n == 0 {
+		return errs.ErrNotFound
 	}
 	return nil
 }
@@ -133,9 +140,16 @@ func (s *UserStore) SetAdmin(ctx context.Context, userID int64, isAdmin bool) er
 	if isAdmin {
 		v = 1
 	}
-	_, err := s.db.ExecContext(ctx, `UPDATE users SET is_admin=? WHERE id=?`, v, userID)
+	res, err := s.db.ExecContext(ctx, `UPDATE users SET is_admin=? WHERE id=?`, v, userID)
 	if err != nil {
 		return fmt.Errorf("user set admin: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("user set admin: rows affected: %w", err)
+	}
+	if n == 0 {
+		return errs.ErrNotFound
 	}
 	return nil
 }
@@ -156,12 +170,19 @@ func (s *UserStore) UpdateTOTP(ctx context.Context, userID int64, secret string,
 	if enabled {
 		enabledInt = 1
 	}
-	_, err := s.db.ExecContext(ctx,
+	res, err := s.db.ExecContext(ctx,
 		`UPDATE users SET totp_secret=NULLIF(?,''), totp_enabled=? WHERE id=?`,
 		encSecret, enabledInt, userID,
 	)
 	if err != nil {
 		return fmt.Errorf("user update totp: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("user update totp: rows affected: %w", err)
+	}
+	if n == 0 {
+		return errs.ErrNotFound
 	}
 	return nil
 }
