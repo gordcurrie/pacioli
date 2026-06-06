@@ -123,11 +123,59 @@
 - ✅ Auth middleware — `RequireAuth`, `RequireAdmin`, `SetupGate`; all existing routes protected
 - ✅ `h.userID` removed — user comes from request context set by `RequireAuth`
 
-## Phase 7 — Deferred 🔲
+## Phase 7 — ACB Correctness & Completeness ⬜
 
-- 🔲 Options support
-- 🔲 Corporate actions (splits, mergers, spin-offs)
-- 🔲 Additional broker CSV parsers
+Close the gaps that can produce wrong ACB numbers before building reporting on top of them.
+
+- ⬜ Superficial loss ACB carry-forward — currently flagged only; adjust ACB of replacement shares per CRA rule (denied loss added to replacement position's ACB)
+- ⬜ Stock splits / consolidations — new-shares-for-old at zero cost; adjusts ACB/share and share count; needed for any position that has split
+- ⬜ Stock dividends — shares issued in lieu of cash dividend; FMV of shares received is income, same FMV becomes ACB of new shares
+- ⬜ Phantom distributions — reinvested distributions that increase ACB without a cash inflow (common in ETFs); T3 box 42 data
+- ⬜ Norbert's Gambit auto-detection — heuristic to auto-link paired DLR.TO / DLR.U.TO legs (deferred from Phase 4)
+- ⬜ Manual FX rate override for historical entries (deferred from Phase 4)
+
+---
+
+## Phase 8 — RSU / ESPP Support ⬜
+
+E*Trade-specific workflow; none of this comes from any Canadian broker automatically.
+
+- ⬜ RSU vest transaction type — FMV at vest date × BoC noon rate = CAD ACB lot; each vest is a separate cost lot; employment income reported separately from capital gain on sale
+- ⬜ ESPP discount tracking — discount at purchase is employment income, not capital gain; ACB = full FMV at purchase date (not discounted price); needs separate flag/split
+- ⬜ Options exercise — exercise price becomes ACB; difference between FMV and exercise price may be employment income (employee options) vs capital (warrants); flag type at entry
+- ⬜ E*Trade CSV parser — map E*Trade activity export columns to Pacioli transaction types; handle USD-denominated entries with FX conversion
+
+---
+
+## Phase 9 — Tax Reporting ⬜
+
+Produce outputs that are directly useful at tax time.
+
+- ⬜ Schedule 3 export — capital gains summary formatted for CRA Schedule 3; one row per disposition, proceeds / ACB / gain-loss / superficial loss adjustment
+- ⬜ Annual tax summary — realized gains by year broken down by eligible vs non-eligible dividends, capital gains, return of capital; printable/exportable
+- ⬜ T3 / T5 slip import — formal structured import for annual slip data (ROC, eligible dividends, foreign income); links to security + tax year
+- ⬜ T5008 reconciliation — match broker-issued T5008 slips to Pacioli ACB records; flag discrepancies so you know what to correct before filing
+- ⬜ T1135 threshold alert — foreign property >$100k CAD triggers CRA T1135 filing requirement; dashboard warning when E*Trade (or any foreign) holdings approach/exceed threshold
+
+---
+
+## Phase 10 — Portfolio Dashboard ⬜
+
+Day-to-day visibility into positions and unrealized P&L.
+
+- ⬜ Current positions view — shares held per security per account, aggregated across accounts; sourced from transaction history not broker API
+- ⬜ Unrealized gains estimate — current position × last known price vs ACB; gain/loss in CAD; requires price feed or manual price entry
+- ⬜ Multi-currency P&L breakdown — USD vs CAD unrealized gain; FX gain/loss component separated from position gain/loss
+- ⬜ Portfolio allocation summary — by account type (registered vs non-registered), by currency, by asset class
+
+---
+
+## Phase 11 — Additional Brokers & Corporate Actions ⬜
+
+- ⬜ Canaccord CSV parser improvements — refine based on actual transfer history export
+- ⬜ Additional broker CSV parsers (IBKR, Wealthsimple, etc.)
+- ⬜ Corporate actions — mergers, spin-offs, return of capital at corporate level; ACB allocation across old/new positions
+- ⬜ Share class conversions (e.g. dual-class restructuring)
 
 ---
 
