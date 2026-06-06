@@ -28,9 +28,9 @@ type Store interface {
 	GetByEmail(ctx context.Context, email string) (*User, error)
 	List(ctx context.Context) ([]*User, error)
 	GetFirstUnconfigured(ctx context.Context) (*User, error) // first user with no password_hash
-	// ConfigureUser atomically sets email, password_hash, and is_admin=1 in one UPDATE.
+	// ConfigureUser atomically sets email, password_hash, and is_admin in one UPDATE.
 	// Used by setupSubmit to prevent partial-update races (e.g. password set but admin not granted).
-	ConfigureUser(ctx context.Context, userID int64, email, passwordHash string) error
+	ConfigureUser(ctx context.Context, userID int64, email, passwordHash string, isAdmin bool) error
 	Delete(ctx context.Context, userID int64) error
 	UpdateEmail(ctx context.Context, userID int64, email string) error
 	UpdatePassword(ctx context.Context, userID int64, hash string) error

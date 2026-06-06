@@ -6,6 +6,7 @@ import (
 	"embed"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/sqlite"
@@ -18,7 +19,14 @@ var migrationsFS embed.FS
 
 // Open opens a SQLite database at dsn, sets a busy timeout and WAL mode, and runs all pending migrations.
 func Open(dsn string) (*sql.DB, error) {
-	db, err := sql.Open("sqlite", dsn)
+	// Embed foreign_keys pragma in the DSN so every new connection from the pool
+	// has FK enforcement regardless of SetMaxOpenConns. PRAGMA foreign_keys is
+	// per-connection in SQLite; without this, pool expansion silently disables it.
+	sep := "?"
+	if strings.Contains(dsn, "?") {
+		sep = "&"
+	}
+	db, err := sql.Open("sqlite", dsn+sep+"_pragma=foreign_keys(1)")
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}

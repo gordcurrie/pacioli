@@ -88,10 +88,14 @@ func (s *UserStore) GetFirstUnconfigured(ctx context.Context) (*user.User, error
 	return u, err
 }
 
-func (s *UserStore) ConfigureUser(ctx context.Context, userID int64, email, passwordHash string) error {
+func (s *UserStore) ConfigureUser(ctx context.Context, userID int64, email, passwordHash string, isAdmin bool) error {
+	adminInt := 0
+	if isAdmin {
+		adminInt = 1
+	}
 	res, err := s.db.ExecContext(ctx,
-		`UPDATE users SET email=?, password_hash=?, is_admin=1 WHERE id=?`,
-		email, passwordHash, userID,
+		`UPDATE users SET email=?, password_hash=?, is_admin=? WHERE id=?`,
+		email, passwordHash, adminInt, userID,
 	)
 	if err != nil {
 		return fmt.Errorf("user configure: %w", err)

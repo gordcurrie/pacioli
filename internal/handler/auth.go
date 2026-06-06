@@ -89,9 +89,9 @@ func (h *Handler) setupSubmit(w http.ResponseWriter, r *http.Request) {
 			renderErr("An account with that email already exists.")
 			return
 		}
-		// ConfigureUser atomically sets email, password, and is_admin=1 in one UPDATE,
+		// ConfigureUser atomically sets email, password, and is_admin in one UPDATE,
 		// preventing partial-update races (e.g. password committed but admin flag not set).
-		if err2 := h.users.ConfigureUser(r.Context(), existing.ID, email, string(hash)); err2 != nil {
+		if err2 := h.users.ConfigureUser(r.Context(), existing.ID, email, string(hash), true); err2 != nil {
 			h.serverError(w, r, err2)
 			return
 		}
@@ -102,7 +102,7 @@ func (h *Handler) setupSubmit(w http.ResponseWriter, r *http.Request) {
 		unconfigured, err2 := h.users.GetFirstUnconfigured(r.Context())
 		switch {
 		case err2 == nil:
-			if err3 := h.users.ConfigureUser(r.Context(), unconfigured.ID, email, string(hash)); err3 != nil {
+			if err3 := h.users.ConfigureUser(r.Context(), unconfigured.ID, email, string(hash), true); err3 != nil {
 				h.serverError(w, r, err3)
 				return
 			}
@@ -223,7 +223,14 @@ func (h *Handler) totpSubmit(w http.ResponseWriter, r *http.Request) {
 
 	u, err := h.users.GetByID(r.Context(), sess.UserID)
 	if err != nil {
-		h.serverError(w, r, err)
+		if !errors.Is(err, errs.ErrNotFound) {
+			loggerFromCtx(r.Context()).Error("user lookup in totp submit", "err", err)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+		// User deleted — clear cookie and redirect to login.
+		http.SetCookie(w, h.sessionCookie("", -1))
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
 		return
 	}
 
