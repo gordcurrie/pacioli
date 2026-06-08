@@ -143,7 +143,7 @@ func (h *Handler) RequireAdmin(next http.Handler) http.Handler {
 func (h *Handler) SetupGate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p := r.URL.Path
-		if p == "/setup" || p == "/login" || p == "/login/2fa" || p == "/health" {
+		if p == "/setup" || p == "/login" || p == "/login/2fa" || p == "/logout" || p == "/health" {
 			next.ServeHTTP(w, r)
 			return
 		}

@@ -267,7 +267,7 @@ func (h *Handler) logAudit(r *http.Request, action audit.Action, entity audit.En
 
 func (h *Handler) sessionCookie(raw string, maxAge int) *http.Cookie {
 	return &http.Cookie{ //#nosec G124 -- Secure is configurable via SECURE_COOKIES env var; HttpOnly and SameSite=Strict are always set
-		Name:     "pacioli_session",
+		Name:     cookieName,
 		Value:    raw,
 		Path:     "/",
 		MaxAge:   maxAge,
