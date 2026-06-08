@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"sync"
+	"sync/atomic"
 
 	"github.com/gordcurrie/pacioli/internal/account"
 	"github.com/gordcurrie/pacioli/internal/audit"
@@ -34,11 +35,12 @@ type Handler struct {
 	acbSvc       *service.ACBService
 	gainsSvc     *service.GainsService
 	rocSvc       *service.ROCService
-	encKey       []byte // AES-256 key for TOTP secret encryption; nil = TOTP disabled
-	secureCookie bool
-	logger       *slog.Logger
-	tmpls        map[string]*template.Template
-	tokenMu      sync.Mutex // guards single-use refresh token exchange
+	encKey          []byte // AES-256 key for TOTP secret encryption; nil = TOTP disabled
+	secureCookie    bool
+	setupConfigured atomic.Bool // cached once CountConfigured > 0; avoids per-request DB query
+	logger          *slog.Logger
+	tmpls           map[string]*template.Template
+	tokenMu         sync.Mutex // guards single-use refresh token exchange
 }
 
 // Config holds all dependencies for the Handler.

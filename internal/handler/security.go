@@ -2,12 +2,13 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"html/template"
 	"net/http"
 	"strconv"
-	"strings"
 
 	"github.com/gordcurrie/pacioli/internal/audit"
+	"github.com/gordcurrie/pacioli/internal/errs"
 	"github.com/gordcurrie/pacioli/internal/questrade"
 	"github.com/gordcurrie/pacioli/internal/security"
 )
@@ -176,7 +177,7 @@ func (h *Handler) deleteSecurity(w http.ResponseWriter, r *http.Request) {
 		loggerFromCtx(r.Context()).Error("snapshot marshal", "entity", "security", "id", id, "err", err)
 	}
 	if err := h.securities.Delete(r.Context(), id); err != nil {
-		if strings.Contains(err.Error(), "FOREIGN KEY constraint failed") {
+		if errors.Is(err, errs.ErrConstraint) {
 			http.Error(w, "Security is referenced by existing transactions and cannot be deleted.", http.StatusConflict)
 			return
 		}

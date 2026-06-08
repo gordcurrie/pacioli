@@ -113,6 +113,9 @@ func (s *UserStore) ConfigureUser(ctx context.Context, userID int64, email, pass
 func (s *UserStore) Delete(ctx context.Context, userID int64) error {
 	res, err := s.db.ExecContext(ctx, `DELETE FROM users WHERE id=?`, userID)
 	if err != nil {
+		if isFKConstraintErr(err) {
+			return errs.ErrConstraint
+		}
 		return fmt.Errorf("user delete: %w", err)
 	}
 	n, err := res.RowsAffected()

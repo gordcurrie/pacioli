@@ -119,7 +119,9 @@ func (h *Handler) RequireAuth(next http.Handler) http.Handler {
 			return
 		}
 
-		_ = h.sessions.UpdateLastSeen(r.Context(), sess.ID)
+		if time.Since(sess.LastSeenAt) > 5*time.Minute {
+			_ = h.sessions.UpdateLastSeen(r.Context(), sess.ID)
+		}
 
 		ctx := context.WithValue(r.Context(), ctxKeyUser{}, u)
 		next.ServeHTTP(w, r.WithContext(ctx))
@@ -140,6 +142,8 @@ func (h *Handler) RequireAdmin(next http.Handler) http.Handler {
 
 // SetupGate redirects to /setup when no users have been configured yet.
 // Applied as the outermost middleware in main.go, before auth.
+// Once a configured user exists the result is cached in memory to avoid a
+// DB query on every request.
 func (h *Handler) SetupGate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p := r.URL.Path
@@ -147,14 +151,17 @@ func (h *Handler) SetupGate(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		n, err := h.users.CountConfigured(r.Context())
-		if err != nil {
-			http.Error(w, "internal server error", http.StatusInternalServerError)
-			return
-		}
-		if n == 0 {
-			http.Redirect(w, r, "/setup", http.StatusSeeOther)
-			return
+		if !h.setupConfigured.Load() {
+			n, err := h.users.CountConfigured(r.Context())
+			if err != nil {
+				http.Error(w, "internal server error", http.StatusInternalServerError)
+				return
+			}
+			if n == 0 {
+				http.Redirect(w, r, "/setup", http.StatusSeeOther)
+				return
+			}
+			h.setupConfigured.Store(true)
 		}
 		next.ServeHTTP(w, r)
 	})

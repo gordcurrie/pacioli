@@ -2,10 +2,12 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 
 	"github.com/gordcurrie/pacioli/internal/audit"
+	"github.com/gordcurrie/pacioli/internal/errs"
 	"github.com/gordcurrie/pacioli/internal/user"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -90,6 +92,11 @@ func (h *Handler) adminDeleteUser(w http.ResponseWriter, r *http.Request) {
 		TOTPEnabled bool   `json:"totp_enabled"`
 	}{target.ID, target.Email, target.IsAdmin, target.TOTPEnabled})
 	if err := h.users.Delete(r.Context(), id); err != nil {
+		if errors.Is(err, errs.ErrConstraint) {
+			users, _ := h.users.List(r.Context())
+			h.render(w, r, "admin_users", adminUsersPageData{Users: users, Error: "User has linked transactions and cannot be deleted."})
+			return
+		}
 		h.serverError(w, r, err)
 		return
 	}

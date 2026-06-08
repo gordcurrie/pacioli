@@ -88,7 +88,7 @@ func TestUserStore_List(t *testing.T) {
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
-	// existing user from migration (if any) + 3 created; just check >= 3
+	// newTestDB seeds 2 users; 3 more created above — just check >= 3
 	if len(users) < 3 {
 		t.Errorf("List returned %d users, want at least 3", len(users))
 	}
@@ -143,7 +143,7 @@ func TestUserStore_CountConfigured(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CountConfigured: %v", err)
 	}
-	// init migration inserts one user with no password_hash
+	// newTestDB seeds 2 users with NULL password_hash; CountConfigured should return 0
 	if n != 0 {
 		t.Errorf("initial count = %d, want 0", n)
 	}
