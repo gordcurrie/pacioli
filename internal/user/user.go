@@ -10,7 +10,7 @@ type User struct {
 	Email        string
 	PasswordHash string
 	IsAdmin      bool
-	TOTPSecret   string // AES-256-GCM encrypted; empty = 2FA not enabled
+	TOTPSecret   string // decrypted plaintext; empty = 2FA not enabled or key unavailable
 	TOTPEnabled  bool
 	CreatedAt    time.Time
 }

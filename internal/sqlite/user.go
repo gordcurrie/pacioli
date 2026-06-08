@@ -348,11 +348,12 @@ func (s *UserStore) scan(row scanner) (*user.User, error) {
 	u.IsAdmin = isAdmin == 1
 	u.TOTPEnabled = totpEnabled == 1
 	if encSecret != "" && len(s.key) == 32 {
-		plain, err := decrypt(s.key, encSecret)
-		if err != nil {
-			return nil, fmt.Errorf("user scan: decrypt totp: %w", err)
+		// Decrypt failure (e.g. rotated key) leaves TOTPSecret empty.
+		// Callers already handle empty TOTPSecret as "key unavailable": TOTP
+		// validation is skipped and the UI surfaces a clear error.
+		if plain, err := decrypt(s.key, encSecret); err == nil {
+			u.TOTPSecret = plain
 		}
-		u.TOTPSecret = plain
 	}
 	return &u, nil
 }
