@@ -264,10 +264,16 @@ func (h *Handler) totpDisable(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, r, err)
 		return
 	}
-	_ = h.users.DeleteRecoveryCodes(r.Context(), u.ID)
+	if err := h.users.DeleteRecoveryCodes(r.Context(), u.ID); err != nil {
+		h.serverError(w, r, err)
+		return
+	}
 	// Delete all sessions so any pending totp_verified=false session (created during
 	// a login that was never completed) can't gain full access now that TOTP is off.
-	_ = h.sessions.DeleteByUserID(r.Context(), u.ID)
+	if err := h.sessions.DeleteByUserID(r.Context(), u.ID); err != nil {
+		h.serverError(w, r, err)
+		return
+	}
 	raw, err := generateToken()
 	if err != nil {
 		h.serverError(w, r, err)

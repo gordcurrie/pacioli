@@ -202,19 +202,18 @@ func TestUserStore_RecoveryCodes(t *testing.T) {
 		}
 	}
 
-	// Mark one used.
+	// Mark one used — ListRecoveryCodes only returns unused codes, so count drops to 2.
 	if err := s.MarkRecoveryCodeUsed(ctx, listed[0].ID); err != nil {
 		t.Fatalf("MarkRecoveryCodeUsed: %v", err)
 	}
 	listed2, _ := s.ListRecoveryCodes(ctx, id)
-	usedCount := 0
+	if len(listed2) != 2 {
+		t.Errorf("after marking one used: %d codes, want 2", len(listed2))
+	}
 	for _, c := range listed2 {
 		if c.UsedAt != nil {
-			usedCount++
+			t.Error("ListRecoveryCodes should not return used codes")
 		}
-	}
-	if usedCount != 1 {
-		t.Errorf("used count = %d, want 1", usedCount)
 	}
 
 	// Delete all.

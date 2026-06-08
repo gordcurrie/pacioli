@@ -2,11 +2,13 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 
 	"github.com/gordcurrie/pacioli/internal/account"
 	"github.com/gordcurrie/pacioli/internal/audit"
+	"github.com/gordcurrie/pacioli/internal/errs"
 )
 
 type accountsPageData struct {
@@ -154,6 +156,10 @@ func (h *Handler) deleteAccount(w http.ResponseWriter, r *http.Request) {
 		loggerFromCtx(r.Context()).Error("snapshot marshal", "entity", "account", "id", id, "err", err)
 	}
 	if err := h.accounts.Delete(r.Context(), id); err != nil {
+		if errors.Is(err, errs.ErrConstraint) {
+			http.Error(w, "Account has existing transactions and cannot be deleted.", http.StatusConflict)
+			return
+		}
 		h.serverError(w, r, err)
 		return
 	}

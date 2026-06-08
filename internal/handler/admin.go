@@ -102,6 +102,9 @@ func (h *Handler) adminDeleteUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.logAudit(r, audit.ActionDelete, audit.EntityUser, id, audit.SourceManual, string(snapshot))
+	// Invalidate the SetupGate cache so the next request re-checks CountConfigured.
+	// Prevents the gate from staying permanently open if this was the last user.
+	h.setupConfigured.Store(false)
 
 	users, _ := h.users.List(r.Context())
 	h.render(w, r, "admin_users", adminUsersPageData{Users: users, Success: "User deleted."})

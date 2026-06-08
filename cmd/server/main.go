@@ -53,7 +53,10 @@ func run() error {
 		// Fail fast if any user has 2FA enabled: without the key their TOTP secret
 		// can't be decrypted and they'd be locked out with no recovery path.
 		var n int
-		if err := db.QueryRowContext(context.Background(), `SELECT COUNT(*) FROM users WHERE totp_enabled=1`).Scan(&n); err == nil && n > 0 {
+		if err := db.QueryRowContext(context.Background(), `SELECT COUNT(*) FROM users WHERE totp_enabled=1`).Scan(&n); err != nil {
+			return fmt.Errorf("check 2FA users: %w", err)
+		}
+		if n > 0 {
 			return fmt.Errorf("TOKEN_ENCRYPTION_KEY required: %d user(s) have 2FA enabled", n)
 		}
 	}

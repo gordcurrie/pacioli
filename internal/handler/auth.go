@@ -324,9 +324,6 @@ func (h *Handler) consumeRecoveryCode(r *http.Request, userID int64, code string
 		return false, err
 	}
 	for _, rc := range codes {
-		if rc.UsedAt != nil {
-			continue
-		}
 		if err := bcrypt.CompareHashAndPassword([]byte(rc.Hash), []byte(code)); err == nil {
 			if err := h.users.MarkRecoveryCodeUsed(r.Context(), rc.ID); err != nil {
 				if errors.Is(err, errs.ErrNotFound) {
