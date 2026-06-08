@@ -113,10 +113,12 @@ CREATE TABLE recovery_codes (
     used_at   DATETIME
 );
 
-CREATE INDEX idx_transactions_account_id  ON transactions(account_id);
-CREATE INDEX idx_transactions_security_id ON transactions(security_id);
-CREATE INDEX idx_transactions_trade_date  ON transactions(trade_date);
-CREATE INDEX idx_accounts_user_id         ON accounts(user_id);
-CREATE INDEX idx_audit_log_entity         ON audit_log(entity_type, entity_id);
-CREATE INDEX idx_audit_log_user_id        ON audit_log(user_id);
-CREATE INDEX idx_audit_log_created_at     ON audit_log(created_at);
+CREATE INDEX idx_transactions_account_id    ON transactions(account_id);
+CREATE INDEX idx_transactions_security_id   ON transactions(security_id);
+CREATE INDEX idx_transactions_trade_date    ON transactions(trade_date);
+CREATE INDEX idx_accounts_user_id           ON accounts(user_id);
+CREATE INDEX idx_audit_log_entity           ON audit_log(entity_type, entity_id);
+CREATE INDEX idx_audit_log_user_id          ON audit_log(user_id);
+CREATE INDEX idx_audit_log_created_at       ON audit_log(created_at);
+CREATE INDEX idx_sessions_user_id           ON sessions(user_id);
+CREATE INDEX idx_recovery_codes_user_id     ON recovery_codes(user_id);
