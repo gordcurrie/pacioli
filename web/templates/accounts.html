@@ -32,6 +32,7 @@
             hx-target="#account-row-{{.ID}}"
             hx-swap="outerHTML"
             hx-confirm="Delete this account?"
+            hx-on:htmx:after-request="if(!event.detail.successful) alert(event.detail.xhr.responseText)"
             class="outline danger"
             style="padding: 0.25rem 0.5rem; font-size: 0.875rem">Delete</button>
         </td>

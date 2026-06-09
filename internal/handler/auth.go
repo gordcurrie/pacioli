@@ -317,23 +317,28 @@ func generateToken() (string, error) {
 }
 
 // consumeRecoveryCode checks the submitted code against unused recovery codes for userID.
-// Returns true and marks the code used on match.
+// Returns true and marks the code used on match. All codes are always checked regardless
+// of an early match to prevent timing attacks that would reveal the number of remaining codes.
 func (h *Handler) consumeRecoveryCode(r *http.Request, userID int64, code string) (bool, error) {
 	codes, err := h.users.ListRecoveryCodes(r.Context(), userID)
 	if err != nil {
 		return false, err
 	}
+	var matchID int64 = -1
 	for _, rc := range codes {
-		if err := bcrypt.CompareHashAndPassword([]byte(rc.Hash), []byte(code)); err == nil {
-			if err := h.users.MarkRecoveryCodeUsed(r.Context(), rc.ID); err != nil {
-				if errors.Is(err, errs.ErrNotFound) {
-					continue // race: another concurrent request already consumed this code
-				}
-				return false, err
-			}
-			return true, nil
+		if bcrypt.CompareHashAndPassword([]byte(rc.Hash), []byte(code)) == nil && matchID == -1 {
+			matchID = rc.ID
 		}
 	}
-	return false, nil
+	if matchID == -1 {
+		return false, nil
+	}
+	if err := h.users.MarkRecoveryCodeUsed(r.Context(), matchID); err != nil {
+		if errors.Is(err, errs.ErrNotFound) {
+			return false, nil // race: another concurrent request already consumed this code
+		}
+		return false, err
+	}
+	return true, nil
 }
 

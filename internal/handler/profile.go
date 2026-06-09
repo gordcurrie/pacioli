@@ -121,11 +121,7 @@ func (h *Handler) totpSetupPage(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		loggerFromCtx(r.Context()).Error("list recovery codes", "err", err)
 	}
-	for _, c := range codes {
-		if c.UsedAt == nil {
-			data.RecoveryCount++
-		}
-	}
+	data.RecoveryCount = len(codes) // ListRecoveryCodes only returns unused codes
 
 	if !u.TOTPEnabled {
 		key, err := totp.Generate(totp.GenerateOpts{

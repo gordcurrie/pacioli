@@ -287,7 +287,7 @@ func (s *UserStore) CreateRecoveryCodes(ctx context.Context, codes []*user.Recov
 
 func (s *UserStore) ListRecoveryCodes(ctx context.Context, userID int64) ([]*user.RecoveryCode, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, user_id, code_hash, used_at FROM recovery_codes WHERE user_id=? AND used_at IS NULL ORDER BY id`, userID,
+		`SELECT id, user_id, code_hash FROM recovery_codes WHERE user_id=? AND used_at IS NULL ORDER BY id`, userID,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("recovery codes list: %w", err)
@@ -296,13 +296,8 @@ func (s *UserStore) ListRecoveryCodes(ctx context.Context, userID int64) ([]*use
 	var codes []*user.RecoveryCode
 	for rows.Next() {
 		var rc user.RecoveryCode
-		var usedAt sql.NullTime
-		if err := rows.Scan(&rc.ID, &rc.UserID, &rc.Hash, &usedAt); err != nil {
+		if err := rows.Scan(&rc.ID, &rc.UserID, &rc.Hash); err != nil {
 			return nil, fmt.Errorf("recovery codes scan: %w", err)
-		}
-		if usedAt.Valid {
-			t := usedAt.Time
-			rc.UsedAt = &t
 		}
 		codes = append(codes, &rc)
 	}
