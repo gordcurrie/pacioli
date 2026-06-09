@@ -40,7 +40,7 @@
             hx-target="#sec-row-{{.ID}}"
             hx-swap="outerHTML"
             hx-confirm="Delete {{.Ticker}}? This cannot be undone."
-            hx-on:htmx:after-request="if(!event.detail.successful) alert(event.detail.xhr.responseText)"
+            hx-on:htmx:after-request="if(!event.detail.successful) alert(event.detail.xhr.responseText || 'Delete failed. Please try again.')"
             class="outline danger"
             style="padding:0.25rem 0.5rem;font-size:0.875rem">Delete</button>
         </td>
