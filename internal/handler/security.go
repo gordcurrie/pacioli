@@ -147,13 +147,14 @@ func (h *Handler) updateSecurity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	snapshot, _ := json.Marshal(sec)
+
 	sec.Ticker = r.FormValue("ticker")
 	sec.Exchange = r.FormValue("exchange")
 	sec.Name = r.FormValue("name")
 	sec.Type = secType
 	sec.Currency = currency
 
-	snapshot, _ := json.Marshal(sec)
 	if err := h.securities.Update(r.Context(), sec); err != nil {
 		renderForm(sec, "failed to update security")
 		return

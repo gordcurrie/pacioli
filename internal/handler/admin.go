@@ -88,12 +88,7 @@ func (h *Handler) adminDeleteUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Snapshot only non-sensitive fields — PasswordHash and TOTPSecret must not persist in audit log.
-	snapshot, _ := json.Marshal(struct {
-		ID          int64  `json:"id"`
-		Email       string `json:"email"`
-		IsAdmin     bool   `json:"is_admin"`
-		TOTPEnabled bool   `json:"totp_enabled"`
-	}{target.ID, target.Email, target.IsAdmin, target.TOTPEnabled})
+	snapshot := marshalUserSnapshot(target)
 	if err := h.users.Delete(r.Context(), id); err != nil {
 		if errors.Is(err, errs.ErrConstraint) {
 			users, _ := h.users.List(r.Context())
@@ -104,13 +99,25 @@ func (h *Handler) adminDeleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.logAudit(r, audit.ActionDelete, audit.EntityUser, id, audit.SourceManual, string(snapshot))
+	h.logAudit(r, audit.ActionDelete, audit.EntityUser, id, audit.SourceManual, snapshot)
 	// Invalidate the SetupGate cache so the next request re-checks CountConfigured.
 	// Prevents the gate from staying permanently open if this was the last user.
 	h.setupConfigured.Store(false)
 
 	users, _ := h.users.List(r.Context())
 	h.render(w, r, "admin_users", adminUsersPageData{Users: users, Success: "User deleted."})
+}
+
+// marshalUserSnapshot produces a JSON before-state snapshot for user audit entries,
+// deliberately excluding password_hash and totp_secret.
+func marshalUserSnapshot(u *user.User) string {
+	b, _ := json.Marshal(struct {
+		ID          int64  `json:"id"`
+		Email       string `json:"email"`
+		IsAdmin     bool   `json:"is_admin"`
+		TOTPEnabled bool   `json:"totp_enabled"`
+	}{u.ID, u.Email, u.IsAdmin, u.TOTPEnabled})
+	return string(b)
 }
 
 const auditPageSize = 50
@@ -140,7 +147,12 @@ func (h *Handler) adminAuditLog(w http.ResponseWriter, r *http.Request) {
 		Action:     q.Get("action"),
 	}
 	if uid := q.Get("user_id"); uid != "" {
-		f.UserID, _ = strconv.ParseInt(uid, 10, 64)
+		n, err := strconv.ParseInt(uid, 10, 64)
+		if err != nil || n <= 0 {
+			http.Error(w, "invalid user_id", http.StatusBadRequest)
+			return
+		}
+		f.UserID = n
 	}
 	page := 1
 	if p := q.Get("page"); p != "" {
@@ -149,33 +161,40 @@ func (h *Handler) adminAuditLog(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	lf := audit.ListFilter{
+	baseFilter := audit.ListFilter{
 		EntityType: audit.EntityType(f.EntityType),
 		Action:     audit.Action(f.Action),
 		UserID:     f.UserID,
-		Limit:      auditPageSize,
-		Offset:     (page - 1) * auditPageSize,
 	}
 
+	// Count first so we can validate and clamp the page before fetching rows.
+	total, err := h.audits.Count(r.Context(), baseFilter)
+	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
+	totalPages := (total + auditPageSize - 1) / auditPageSize
+	if totalPages < 1 {
+		totalPages = 1
+	}
+	if page > totalPages {
+		http.Redirect(w, r, auditURL(f, totalPages), http.StatusSeeOther)
+		return
+	}
+
+	lf := baseFilter
+	lf.Limit = auditPageSize
+	lf.Offset = (page - 1) * auditPageSize
 	entries, err := h.audits.List(r.Context(), lf)
 	if err != nil {
 		h.serverError(w, r, err)
 		return
 	}
-	total, err := h.audits.Count(r.Context(), lf)
-	if err != nil {
-		h.serverError(w, r, err)
-		return
-	}
+
 	users, err := h.users.List(r.Context())
 	if err != nil {
 		h.serverError(w, r, err)
 		return
-	}
-
-	totalPages := (total + auditPageSize - 1) / auditPageSize
-	if totalPages < 1 {
-		totalPages = 1
 	}
 
 	data := adminAuditPageData{
@@ -241,12 +260,7 @@ func (h *Handler) adminResetPassword(w http.ResponseWriter, r *http.Request) {
 		h.notFoundOrError(w, r, err)
 		return
 	}
-	snapshot, _ := json.Marshal(struct {
-		ID          int64  `json:"id"`
-		Email       string `json:"email"`
-		IsAdmin     bool   `json:"is_admin"`
-		TOTPEnabled bool   `json:"totp_enabled"`
-	}{target.ID, target.Email, target.IsAdmin, target.TOTPEnabled})
+	snapshot := marshalUserSnapshot(target)
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcryptCost)
 	if err != nil {
@@ -265,7 +279,7 @@ func (h *Handler) adminResetPassword(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, r, err)
 		return
 	}
-	h.logAudit(r, audit.ActionUpdate, audit.EntityUser, id, audit.SourceManual, string(snapshot))
+	h.logAudit(r, audit.ActionUpdate, audit.EntityUser, id, audit.SourceManual, snapshot)
 
 	users, _ := h.users.List(r.Context())
 	h.render(w, r, "admin_users", adminUsersPageData{Users: users, Success: "Password reset."})

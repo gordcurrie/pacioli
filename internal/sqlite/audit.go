@@ -79,7 +79,10 @@ func (s *AuditStore) List(ctx context.Context, f audit.ListFilter) ([]*audit.Ent
 		e.Source = audit.Source(source)
 		entries = append(entries, &e)
 	}
-	return entries, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("audit list: %w", err)
+	}
+	return entries, nil
 }
 
 func (s *AuditStore) Count(ctx context.Context, f audit.ListFilter) (int, error) {
