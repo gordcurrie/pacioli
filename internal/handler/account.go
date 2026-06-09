@@ -2,11 +2,13 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 
 	"github.com/gordcurrie/pacioli/internal/account"
 	"github.com/gordcurrie/pacioli/internal/audit"
+	"github.com/gordcurrie/pacioli/internal/errs"
 )
 
 type accountsPageData struct {
@@ -27,16 +29,16 @@ var accountTypes = []account.Type{
 }
 
 func (h *Handler) listAccounts(w http.ResponseWriter, r *http.Request) {
-	accounts, err := h.accounts.ListByUser(r.Context(), h.userID)
+	accounts, err := h.accounts.ListByUser(r.Context(), userFromCtx(r.Context()).ID)
 	if err != nil {
 		h.serverError(w, r, err)
 		return
 	}
-	h.render(w, "accounts", accountsPageData{Accounts: accounts})
+	h.render(w, r,"accounts", accountsPageData{Accounts: accounts})
 }
 
 func (h *Handler) newAccount(w http.ResponseWriter, r *http.Request) {
-	h.render(w, "account_form", accountFormData{
+	h.render(w, r,"account_form", accountFormData{
 		Account: &account.Account{Currency: "CAD"},
 		Types:   accountTypes,
 	})
@@ -44,7 +46,7 @@ func (h *Handler) newAccount(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) createAccount(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		h.render(w, "account_form", accountFormData{
+		h.render(w, r,"account_form", accountFormData{
 			Account: &account.Account{Currency: "CAD"},
 			Types:   accountTypes,
 			Error:   "invalid form data",
@@ -53,7 +55,7 @@ func (h *Handler) createAccount(w http.ResponseWriter, r *http.Request) {
 	}
 
 	a := &account.Account{
-		UserID:        h.userID,
+		UserID:        userFromCtx(r.Context()).ID,
 		Name:          r.FormValue("name"),
 		Type:          account.Type(r.FormValue("type")),
 		Broker:        r.FormValue("broker"),
@@ -63,7 +65,7 @@ func (h *Handler) createAccount(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.accounts.Create(r.Context(), a); err != nil {
-		h.render(w, "account_form", accountFormData{
+		h.render(w, r,"account_form", accountFormData{
 			Account: a,
 			Types:   accountTypes,
 			Error:   "failed to create account",
@@ -85,11 +87,11 @@ func (h *Handler) editAccount(w http.ResponseWriter, r *http.Request) {
 		h.notFoundOrError(w, r, err)
 		return
 	}
-	if a.UserID != h.userID {
+	if a.UserID != userFromCtx(r.Context()).ID {
 		http.NotFound(w, r)
 		return
 	}
-	h.render(w, "account_form", accountFormData{Account: a, Types: accountTypes})
+	h.render(w, r,"account_form", accountFormData{Account: a, Types: accountTypes})
 }
 
 func (h *Handler) updateAccount(w http.ResponseWriter, r *http.Request) {
@@ -103,7 +105,7 @@ func (h *Handler) updateAccount(w http.ResponseWriter, r *http.Request) {
 		h.notFoundOrError(w, r, err)
 		return
 	}
-	if existing.UserID != h.userID {
+	if existing.UserID != userFromCtx(r.Context()).ID {
 		http.NotFound(w, r)
 		return
 	}
@@ -115,7 +117,7 @@ func (h *Handler) updateAccount(w http.ResponseWriter, r *http.Request) {
 
 	a := &account.Account{
 		ID:            id,
-		UserID:        h.userID,
+		UserID:        userFromCtx(r.Context()).ID,
 		Name:          r.FormValue("name"),
 		Type:          account.Type(r.FormValue("type")),
 		Broker:        r.FormValue("broker"),
@@ -124,7 +126,7 @@ func (h *Handler) updateAccount(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.accounts.Update(r.Context(), a); err != nil {
-		h.render(w, "account_form", accountFormData{
+		h.render(w, r,"account_form", accountFormData{
 			Account: a,
 			Types:   accountTypes,
 			Error:   "failed to update account",
@@ -145,7 +147,7 @@ func (h *Handler) deleteAccount(w http.ResponseWriter, r *http.Request) {
 		h.notFoundOrError(w, r, err)
 		return
 	}
-	if existing.UserID != h.userID {
+	if existing.UserID != userFromCtx(r.Context()).ID {
 		http.NotFound(w, r)
 		return
 	}
@@ -154,6 +156,10 @@ func (h *Handler) deleteAccount(w http.ResponseWriter, r *http.Request) {
 		loggerFromCtx(r.Context()).Error("snapshot marshal", "entity", "account", "id", id, "err", err)
 	}
 	if err := h.accounts.Delete(r.Context(), id); err != nil {
+		if errors.Is(err, errs.ErrConstraint) {
+			http.Error(w, "Account has existing transactions and cannot be deleted.", http.StatusConflict)
+			return
+		}
 		h.serverError(w, r, err)
 		return
 	}

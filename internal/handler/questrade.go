@@ -90,7 +90,7 @@ type qtCommitRow struct {
 // activeToken loads the stored token, refreshing and re-saving if near expiry.
 func (h *Handler) activeToken(r *http.Request) (questrade.Token, error) {
 	ctx := r.Context()
-	token, err := h.qtTokens.Get(ctx, h.userID)
+	token, err := h.qtTokens.Get(ctx, userFromCtx(r.Context()).ID)
 	if err != nil {
 		return questrade.Token{}, err
 	}
@@ -102,7 +102,7 @@ func (h *Handler) activeToken(r *http.Request) (questrade.Token, error) {
 	// lock in case another goroutine already refreshed.
 	h.tokenMu.Lock()
 	defer h.tokenMu.Unlock()
-	token, err = h.qtTokens.Get(ctx, h.userID)
+	token, err = h.qtTokens.Get(ctx, userFromCtx(r.Context()).ID)
 	if err != nil {
 		return questrade.Token{}, err
 	}
@@ -113,7 +113,7 @@ func (h *Handler) activeToken(r *http.Request) (questrade.Token, error) {
 	if err != nil {
 		return questrade.Token{}, err
 	}
-	if err := h.qtTokens.Save(ctx, h.userID, token); err != nil {
+	if err := h.qtTokens.Save(ctx, userFromCtx(r.Context()).ID, token); err != nil {
 		return questrade.Token{}, fmt.Errorf("save refreshed qt token: %w", err)
 	}
 	return token, nil
@@ -121,18 +121,18 @@ func (h *Handler) activeToken(r *http.Request) (questrade.Token, error) {
 
 func (h *Handler) questradePage(w http.ResponseWriter, r *http.Request) {
 	if h.qtTokens == nil {
-		h.render(w, "questrade", qtPageData{Configured: false, Error: "Questrade integration not configured — set TOKEN_ENCRYPTION_KEY to enable."})
+		h.render(w, r,"questrade", qtPageData{Configured: false, Error: "Questrade integration not configured — set TOKEN_ENCRYPTION_KEY to enable."})
 		return
 	}
 	ctx := r.Context()
-	_, err := h.qtTokens.Get(ctx, h.userID)
+	_, err := h.qtTokens.Get(ctx, userFromCtx(r.Context()).ID)
 	if err != nil && !errors.Is(err, errs.ErrNotFound) {
 		h.serverError(w, r, err)
 		return
 	}
 	connected := err == nil
 
-	accounts, err := h.accounts.ListByUser(ctx, h.userID)
+	accounts, err := h.accounts.ListByUser(ctx, userFromCtx(r.Context()).ID)
 	if err != nil {
 		h.serverError(w, r, err)
 		return
@@ -152,7 +152,7 @@ func (h *Handler) questradePage(w http.ResponseWriter, r *http.Request) {
 		syncResult = fmt.Sprintf("Sync complete — %s new account(s), %s new security(s) created.", sa, ss)
 	}
 
-	h.render(w, "questrade", qtPageData{
+	h.render(w, r,"questrade", qtPageData{
 		Configured: true, Connected: connected,
 		Accounts: opts, QTAccounts: qtAccounts,
 		SyncResult: syncResult,
@@ -172,14 +172,14 @@ func (h *Handler) questradeConnect(w http.ResponseWriter, r *http.Request) {
 	}
 	refreshToken := r.FormValue("refresh_token")
 	if refreshToken == "" {
-		h.render(w, "questrade", qtPageData{Configured: true, Error: "refresh token required"})
+		h.render(w, r,"questrade", qtPageData{Configured: true, Error: "refresh token required"})
 		return
 	}
 
 	token, err := questrade.Exchange(ctx, refreshToken)
 	if err != nil {
 		loggerFromCtx(ctx).Error("questrade connect", "err", err)
-		accounts, err2 := h.accounts.ListByUser(ctx, h.userID)
+		accounts, err2 := h.accounts.ListByUser(ctx, userFromCtx(r.Context()).ID)
 		if err2 != nil {
 			h.serverError(w, r, err2)
 			return
@@ -188,10 +188,10 @@ func (h *Handler) questradeConnect(w http.ResponseWriter, r *http.Request) {
 		for i, a := range accounts {
 			opts[i] = qtAccountOption{a.ID, a.Name}
 		}
-		h.render(w, "questrade", qtPageData{Configured: true, Accounts: opts, Error: "connection failed — check the token and try again"})
+		h.render(w, r,"questrade", qtPageData{Configured: true, Accounts: opts, Error: "connection failed — check the token and try again"})
 		return
 	}
-	if err := h.qtTokens.Save(ctx, h.userID, token); err != nil {
+	if err := h.qtTokens.Save(ctx, userFromCtx(r.Context()).ID, token); err != nil {
 		h.serverError(w, r, err)
 		return
 	}
@@ -203,7 +203,7 @@ func (h *Handler) questradeDisconnect(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/questrade", http.StatusSeeOther)
 		return
 	}
-	if err := h.qtTokens.Delete(r.Context(), h.userID); err != nil {
+	if err := h.qtTokens.Delete(r.Context(), userFromCtx(r.Context()).ID); err != nil {
 		h.serverError(w, r, err)
 		return
 	}
@@ -223,7 +223,7 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	renderErr := func(msg string) {
-		accounts, err := h.accounts.ListByUser(ctx, h.userID)
+		accounts, err := h.accounts.ListByUser(ctx, userFromCtx(r.Context()).ID)
 		if err != nil {
 			h.serverError(w, r, err)
 			return
@@ -232,7 +232,7 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 		for i, a := range accounts {
 			opts[i] = qtAccountOption{a.ID, a.Name}
 		}
-		h.render(w, "questrade", qtPageData{Configured: true, Connected: true, Accounts: opts, Error: msg})
+		h.render(w, r,"questrade", qtPageData{Configured: true, Connected: true, Accounts: opts, Error: msg})
 	}
 
 	token, err := h.activeToken(r)
@@ -275,7 +275,7 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// validate account ownership
-	accounts, err := h.accounts.ListByUser(ctx, h.userID)
+	accounts, err := h.accounts.ListByUser(ctx, userFromCtx(r.Context()).ID)
 	if err != nil {
 		h.serverError(w, r, err)
 		return
@@ -457,7 +457,7 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.render(w, "questrade_preview", qtPreviewData{
+	h.render(w, r,"questrade_preview", qtPreviewData{
 		Rows:       previewRows,
 		CommitJSON: string(commitJSON),
 		TotalOK:    totOK,
@@ -529,7 +529,7 @@ func (h *Handler) questradeCommit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	accounts, err := h.accounts.ListByUser(ctx, h.userID)
+	accounts, err := h.accounts.ListByUser(ctx, userFromCtx(r.Context()).ID)
 	if err != nil {
 		h.serverError(w, r, err)
 		return
@@ -662,7 +662,7 @@ func (h *Handler) questradeCommit(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if err := h.audits.Log(ctx, &audit.Entry{
-			UserID:     h.userID,
+			UserID:     userFromCtx(r.Context()).ID,
 			Action:     audit.ActionCreate,
 			EntityType: audit.EntityTransaction,
 			EntityID:   tx.ID,
@@ -705,7 +705,7 @@ func (h *Handler) questradeSync(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	existing, err := h.accounts.ListByUser(ctx, h.userID)
+	existing, err := h.accounts.ListByUser(ctx, userFromCtx(r.Context()).ID)
 	if err != nil {
 		h.serverError(w, r, err)
 		return
@@ -725,7 +725,7 @@ func (h *Handler) questradeSync(w http.ResponseWriter, r *http.Request) {
 		}
 		acType := mapQTAccountType(qa.Type)
 		a := &account.Account{
-			UserID:        h.userID,
+			UserID:        userFromCtx(r.Context()).ID,
 			Name:          qa.Type + " " + qa.Number,
 			Type:          acType,
 			Broker:        "Questrade",

@@ -4,9 +4,13 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"log/slog"
 	"net/http"
 	"time"
+
+	"github.com/gordcurrie/pacioli/internal/errs"
+	"github.com/gordcurrie/pacioli/internal/sqlite"
 )
 
 type contextKey int
@@ -41,8 +45,7 @@ func (sw *statusWriter) written() int {
 }
 
 // RequestLogger returns middleware that logs each request with method, path,
-// status, latency, and a unique request_id. It stores a request-scoped logger
-// in the context so handler errors can be correlated to their request.
+// status, latency, and a unique request_id.
 func RequestLogger(logger *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -66,3 +69,101 @@ func RequestLogger(logger *slog.Logger) func(http.Handler) http.Handler {
 		})
 	}
 }
+
+// RequireAuth authenticates the request via session cookie. Expired or missing
+// sessions redirect to /login. Sessions with totp_verified=false (pending 2FA)
+// redirect to /login/2fa. On success the user is stored in context.
+func (h *Handler) RequireAuth(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		cookie, err := r.Cookie(cookieName)
+		if err != nil {
+			http.Redirect(w, r, "/login", http.StatusSeeOther)
+			return
+		}
+
+		hash := sqlite.HashToken(cookie.Value)
+		sess, err := h.sessions.GetByTokenHash(r.Context(), hash)
+		if err != nil {
+			if !errors.Is(err, errs.ErrNotFound) {
+				loggerFromCtx(r.Context()).Error("session lookup", "err", err)
+				http.Error(w, "internal server error", http.StatusInternalServerError)
+				return
+			}
+			http.SetCookie(w, h.sessionCookie("", -1))
+			http.Redirect(w, r, "/login", http.StatusSeeOther)
+			return
+		}
+
+		if time.Now().After(sess.ExpiresAt) {
+			_ = h.sessions.Delete(r.Context(), sess.ID)
+			http.SetCookie(w, h.sessionCookie("", -1))
+			http.Redirect(w, r, "/login", http.StatusSeeOther)
+			return
+		}
+
+		u, err := h.users.GetByID(r.Context(), sess.UserID)
+		if err != nil {
+			if !errors.Is(err, errs.ErrNotFound) {
+				loggerFromCtx(r.Context()).Error("user lookup", "err", err)
+				http.Error(w, "internal server error", http.StatusInternalServerError)
+				return
+			}
+			// User was deleted — treat as expired session.
+			http.SetCookie(w, h.sessionCookie("", -1))
+			http.Redirect(w, r, "/login", http.StatusSeeOther)
+			return
+		}
+
+		if u.TOTPEnabled && !sess.TOTPVerified {
+			http.Redirect(w, r, "/login/2fa", http.StatusSeeOther)
+			return
+		}
+
+		if time.Since(sess.LastSeenAt) > 5*time.Minute {
+			_ = h.sessions.UpdateLastSeen(r.Context(), sess.ID)
+		}
+
+		ctx := context.WithValue(r.Context(), ctxKeyUser{}, u)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+// RequireAdmin wraps RequireAuth and additionally enforces is_admin.
+// Non-admin authenticated users receive 403.
+func (h *Handler) RequireAdmin(next http.Handler) http.Handler {
+	return h.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !userFromCtx(r.Context()).IsAdmin {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
+	}))
+}
+
+// SetupGate redirects to /setup when no users have been configured yet.
+// Applied as the outermost middleware in main.go, before auth.
+// Once a configured user exists the result is cached in memory to avoid a
+// DB query on every request.
+func (h *Handler) SetupGate(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		p := r.URL.Path
+		if p == "/setup" || p == "/login" || p == "/login/2fa" || p == "/logout" || p == "/health" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if !h.setupConfigured.Load() {
+			n, err := h.users.CountConfigured(r.Context())
+			if err != nil {
+				http.Error(w, "internal server error", http.StatusInternalServerError)
+				return
+			}
+			if n == 0 {
+				http.Redirect(w, r, "/setup", http.StatusSeeOther)
+				return
+			}
+			h.setupConfigured.Store(true)
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+

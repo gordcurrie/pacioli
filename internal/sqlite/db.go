@@ -6,6 +6,7 @@ import (
 	"embed"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/sqlite"
@@ -18,7 +19,15 @@ var migrationsFS embed.FS
 
 // Open opens a SQLite database at dsn, sets a busy timeout and WAL mode, and runs all pending migrations.
 func Open(dsn string) (*sql.DB, error) {
-	db, err := sql.Open("sqlite", dsn)
+	// Embed per-connection PRAGMAs in the DSN so every new pool connection has
+	// them regardless of SetMaxOpenConns. PRAGMA foreign_keys and busy_timeout are
+	// per-connection in SQLite; without DSN params, pool expansion silently drops them.
+	// journal_mode=WAL is file-persisted and does not need to be here.
+	sep := "?"
+	if strings.Contains(dsn, "?") {
+		sep = "&"
+	}
+	db, err := sql.Open("sqlite", dsn+sep+"_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)")
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}
@@ -32,6 +41,10 @@ func Open(dsn string) (*sql.DB, error) {
 	if _, err := db.ExecContext(context.Background(), `PRAGMA journal_mode = WAL`); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("set WAL mode: %w", err)
+	}
+	if _, err := db.ExecContext(context.Background(), `PRAGMA foreign_keys = ON`); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("enable foreign keys: %w", err)
 	}
 
 	if err := runMigrations(db); err != nil {

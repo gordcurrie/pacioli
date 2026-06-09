@@ -39,7 +39,7 @@ var txTypes = []transaction.Type{
 }
 
 func (h *Handler) listTransactions(w http.ResponseWriter, r *http.Request) {
-	accounts, err := h.accounts.ListByUser(r.Context(), h.userID)
+	accounts, err := h.accounts.ListByUser(r.Context(), userFromCtx(r.Context()).ID)
 	if err != nil {
 		h.serverError(w, r, err)
 		return
@@ -85,29 +85,29 @@ func (h *Handler) listTransactions(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	h.render(w, "transactions", transactionsPageData{Transactions: rows})
+	h.render(w, r,"transactions", transactionsPageData{Transactions: rows})
 }
 
 func (h *Handler) newTransaction(w http.ResponseWriter, r *http.Request) {
-	accounts, err := h.accounts.ListByUser(r.Context(), h.userID)
+	accounts, err := h.accounts.ListByUser(r.Context(), userFromCtx(r.Context()).ID)
 	if err != nil {
 		h.serverError(w, r, err)
 		return
 	}
-	h.render(w, "transaction_form", transactionFormData{
+	h.render(w, r,"transaction_form", transactionFormData{
 		Accounts: accounts,
 		Types:    txTypes,
 	})
 }
 
 func (h *Handler) createTransaction(w http.ResponseWriter, r *http.Request) {
-	accounts, err := h.accounts.ListByUser(r.Context(), h.userID)
+	accounts, err := h.accounts.ListByUser(r.Context(), userFromCtx(r.Context()).ID)
 	if err != nil {
 		h.serverError(w, r, err)
 		return
 	}
 	renderForm := func(errMsg string) {
-		h.render(w, "transaction_form", transactionFormData{
+		h.render(w, r,"transaction_form", transactionFormData{
 			Accounts: accounts,
 			Types:    txTypes,
 			Error:    errMsg,
@@ -269,7 +269,7 @@ func (h *Handler) editTransactionFXForm(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	acct, err := h.accounts.GetByID(r.Context(), tx.AccountID)
-	if err != nil || acct.UserID != h.userID {
+	if err != nil || acct.UserID != userFromCtx(r.Context()).ID {
 		http.NotFound(w, r)
 		return
 	}
@@ -291,7 +291,7 @@ func (h *Handler) transactionFXCell(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	acct, err := h.accounts.GetByID(r.Context(), tx.AccountID)
-	if err != nil || acct.UserID != h.userID {
+	if err != nil || acct.UserID != userFromCtx(r.Context()).ID {
 		http.NotFound(w, r)
 		return
 	}
@@ -313,7 +313,7 @@ func (h *Handler) updateTransactionFX(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	acct, err := h.accounts.GetByID(r.Context(), tx.AccountID)
-	if err != nil || acct.UserID != h.userID {
+	if err != nil || acct.UserID != userFromCtx(r.Context()).ID {
 		http.NotFound(w, r)
 		return
 	}
@@ -365,7 +365,7 @@ func (h *Handler) deleteTransaction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	acct, err := h.accounts.GetByID(r.Context(), tx.AccountID)
-	if err != nil || acct.UserID != h.userID {
+	if err != nil || acct.UserID != userFromCtx(r.Context()).ID {
 		http.NotFound(w, r)
 		return
 	}

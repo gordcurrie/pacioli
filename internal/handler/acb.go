@@ -31,7 +31,7 @@ func (h *Handler) index(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, r, err)
 		return
 	}
-	h.render(w, "index", acbListPageData{Positions: positions})
+	h.render(w, r,"index", acbListPageData{Positions: positions})
 }
 
 func (h *Handler) listACB(w http.ResponseWriter, r *http.Request) {
@@ -40,7 +40,7 @@ func (h *Handler) listACB(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, r, err)
 		return
 	}
-	h.render(w, "acb_list", acbListPageData{Positions: positions})
+	h.render(w, r,"acb_list", acbListPageData{Positions: positions})
 }
 
 func (h *Handler) loadPositions(r *http.Request) ([]positionSummary, error) {
@@ -50,7 +50,7 @@ func (h *Handler) loadPositions(r *http.Request) ([]positionSummary, error) {
 	}
 	var positions []positionSummary
 	for _, s := range securities {
-		result, err := h.acbSvc.Calculate(r.Context(), s.ID, h.userID)
+		result, err := h.acbSvc.Calculate(r.Context(), s.ID, userFromCtx(r.Context()).ID)
 		if err != nil {
 			return nil, err
 		}
@@ -74,7 +74,7 @@ func (h *Handler) showACB(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	txs, err := h.transactions.ListBySecurityNonRegistered(r.Context(), id, h.userID)
+	txs, err := h.transactions.ListBySecurityNonRegistered(r.Context(), id, userFromCtx(r.Context()).ID)
 	if err != nil {
 		h.serverError(w, r, err)
 		return
@@ -82,7 +82,7 @@ func (h *Handler) showACB(w http.ResponseWriter, r *http.Request) {
 
 	result, rows := service.CalculateACBWithHistory(id, txs)
 
-	h.render(w, "acb", acbDetailPageData{
+	h.render(w, r,"acb", acbDetailPageData{
 		Security:     sec,
 		Result:       result,
 		Transactions: txs,

@@ -13,12 +13,8 @@ func TestAuditStore(t *testing.T) {
 	store := sqlite.NewAuditStore(db)
 	ctx := context.Background()
 
-	// seed user required by FK
-	if _, err := db.ExecContext(ctx, `INSERT INTO users (id, email) VALUES (1, 'test@test.com')`); err != nil {
-		t.Fatalf("seed user: %v", err)
-	}
-
-	t.Run("log create entry", func(t *testing.T) {
+	// user row already seeded by newTestDB (id=1)
+t.Run("log create entry", func(t *testing.T) {
 		e := &audit.Entry{
 			UserID:     1,
 			Action:     audit.ActionCreate,

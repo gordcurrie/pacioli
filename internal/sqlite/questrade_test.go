@@ -9,6 +9,7 @@ import (
 	"github.com/gordcurrie/pacioli/internal/errs"
 	"github.com/gordcurrie/pacioli/internal/questrade"
 	"github.com/gordcurrie/pacioli/internal/sqlite"
+	"github.com/gordcurrie/pacioli/internal/user"
 )
 
 func TestQTokenStore(t *testing.T) {
@@ -18,10 +19,10 @@ func TestQTokenStore(t *testing.T) {
 	ctx := context.Background()
 
 	// ensure user exists
-	userStore := sqlite.NewUserStore(db)
-	userID, err := userStore.EnsureDefault(ctx, "test@example.com")
+	userStore := sqlite.NewUserStore(db, nil)
+	userID, err := userStore.Create(ctx, &user.User{Email: "test@example.com", PasswordHash: "x", IsAdmin: true})
 	if err != nil {
-		t.Fatalf("ensure user: %v", err)
+		t.Fatalf("create user: %v", err)
 	}
 
 	// Get on empty store returns ErrNotFound

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gordcurrie/pacioli/internal/account"
+	"github.com/gordcurrie/pacioli/internal/errs"
 )
 
 type AccountStore struct {
@@ -77,7 +78,13 @@ func (r *AccountStore) Update(ctx context.Context, a *account.Account) error {
 
 func (r *AccountStore) Delete(ctx context.Context, id int64) error {
 	_, err := r.db.ExecContext(ctx, `DELETE FROM accounts WHERE id=?`, id)
-	return err
+	if err != nil {
+		if isFKConstraintErr(err) {
+			return errs.ErrConstraint
+		}
+		return fmt.Errorf("delete account: %w", err)
+	}
+	return nil
 }
 
 type accountScanner interface {

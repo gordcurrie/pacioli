@@ -3,6 +3,7 @@ package handler_test
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -14,10 +15,13 @@ import (
 	"github.com/gordcurrie/pacioli/internal/handler"
 	"github.com/gordcurrie/pacioli/internal/security"
 	"github.com/gordcurrie/pacioli/internal/service"
+	"github.com/gordcurrie/pacioli/internal/session"
 	"github.com/gordcurrie/pacioli/internal/sqlite"
 	"github.com/gordcurrie/pacioli/internal/transaction"
+	"github.com/gordcurrie/pacioli/internal/user"
 	"github.com/gordcurrie/pacioli/web"
 	"github.com/shopspring/decimal"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type testEnv struct {
@@ -25,6 +29,18 @@ type testEnv struct {
 	accounts     *sqlite.AccountStore
 	securities   *sqlite.SecurityStore
 	transactions *sqlite.TransactionStore
+	users        *sqlite.UserStore
+	sessions     *sqlite.SessionStore
+	userID       int64
+	rawToken     string // session cookie value
+	password     string // plaintext password for login tests
+}
+
+// newRequest creates a test request with the test session cookie attached.
+func (env *testEnv) newRequest(method, path string, body io.Reader) *http.Request {
+	req := httptest.NewRequest(method, path, body)
+	req.AddCookie(&http.Cookie{Name: "pacioli_session", Value: env.rawToken})
+	return req
 }
 
 func newTestEnv(t *testing.T) *testEnv {
@@ -40,6 +56,35 @@ func newTestEnv(t *testing.T) *testEnv {
 	distStore := sqlite.NewDistributionStore(db)
 	auditStore := sqlite.NewAuditStore(db)
 	accountStore := sqlite.NewAccountStore(db)
+	userStore := sqlite.NewUserStore(db, nil)
+	sessionStore := sqlite.NewSessionStore(db)
+
+	ctx := context.Background()
+
+	const testPassword = "test-password-123"
+	hash, err := bcrypt.GenerateFromPassword([]byte(testPassword), 4) // cost 4 for test speed
+	if err != nil {
+		t.Fatalf("bcrypt: %v", err)
+	}
+	userID, err := userStore.Create(ctx, &user.User{
+		Email:        "test@example.com",
+		PasswordHash: string(hash),
+		IsAdmin:      true,
+	})
+	if err != nil {
+		t.Fatalf("create test user: %v", err)
+	}
+
+	// Create a fully-verified session.
+	rawToken := "test-session-token-for-handler-tests"
+	if err := sessionStore.Create(ctx, &session.Session{
+		UserID:       userID,
+		TokenHash:    sqlite.HashToken(rawToken),
+		TOTPVerified: true,
+		ExpiresAt:    time.Now().Add(24 * time.Hour),
+	}); err != nil {
+		t.Fatalf("create test session: %v", err)
+	}
 
 	acbSvc := service.NewACBService(txStore)
 	gainsSvc := service.NewGainsService(txStore, secStore)
@@ -50,10 +95,11 @@ func newTestEnv(t *testing.T) *testEnv {
 		Securities:   secStore,
 		Transactions: txStore,
 		Audits:       auditStore,
+		Users:        userStore,
+		Sessions:     sessionStore,
 		ACBSvc:       acbSvc,
 		GainsSvc:     gainsSvc,
 		ROCSvc:       rocSvc,
-		UserID:       1,
 		Logger:       slog.Default(),
 		TemplateFS:   web.Templates,
 	})
@@ -65,21 +111,21 @@ func newTestEnv(t *testing.T) *testEnv {
 		accounts:     accountStore,
 		securities:   secStore,
 		transactions: txStore,
+		users:        userStore,
+		sessions:     sessionStore,
+		userID:       userID,
+		rawToken:     rawToken,
+		password:     testPassword,
 	}
 }
 
-func newTestHandler(t *testing.T) *handler.Handler {
-	t.Helper()
-	return newTestEnv(t).handler
-}
 
 func TestGainsHandler_ShowGainsForYear(t *testing.T) {
-	h := newTestHandler(t)
-
+	env := newTestEnv(t)
 	mux := http.NewServeMux()
-	h.Routes(mux)
+	env.handler.Routes(mux)
 
-	req := httptest.NewRequest(http.MethodGet, "/gains/2024", http.NoBody)
+	req := env.newRequest(http.MethodGet, "/gains/2024", http.NoBody)
 	rr := httptest.NewRecorder()
 	mux.ServeHTTP(rr, req)
 
@@ -96,13 +142,12 @@ func TestGainsHandler_ShowGainsForYear(t *testing.T) {
 }
 
 func TestGainsHandler_ShowGainsForYear_InvalidYear(t *testing.T) {
-	h := newTestHandler(t)
-
+	env := newTestEnv(t)
 	mux := http.NewServeMux()
-	h.Routes(mux)
+	env.handler.Routes(mux)
 
 	for _, path := range []string{"/gains/abc", "/gains/1989", "/gains/2101"} {
-		req := httptest.NewRequest(http.MethodGet, path, http.NoBody)
+		req := env.newRequest(http.MethodGet, path, http.NoBody)
 		rr := httptest.NewRecorder()
 		mux.ServeHTTP(rr, req)
 		if rr.Code != http.StatusNotFound {
@@ -112,12 +157,11 @@ func TestGainsHandler_ShowGainsForYear_InvalidYear(t *testing.T) {
 }
 
 func TestGainsHandler_ListGains_RedirectsToCurrentYear(t *testing.T) {
-	h := newTestHandler(t)
-
+	env := newTestEnv(t)
 	mux := http.NewServeMux()
-	h.Routes(mux)
+	env.handler.Routes(mux)
 
-	req := httptest.NewRequest(http.MethodGet, "/gains", http.NoBody)
+	req := env.newRequest(http.MethodGet, "/gains", http.NoBody)
 	rr := httptest.NewRecorder()
 	mux.ServeHTTP(rr, req)
 
@@ -131,12 +175,11 @@ func TestGainsHandler_ListGains_RedirectsToCurrentYear(t *testing.T) {
 }
 
 func TestGainsHandler_ExportCSV(t *testing.T) {
-	h := newTestHandler(t)
-
+	env := newTestEnv(t)
 	mux := http.NewServeMux()
-	h.Routes(mux)
+	env.handler.Routes(mux)
 
-	req := httptest.NewRequest(http.MethodGet, "/gains/2024/export", http.NoBody)
+	req := env.newRequest(http.MethodGet, "/gains/2024/export", http.NoBody)
 	rr := httptest.NewRecorder()
 	mux.ServeHTTP(rr, req)
 
@@ -151,7 +194,6 @@ func TestGainsHandler_ExportCSV(t *testing.T) {
 	if !strings.Contains(cd, "capital-gains-2024.csv") {
 		t.Errorf("Content-Disposition: got %q, want filename capital-gains-2024.csv", cd)
 	}
-	// CSV header row should always be present
 	body := rr.Body.String()
 	if !strings.Contains(body, "Date,Ticker") {
 		t.Errorf("CSV missing header row, got: %s", body)
@@ -159,12 +201,11 @@ func TestGainsHandler_ExportCSV(t *testing.T) {
 }
 
 func TestGainsHandler_PreviewROC(t *testing.T) {
-	h := newTestHandler(t)
-
+	env := newTestEnv(t)
 	mux := http.NewServeMux()
-	h.Routes(mux)
+	env.handler.Routes(mux)
 
-	req := httptest.NewRequest(http.MethodGet, "/roc/2024", http.NoBody)
+	req := env.newRequest(http.MethodGet, "/roc/2024", http.NoBody)
 	rr := httptest.NewRecorder()
 	mux.ServeHTTP(rr, req)
 
@@ -178,9 +219,9 @@ func TestGainsHandler_PreviewROC(t *testing.T) {
 }
 
 func TestGainsHandler_ShowGainsDetail_InvalidArgs(t *testing.T) {
-	h := newTestHandler(t)
+	env := newTestEnv(t)
 	mux := http.NewServeMux()
-	h.Routes(mux)
+	env.handler.Routes(mux)
 
 	cases := []struct {
 		path string
@@ -194,7 +235,7 @@ func TestGainsHandler_ShowGainsDetail_InvalidArgs(t *testing.T) {
 		{"/gains/2024/abc", http.StatusNotFound},
 	}
 	for _, tc := range cases {
-		req := httptest.NewRequest(http.MethodGet, tc.path, http.NoBody)
+		req := env.newRequest(http.MethodGet, tc.path, http.NoBody)
 		rr := httptest.NewRecorder()
 		mux.ServeHTTP(rr, req)
 		if rr.Code != tc.want {
@@ -204,11 +245,11 @@ func TestGainsHandler_ShowGainsDetail_InvalidArgs(t *testing.T) {
 }
 
 func TestGainsHandler_ShowGainsDetail_SecurityNotFound(t *testing.T) {
-	h := newTestHandler(t)
+	env := newTestEnv(t)
 	mux := http.NewServeMux()
-	h.Routes(mux)
+	env.handler.Routes(mux)
 
-	req := httptest.NewRequest(http.MethodGet, "/gains/2024/9999", http.NoBody)
+	req := env.newRequest(http.MethodGet, "/gains/2024/9999", http.NoBody)
 	rr := httptest.NewRecorder()
 	mux.ServeHTTP(rr, req)
 	if rr.Code != http.StatusNotFound {
@@ -224,12 +265,11 @@ func TestGainsHandler_ShowGainsDetail_NoDisposalsInYear(t *testing.T) {
 	if err := env.securities.Create(ctx, sec); err != nil {
 		t.Fatalf("create security: %v", err)
 	}
-	// No transactions — no disposals in 2024.
 
 	mux := http.NewServeMux()
 	env.handler.Routes(mux)
 
-	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/gains/2024/%d", sec.ID), http.NoBody)
+	req := env.newRequest(http.MethodGet, fmt.Sprintf("/gains/2024/%d", sec.ID), http.NoBody)
 	rr := httptest.NewRecorder()
 	mux.ServeHTTP(rr, req)
 	if rr.Code != http.StatusOK {
@@ -244,7 +284,7 @@ func TestGainsHandler_ShowGainsDetail_WithDisposals(t *testing.T) {
 	env := newTestEnv(t)
 	ctx := context.Background()
 
-	acc := &account.Account{UserID: 1, Name: "Margin", Type: account.TypeMargin, Broker: "B", Currency: "CAD"}
+	acc := &account.Account{UserID: env.userID, Name: "Margin", Type: account.TypeMargin, Broker: "B", Currency: "CAD"}
 	if err := env.accounts.Create(ctx, acc); err != nil {
 		t.Fatalf("create account: %v", err)
 	}
@@ -270,7 +310,7 @@ func TestGainsHandler_ShowGainsDetail_WithDisposals(t *testing.T) {
 	mux := http.NewServeMux()
 	env.handler.Routes(mux)
 
-	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/gains/2024/%d", sec.ID), http.NoBody)
+	req := env.newRequest(http.MethodGet, fmt.Sprintf("/gains/2024/%d", sec.ID), http.NoBody)
 	rr := httptest.NewRecorder()
 	mux.ServeHTTP(rr, req)
 	if rr.Code != http.StatusOK {
@@ -289,12 +329,11 @@ func TestGainsHandler_ShowGainsDetail_WithDisposals(t *testing.T) {
 }
 
 func TestGainsHandler_ApplyROC_RedirectsAfterApply(t *testing.T) {
-	h := newTestHandler(t)
-
+	env := newTestEnv(t)
 	mux := http.NewServeMux()
-	h.Routes(mux)
+	env.handler.Routes(mux)
 
-	req := httptest.NewRequest(http.MethodPost, "/roc/2024", http.NoBody)
+	req := env.newRequest(http.MethodPost, "/roc/2024", http.NoBody)
 	rr := httptest.NewRecorder()
 	mux.ServeHTTP(rr, req)
 
@@ -303,5 +342,23 @@ func TestGainsHandler_ApplyROC_RedirectsAfterApply(t *testing.T) {
 	}
 	if rr.Header().Get("Location") != "/roc/2024" {
 		t.Errorf("redirect location: got %q want /roc/2024", rr.Header().Get("Location"))
+	}
+}
+
+// Verify unauthenticated requests redirect to /login.
+func TestGainsHandler_RequiresAuth(t *testing.T) {
+	env := newTestEnv(t)
+	mux := http.NewServeMux()
+	env.handler.Routes(mux)
+
+	req := httptest.NewRequest(http.MethodGet, "/gains/2024", http.NoBody)
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusSeeOther {
+		t.Errorf("unauthenticated: got %d want 303", rr.Code)
+	}
+	if rr.Header().Get("Location") != "/login" {
+		t.Errorf("redirect: got %q want /login", rr.Header().Get("Location"))
 	}
 }

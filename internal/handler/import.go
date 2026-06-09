@@ -47,12 +47,12 @@ type importPreviewData struct {
 }
 
 func (h *Handler) importPage(w http.ResponseWriter, r *http.Request) {
-	h.render(w, "import", importPageData{Brokers: brokerNames()})
+	h.render(w, r,"import", importPageData{Brokers: brokerNames()})
 }
 
 func (h *Handler) importPreview(w http.ResponseWriter, r *http.Request) {
 	renderUpload := func(errMsg string) {
-		h.render(w, "import", importPageData{Brokers: brokerNames(), Error: errMsg})
+		h.render(w, r,"import", importPageData{Brokers: brokerNames(), Error: errMsg})
 	}
 
 	r.Body = http.MaxBytesReader(w, r.Body, 10<<20)
@@ -81,7 +81,7 @@ func (h *Handler) importPreview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	accounts, err := h.accounts.ListByUser(r.Context(), h.userID)
+	accounts, err := h.accounts.ListByUser(r.Context(), userFromCtx(r.Context()).ID)
 	if err != nil {
 		h.serverError(w, r, err)
 		return
@@ -239,7 +239,7 @@ func (h *Handler) importPreview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.render(w, "import_preview", importPreviewData{
+	h.render(w, r,"import_preview", importPreviewData{
 		BrokerName: brokerName,
 		Rows:       previewRows,
 		CommitJSON: string(commitJSON),
@@ -282,7 +282,7 @@ func (h *Handler) importCommit(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	// load user's accounts for ownership validation
-	accounts, err := h.accounts.ListByUser(ctx, h.userID)
+	accounts, err := h.accounts.ListByUser(ctx, userFromCtx(r.Context()).ID)
 	if err != nil {
 		h.serverError(w, r, err)
 		return
@@ -398,7 +398,7 @@ func (h *Handler) importCommit(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if err := h.audits.Log(ctx, &audit.Entry{
-			UserID:     h.userID,
+			UserID:     userFromCtx(r.Context()).ID,
 			Action:     audit.ActionCreate,
 			EntityType: audit.EntityTransaction,
 			EntityID:   tx.ID,

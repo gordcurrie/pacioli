@@ -2,12 +2,13 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"html/template"
 	"net/http"
 	"strconv"
-	"strings"
 
 	"github.com/gordcurrie/pacioli/internal/audit"
+	"github.com/gordcurrie/pacioli/internal/errs"
 	"github.com/gordcurrie/pacioli/internal/questrade"
 	"github.com/gordcurrie/pacioli/internal/security"
 )
@@ -68,12 +69,12 @@ func (h *Handler) listSecurities(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, r, err)
 		return
 	}
-	h.render(w, "securities", securitiesPageData{Securities: securities, Query: q})
+	h.render(w, r,"securities", securitiesPageData{Securities: securities, Query: q})
 }
 
 func (h *Handler) newSecurity(w http.ResponseWriter, r *http.Request) {
 	qtConnected := h.qtTokens != nil && h.isQTConnected(r)
-	h.render(w, "security_form", securityFormData{
+	h.render(w, r,"security_form", securityFormData{
 		Security:    &security.Security{Currency: "CAD"},
 		Types:       securityTypes,
 		QTConnected: qtConnected,
@@ -91,7 +92,7 @@ func (h *Handler) editSecurity(w http.ResponseWriter, r *http.Request) {
 		h.notFoundOrError(w, r, err)
 		return
 	}
-	h.render(w, "security_form", securityFormData{
+	h.render(w, r,"security_form", securityFormData{
 		Security:    sec,
 		Types:       securityTypes,
 		EditMode:    true,
@@ -113,7 +114,7 @@ func (h *Handler) updateSecurity(w http.ResponseWriter, r *http.Request) {
 
 	qtConnected := h.qtTokens != nil && h.isQTConnected(r)
 	renderForm := func(s *security.Security, errMsg string) {
-		h.render(w, "security_form", securityFormData{
+		h.render(w, r,"security_form", securityFormData{
 			Security:    s,
 			Types:       securityTypes,
 			EditMode:    true,
@@ -176,7 +177,7 @@ func (h *Handler) deleteSecurity(w http.ResponseWriter, r *http.Request) {
 		loggerFromCtx(r.Context()).Error("snapshot marshal", "entity", "security", "id", id, "err", err)
 	}
 	if err := h.securities.Delete(r.Context(), id); err != nil {
-		if strings.Contains(err.Error(), "FOREIGN KEY constraint failed") {
+		if errors.Is(err, errs.ErrConstraint) {
 			http.Error(w, "Security is referenced by existing transactions and cannot be deleted.", http.StatusConflict)
 			return
 		}
@@ -256,7 +257,7 @@ func (h *Handler) qtSymbolLookup(w http.ResponseWriter, r *http.Request) {
 
 // isQTConnected returns true if a token is stored for the current user.
 func (h *Handler) isQTConnected(r *http.Request) bool {
-	_, err := h.qtTokens.Get(r.Context(), h.userID)
+	_, err := h.qtTokens.Get(r.Context(), userFromCtx(r.Context()).ID)
 	return err == nil
 }
 
@@ -264,7 +265,7 @@ var validCurrencies = map[string]bool{"CAD": true, "USD": true}
 
 func (h *Handler) createSecurity(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		h.render(w, "security_form", securityFormData{
+		h.render(w, r,"security_form", securityFormData{
 			Security: &security.Security{Currency: "CAD"},
 			Types:    securityTypes,
 			Error:    "invalid form data",
@@ -281,7 +282,7 @@ func (h *Handler) createSecurity(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if !validType {
-		h.render(w, "security_form", securityFormData{
+		h.render(w, r,"security_form", securityFormData{
 			Security: &security.Security{Currency: "CAD"},
 			Types:    securityTypes,
 			Error:    "invalid security type",
@@ -291,7 +292,7 @@ func (h *Handler) createSecurity(w http.ResponseWriter, r *http.Request) {
 
 	currency := r.FormValue("currency")
 	if !validCurrencies[currency] {
-		h.render(w, "security_form", securityFormData{
+		h.render(w, r,"security_form", securityFormData{
 			Security: &security.Security{Currency: "CAD"},
 			Types:    securityTypes,
 			Error:    "invalid currency",
@@ -309,7 +310,7 @@ func (h *Handler) createSecurity(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.securities.Create(r.Context(), s); err != nil {
-		h.render(w, "security_form", securityFormData{
+		h.render(w, r,"security_form", securityFormData{
 			Security: s,
 			Types:    securityTypes,
 			Error:    "failed to save security",
