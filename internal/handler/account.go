@@ -133,6 +133,7 @@ func (h *Handler) updateAccount(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	h.logAudit(r, audit.ActionUpdate, audit.EntityAccount, id, audit.SourceManual, "")
 	http.Redirect(w, r, "/accounts", http.StatusSeeOther)
 }
 

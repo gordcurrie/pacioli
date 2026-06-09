@@ -99,4 +99,59 @@ t.Run("log create entry", func(t *testing.T) {
 			t.Errorf("snapshot = %q, want %q", *snapshot, snap)
 		}
 	})
+
+	t.Run("list all entries", func(t *testing.T) {
+		entries, err := store.List(ctx, audit.ListFilter{Limit: 10})
+		if err != nil {
+			t.Fatalf("List: %v", err)
+		}
+		if len(entries) < 3 {
+			t.Errorf("List returned %d entries, want >= 3", len(entries))
+		}
+		// newest first
+		for i := 1; i < len(entries); i++ {
+			if entries[i].CreatedAt.After(entries[i-1].CreatedAt) {
+				t.Error("entries not ordered newest-first")
+				break
+			}
+		}
+		// UserEmail populated via JOIN
+		for _, e := range entries {
+			if e.UserEmail == "" {
+				t.Errorf("entry %d has empty UserEmail", e.ID)
+			}
+		}
+	})
+
+	t.Run("list filtered by entity_type", func(t *testing.T) {
+		entries, err := store.List(ctx, audit.ListFilter{EntityType: audit.EntityAccount, Limit: 10})
+		if err != nil {
+			t.Fatalf("List filtered: %v", err)
+		}
+		for _, e := range entries {
+			if e.EntityType != audit.EntityAccount {
+				t.Errorf("entry entity_type = %q, want account", e.EntityType)
+			}
+		}
+	})
+
+	t.Run("count all", func(t *testing.T) {
+		n, err := store.Count(ctx, audit.ListFilter{})
+		if err != nil {
+			t.Fatalf("Count: %v", err)
+		}
+		if n < 3 {
+			t.Errorf("Count = %d, want >= 3", n)
+		}
+	})
+
+	t.Run("count filtered", func(t *testing.T) {
+		n, err := store.Count(ctx, audit.ListFilter{Action: audit.ActionDelete})
+		if err != nil {
+			t.Fatalf("Count filtered: %v", err)
+		}
+		if n != 1 {
+			t.Errorf("Count(delete) = %d, want 1", n)
+		}
+	})
 }

@@ -133,7 +133,7 @@ func (h *Handler) parseTemplates(fsys fs.FS) error {
 		"import", "import_preview",
 		"questrade", "questrade_preview",
 		"login", "login_2fa", "setup",
-		"admin_users",
+		"admin_users", "admin_audit",
 		"profile_password", "profile_2fa",
 	}
 	h.tmpls = make(map[string]*template.Template, len(pages))
@@ -211,6 +211,7 @@ func (h *Handler) Routes(mux *http.ServeMux) {
 	mux.Handle("POST /admin/users", admin(http.HandlerFunc(h.adminCreateUser)))
 	mux.Handle("POST /admin/users/{id}/reset-password", admin(http.HandlerFunc(h.adminResetPassword)))
 	mux.Handle("POST /admin/users/{id}/delete", admin(http.HandlerFunc(h.adminDeleteUser)))
+	mux.Handle("GET /admin/audit", admin(http.HandlerFunc(h.adminAuditLog)))
 
 	mux.Handle("GET /profile/password", auth(http.HandlerFunc(h.passwordPage)))
 	mux.Handle("POST /profile/password", auth(http.HandlerFunc(h.updatePassword)))

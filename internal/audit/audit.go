@@ -33,6 +33,7 @@ const (
 type Entry struct {
 	ID         int64
 	UserID     int64
+	UserEmail  string // populated by List; empty when written via Log
 	Action     Action
 	EntityType EntityType
 	EntityID   int64
@@ -42,6 +43,18 @@ type Entry struct {
 	CreatedAt  time.Time
 }
 
+// ListFilter narrows results returned by List and Count.
+// Zero values mean "no filter": empty string matches all, zero UserID matches all users.
+type ListFilter struct {
+	EntityType EntityType
+	Action     Action
+	UserID     int64
+	Limit      int
+	Offset     int
+}
+
 type Store interface {
 	Log(ctx context.Context, e *Entry) error
+	List(ctx context.Context, f ListFilter) ([]*Entry, error)
+	Count(ctx context.Context, f ListFilter) (int, error)
 }

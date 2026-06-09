@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gordcurrie/pacioli/internal/audit"
 	"github.com/gordcurrie/pacioli/internal/session"
 	"github.com/gordcurrie/pacioli/internal/sqlite"
 	"github.com/gordcurrie/pacioli/internal/user"
@@ -86,6 +87,7 @@ func (h *Handler) updatePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.SetCookie(w, h.sessionCookie(raw, int(sessionDuration.Seconds())))
+	h.logAudit(r, audit.ActionUpdate, audit.EntityUser, u.ID, audit.SourceManual, "")
 	if u.TOTPEnabled {
 		http.Redirect(w, r, "/login/2fa", http.StatusSeeOther)
 		return
@@ -223,6 +225,7 @@ func (h *Handler) totpEnable(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, r, err)
 		return
 	}
+	h.logAudit(r, audit.ActionUpdate, audit.EntityUser, u.ID, audit.SourceManual, "")
 
 	h.render(w, r, "profile_2fa", totpSetupPageData{
 		TOTPEnabled:   true,
@@ -285,6 +288,7 @@ func (h *Handler) totpDisable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.SetCookie(w, h.sessionCookie(raw, int(sessionDuration.Seconds())))
+	h.logAudit(r, audit.ActionUpdate, audit.EntityUser, u.ID, audit.SourceManual, "")
 	h.render(w, r, "profile_2fa", totpSetupPageData{TOTPDisabled: true})
 }
 

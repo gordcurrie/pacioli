@@ -1,0 +1,98 @@
+{{define "content"}}
+<style>
+  .badge { display:inline-block; padding:0.1rem 0.4rem; border-radius:4px; font-size:0.75rem; font-weight:600; text-transform:uppercase; }
+  .badge-create { background:var(--pico-ins-color); color:#fff; }
+  .badge-update { background:var(--pico-primary); color:#fff; }
+  .badge-delete { background:var(--pico-del-color); color:#fff; }
+  .snapshot-pre { white-space:pre-wrap; word-break:break-all; font-size:0.75rem; max-height:200px; overflow:auto; background:var(--pico-code-background); padding:0.4rem; border-radius:4px; margin:0; }
+</style>
+
+<h2>Audit Log</h2>
+
+<form method="GET" action="/admin/audit" style="display:flex;flex-wrap:wrap;gap:0.75rem;align-items:flex-end;margin-bottom:1rem">
+  <label style="margin:0">
+    <small>Entity type</small>
+    <select name="entity_type" style="width:140px;padding:0.2rem 0.4rem;font-size:0.85rem;margin:0">
+      <option value="">All</option>
+      <option value="account"     {{if eq .Filter.EntityType "account"}}selected{{end}}>Account</option>
+      <option value="security"    {{if eq .Filter.EntityType "security"}}selected{{end}}>Security</option>
+      <option value="transaction" {{if eq .Filter.EntityType "transaction"}}selected{{end}}>Transaction</option>
+      <option value="user"        {{if eq .Filter.EntityType "user"}}selected{{end}}>User</option>
+    </select>
+  </label>
+  <label style="margin:0">
+    <small>Action</small>
+    <select name="action" style="width:110px;padding:0.2rem 0.4rem;font-size:0.85rem;margin:0">
+      <option value="">All</option>
+      <option value="create" {{if eq .Filter.Action "create"}}selected{{end}}>Create</option>
+      <option value="update" {{if eq .Filter.Action "update"}}selected{{end}}>Update</option>
+      <option value="delete" {{if eq .Filter.Action "delete"}}selected{{end}}>Delete</option>
+    </select>
+  </label>
+  <label style="margin:0">
+    <small>User</small>
+    <select name="user_id" style="width:180px;padding:0.2rem 0.4rem;font-size:0.85rem;margin:0">
+      <option value="">All users</option>
+      {{range .Users}}
+      <option value="{{.ID}}" {{if eq $.Filter.UserID .ID}}selected{{end}}>{{.Email}}</option>
+      {{end}}
+    </select>
+  </label>
+  <button type="submit" class="outline" style="padding:0.2rem 0.8rem;font-size:0.85rem;margin:0">Filter</button>
+  {{if or .Filter.EntityType .Filter.Action .Filter.UserID}}
+  <a href="/admin/audit" role="button" class="outline secondary" style="padding:0.2rem 0.8rem;font-size:0.85rem;margin:0">Clear</a>
+  {{end}}
+</form>
+
+<small>{{.Total}} {{if eq .Total 1}}entry{{else}}entries{{end}}
+  {{if gt .TotalPages 1}} — page {{.Page}} of {{.TotalPages}}{{end}}
+</small>
+
+{{if .Entries}}
+<figure>
+  <table>
+    <thead>
+      <tr>
+        <th>Time</th>
+        <th>User</th>
+        <th>Action</th>
+        <th>Entity</th>
+        <th>ID</th>
+        <th>Source</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .Entries}}
+      <tr>
+        <td><small>{{.CreatedAt.Format "2006-01-02 15:04:05"}}</small></td>
+        <td><small>{{.UserEmail}}</small></td>
+        <td>
+          {{if eq (print .Action) "create"}}<span class="badge badge-create">create</span>
+          {{else if eq (print .Action) "update"}}<span class="badge badge-update">update</span>
+          {{else if eq (print .Action) "delete"}}<span class="badge badge-delete">delete</span>
+          {{end}}
+        </td>
+        <td><small>{{.EntityType}}</small></td>
+        <td>
+          {{if .Snapshot}}
+          <details>
+            <summary style="cursor:pointer;list-style:none;font-size:0.85rem">{{.EntityID}}</summary>
+            <pre class="snapshot-pre">{{.Snapshot}}</pre>
+          </details>
+          {{else}}{{.EntityID}}{{end}}
+        </td>
+        <td><small>{{.Source}}</small></td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</figure>
+
+<div style="display:flex;gap:1rem;align-items:center">
+  {{if .PrevURL}}<a href="{{.PrevURL}}" role="button" class="outline secondary" style="padding:0.2rem 0.8rem;font-size:0.85rem">&larr; Prev</a>{{end}}
+  {{if .NextURL}}<a href="{{.NextURL}}" role="button" class="outline secondary" style="padding:0.2rem 0.8rem;font-size:0.85rem">Next &rarr;</a>{{end}}
+</div>
+{{else}}
+<p><em>No entries match the current filter.</em></p>
+{{end}}
+{{end}}
