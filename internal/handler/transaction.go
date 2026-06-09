@@ -337,11 +337,12 @@ func (h *Handler) updateTransactionFX(w http.ResponseWriter, r *http.Request) {
 	priceCAD := tx.PriceNative.Mul(fxRate)
 	commCAD := tx.CommissionNative.Mul(fxRate)
 
+	snapshot, _ := json.Marshal(tx)
 	if err := h.transactions.UpdateFXRate(r.Context(), id, &fxRate, priceCAD, commCAD); err != nil {
 		h.serverError(w, r, err)
 		return
 	}
-	h.logAudit(r, audit.ActionUpdate, audit.EntityTransaction, id, audit.Source(tx.Source), "")
+	h.logAudit(r, audit.ActionUpdate, audit.EntityTransaction, id, audit.Source(tx.Source), string(snapshot))
 
 	tx.FXRate = &fxRate
 	tx.PriceCAD = priceCAD

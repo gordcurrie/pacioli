@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/base32"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"image/png"
@@ -87,7 +88,13 @@ func (h *Handler) updatePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.SetCookie(w, h.sessionCookie(raw, int(sessionDuration.Seconds())))
-	h.logAudit(r, audit.ActionUpdate, audit.EntityUser, u.ID, audit.SourceManual, "")
+	snapshot, _ := json.Marshal(struct {
+		ID          int64  `json:"id"`
+		Email       string `json:"email"`
+		IsAdmin     bool   `json:"is_admin"`
+		TOTPEnabled bool   `json:"totp_enabled"`
+	}{u.ID, u.Email, u.IsAdmin, u.TOTPEnabled})
+	h.logAudit(r, audit.ActionUpdate, audit.EntityUser, u.ID, audit.SourceManual, string(snapshot))
 	if u.TOTPEnabled {
 		http.Redirect(w, r, "/login/2fa", http.StatusSeeOther)
 		return
@@ -225,7 +232,13 @@ func (h *Handler) totpEnable(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, r, err)
 		return
 	}
-	h.logAudit(r, audit.ActionUpdate, audit.EntityUser, u.ID, audit.SourceManual, "")
+	snapshot, _ := json.Marshal(struct {
+		ID          int64  `json:"id"`
+		Email       string `json:"email"`
+		IsAdmin     bool   `json:"is_admin"`
+		TOTPEnabled bool   `json:"totp_enabled"`
+	}{u.ID, u.Email, u.IsAdmin, u.TOTPEnabled})
+	h.logAudit(r, audit.ActionUpdate, audit.EntityUser, u.ID, audit.SourceManual, string(snapshot))
 
 	h.render(w, r, "profile_2fa", totpSetupPageData{
 		TOTPEnabled:   true,
@@ -288,7 +301,13 @@ func (h *Handler) totpDisable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.SetCookie(w, h.sessionCookie(raw, int(sessionDuration.Seconds())))
-	h.logAudit(r, audit.ActionUpdate, audit.EntityUser, u.ID, audit.SourceManual, "")
+	snapshot, _ := json.Marshal(struct {
+		ID          int64  `json:"id"`
+		Email       string `json:"email"`
+		IsAdmin     bool   `json:"is_admin"`
+		TOTPEnabled bool   `json:"totp_enabled"`
+	}{u.ID, u.Email, u.IsAdmin, u.TOTPEnabled})
+	h.logAudit(r, audit.ActionUpdate, audit.EntityUser, u.ID, audit.SourceManual, string(snapshot))
 	h.render(w, r, "profile_2fa", totpSetupPageData{TOTPDisabled: true})
 }
 

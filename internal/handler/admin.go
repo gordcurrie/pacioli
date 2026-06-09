@@ -236,6 +236,18 @@ func (h *Handler) adminResetPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	target, err := h.users.GetByID(r.Context(), id)
+	if err != nil {
+		h.notFoundOrError(w, r, err)
+		return
+	}
+	snapshot, _ := json.Marshal(struct {
+		ID          int64  `json:"id"`
+		Email       string `json:"email"`
+		IsAdmin     bool   `json:"is_admin"`
+		TOTPEnabled bool   `json:"totp_enabled"`
+	}{target.ID, target.Email, target.IsAdmin, target.TOTPEnabled})
+
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcryptCost)
 	if err != nil {
 		h.serverError(w, r, err)
@@ -253,7 +265,7 @@ func (h *Handler) adminResetPassword(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, r, err)
 		return
 	}
-	h.logAudit(r, audit.ActionUpdate, audit.EntityUser, id, audit.SourceManual, "")
+	h.logAudit(r, audit.ActionUpdate, audit.EntityUser, id, audit.SourceManual, string(snapshot))
 
 	users, _ := h.users.List(r.Context())
 	h.render(w, r, "admin_users", adminUsersPageData{Users: users, Success: "Password reset."})

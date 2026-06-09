@@ -153,11 +153,12 @@ func (h *Handler) updateSecurity(w http.ResponseWriter, r *http.Request) {
 	sec.Type = secType
 	sec.Currency = currency
 
+	snapshot, _ := json.Marshal(sec)
 	if err := h.securities.Update(r.Context(), sec); err != nil {
 		renderForm(sec, "failed to update security")
 		return
 	}
-	h.logAudit(r, audit.ActionUpdate, audit.EntitySecurity, sec.ID, audit.SourceManual, "")
+	h.logAudit(r, audit.ActionUpdate, audit.EntitySecurity, sec.ID, audit.SourceManual, string(snapshot))
 	http.Redirect(w, r, "/securities", http.StatusSeeOther)
 }
 
