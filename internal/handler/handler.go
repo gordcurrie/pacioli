@@ -258,6 +258,7 @@ func (h *Handler) logAudit(r *http.Request, action audit.Action, entity audit.En
 	u := userFromCtx(r.Context())
 	if err := h.audits.Log(r.Context(), &audit.Entry{
 		UserID:     u.ID,
+		UserEmail:  u.Email,
 		Action:     action,
 		EntityType: entity,
 		EntityID:   id,

@@ -25,9 +25,9 @@ func (s *AuditStore) Log(ctx context.Context, e *audit.Entry) error {
 		importID = &e.ImportID
 	}
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO audit_log (user_id, action, entity_type, entity_id, source, snapshot, import_id)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		e.UserID, string(e.Action), string(e.EntityType), e.EntityID,
+		`INSERT INTO audit_log (user_id, actor_email, action, entity_type, entity_id, source, snapshot, import_id)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		e.UserID, e.UserEmail, string(e.Action), string(e.EntityType), e.EntityID,
 		string(e.Source), snapshot, importID,
 	)
 	if err != nil {
@@ -41,12 +41,11 @@ func (s *AuditStore) List(ctx context.Context, f audit.ListFilter) ([]*audit.Ent
 		f.Limit = 50
 	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT al.id, al.user_id, COALESCE(u.email, '(deleted)'),
+		SELECT al.id, al.user_id, al.actor_email,
 		       al.action, al.entity_type, al.entity_id,
 		       al.source, COALESCE(al.snapshot,''), COALESCE(al.import_id,''),
 		       al.created_at
 		FROM audit_log al
-		LEFT JOIN users u ON al.user_id = u.id
 		WHERE (? = '' OR al.entity_type = ?)
 		  AND (? = '' OR al.action = ?)
 		  AND (? = 0 OR al.user_id = ?)
@@ -129,12 +128,11 @@ func (s *AuditStore) Page(ctx context.Context, f audit.ListFilter) ([]*audit.Ent
 		limit = 50
 	}
 	rows, err := tx.QueryContext(ctx, `
-		SELECT al.id, al.user_id, COALESCE(u.email, '(deleted)'),
+		SELECT al.id, al.user_id, al.actor_email,
 		       al.action, al.entity_type, al.entity_id,
 		       al.source, COALESCE(al.snapshot,''), COALESCE(al.import_id,''),
 		       al.created_at
 		FROM audit_log al
-		LEFT JOIN users u ON al.user_id = u.id
 		WHERE (? = '' OR al.entity_type = ?)
 		  AND (? = '' OR al.action = ?)
 		  AND (? = 0 OR al.user_id = ?)

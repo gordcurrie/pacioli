@@ -33,7 +33,7 @@ const (
 type Entry struct {
 	ID         int64
 	UserID     int64
-	UserEmail  string // populated by List; empty when written via Log
+	UserEmail  string // actor email; written at Log time, read back by List/Page
 	Action     Action
 	EntityType EntityType
 	EntityID   int64

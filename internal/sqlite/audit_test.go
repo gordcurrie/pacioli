@@ -17,6 +17,7 @@ func TestAuditStore(t *testing.T) {
 t.Run("log create entry", func(t *testing.T) {
 		e := &audit.Entry{
 			UserID:     1,
+			UserEmail:  "user1@test.com",
 			Action:     audit.ActionCreate,
 			EntityType: audit.EntityAccount,
 			EntityID:   42,
@@ -54,6 +55,7 @@ t.Run("log create entry", func(t *testing.T) {
 	t.Run("log update entry", func(t *testing.T) {
 		e := &audit.Entry{
 			UserID:     1,
+			UserEmail:  "user1@test.com",
 			Action:     audit.ActionUpdate,
 			EntityType: audit.EntitySecurity,
 			EntityID:   77,
@@ -76,6 +78,7 @@ t.Run("log create entry", func(t *testing.T) {
 		snap := `{"id":99,"name":"old account"}`
 		e := &audit.Entry{
 			UserID:     1,
+			UserEmail:  "user1@test.com",
 			Action:     audit.ActionDelete,
 			EntityType: audit.EntityTransaction,
 			EntityID:   99,
@@ -115,7 +118,7 @@ t.Run("log create entry", func(t *testing.T) {
 				break
 			}
 		}
-		// UserEmail populated via JOIN
+		// UserEmail populated from denormalized actor_email column
 		for _, e := range entries {
 			if e.UserEmail == "" {
 				t.Errorf("entry %d has empty UserEmail", e.ID)

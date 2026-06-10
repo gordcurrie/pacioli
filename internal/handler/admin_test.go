@@ -21,9 +21,9 @@ func TestAdminAuditLog_Renders(t *testing.T) {
 
 	// Seed a few audit entries directly so the page has data to display.
 	for _, e := range []*audit.Entry{
-		{UserID: env.userID, Action: audit.ActionCreate, EntityType: audit.EntityAccount, EntityID: 1, Source: audit.SourceManual},
-		{UserID: env.userID, Action: audit.ActionUpdate, EntityType: audit.EntitySecurity, EntityID: 2, Source: audit.SourceManual, Snapshot: `{"id":2}`},
-		{UserID: env.userID, Action: audit.ActionDelete, EntityType: audit.EntityTransaction, EntityID: 3, Source: audit.SourceManual},
+		{UserID: env.userID, UserEmail: "test@example.com", Action: audit.ActionCreate, EntityType: audit.EntityAccount, EntityID: 1, Source: audit.SourceManual},
+		{UserID: env.userID, UserEmail: "test@example.com", Action: audit.ActionUpdate, EntityType: audit.EntitySecurity, EntityID: 2, Source: audit.SourceManual, Snapshot: `{"id":2}`},
+		{UserID: env.userID, UserEmail: "test@example.com", Action: audit.ActionDelete, EntityType: audit.EntityTransaction, EntityID: 3, Source: audit.SourceManual},
 	} {
 		if err := env.audits.Log(ctx, e); err != nil {
 			t.Fatalf("seed audit: %v", err)
@@ -70,7 +70,7 @@ func TestAdminAuditLog_OutOfRangePage_Redirects(t *testing.T) {
 
 	// Single entry — only page 1 exists.
 	if err := env.audits.Log(ctx, &audit.Entry{
-		UserID: env.userID, Action: audit.ActionCreate,
+		UserID: env.userID, UserEmail: "test@example.com", Action: audit.ActionCreate,
 		EntityType: audit.EntityUser, EntityID: env.userID, Source: audit.SourceManual,
 	}); err != nil {
 		t.Fatalf("seed: %v", err)
@@ -97,12 +97,12 @@ func TestAdminAuditLog_FilterByEntityType(t *testing.T) {
 	ctx := context.Background()
 
 	if err := env.audits.Log(ctx, &audit.Entry{
-		UserID: env.userID, Action: audit.ActionCreate, EntityType: audit.EntityAccount, EntityID: 1, Source: audit.SourceManual,
+		UserID: env.userID, UserEmail: "test@example.com", Action: audit.ActionCreate, EntityType: audit.EntityAccount, EntityID: 1, Source: audit.SourceManual,
 	}); err != nil {
 		t.Fatalf("seed account: %v", err)
 	}
 	if err := env.audits.Log(ctx, &audit.Entry{
-		UserID: env.userID, Action: audit.ActionCreate, EntityType: audit.EntitySecurity, EntityID: 2, Source: audit.SourceManual,
+		UserID: env.userID, UserEmail: "test@example.com", Action: audit.ActionCreate, EntityType: audit.EntitySecurity, EntityID: 2, Source: audit.SourceManual,
 	}); err != nil {
 		t.Fatalf("seed security: %v", err)
 	}
