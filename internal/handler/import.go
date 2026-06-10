@@ -399,6 +399,7 @@ func (h *Handler) importCommit(w http.ResponseWriter, r *http.Request) {
 
 		if err := h.audits.Log(ctx, &audit.Entry{
 			UserID:     userFromCtx(r.Context()).ID,
+			UserEmail:  userFromCtx(r.Context()).Email,
 			Action:     audit.ActionCreate,
 			EntityType: audit.EntityTransaction,
 			EntityID:   tx.ID,

@@ -147,6 +147,11 @@ func (h *Handler) updateSecurity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	snapshot, err := json.Marshal(sec)
+	if err != nil {
+		loggerFromCtx(r.Context()).Error("snapshot marshal", "entity", "security", "id", sec.ID, "err", err)
+	}
+
 	sec.Ticker = r.FormValue("ticker")
 	sec.Exchange = r.FormValue("exchange")
 	sec.Name = r.FormValue("name")
@@ -157,7 +162,7 @@ func (h *Handler) updateSecurity(w http.ResponseWriter, r *http.Request) {
 		renderForm(sec, "failed to update security")
 		return
 	}
-	h.logAudit(r, audit.ActionUpdate, audit.EntitySecurity, sec.ID, audit.SourceManual, "")
+	h.logAudit(r, audit.ActionUpdate, audit.EntitySecurity, sec.ID, audit.SourceManual, string(snapshot))
 	http.Redirect(w, r, "/securities", http.StatusSeeOther)
 }
 

@@ -29,6 +29,7 @@ type testEnv struct {
 	accounts     *sqlite.AccountStore
 	securities   *sqlite.SecurityStore
 	transactions *sqlite.TransactionStore
+	audits       *sqlite.AuditStore
 	users        *sqlite.UserStore
 	sessions     *sqlite.SessionStore
 	userID       int64
@@ -111,6 +112,7 @@ func newTestEnv(t *testing.T) *testEnv {
 		accounts:     accountStore,
 		securities:   secStore,
 		transactions: txStore,
+		audits:       auditStore,
 		users:        userStore,
 		sessions:     sessionStore,
 		userID:       userID,

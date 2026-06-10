@@ -122,6 +122,7 @@
 - ✅ Profile — password change (`/profile/password`), 2FA enable/disable (`/profile/2fa`)
 - ✅ Auth middleware — `RequireAuth`, `RequireAdmin`, `SetupGate`; all existing routes protected
 - ✅ `h.userID` removed — user comes from request context set by `RequireAuth`
+- ✅ Audit log viewer — `GET /admin/audit`; filterable by entity type, action, user; paginated (50/page); colour-coded action badges; JSON snapshot expandable inline
 
 ## Phase 7 — ACB Correctness & Completeness ⬜
 

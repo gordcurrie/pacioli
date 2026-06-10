@@ -32,7 +32,7 @@
     <li><a href="/transactions">Transactions</a></li>
     <li><a href="/import">Import</a></li>
     <li><a href="/questrade">Questrade</a></li>
-    {{if .CurrentUser.IsAdmin}}<li><a href="/admin/users">Admin</a></li>{{end}}
+    {{if .CurrentUser.IsAdmin}}<li><a href="/admin/users">Users</a></li><li><a href="/admin/audit">Audit</a></li>{{end}}
   </ul>
   <ul>
     <li><small>{{.CurrentUser.Email}}</small></li>
