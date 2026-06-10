@@ -85,8 +85,13 @@ func (s *GainsService) Calculate(ctx context.Context, userID int64, year int) (*
 		if err != nil {
 			return nil, fmt.Errorf("gains calculate: list txs for security %d: %w", secID, err)
 		}
+		allTxs, err := s.txStore.ListBySecurityAllAccounts(ctx, secID, userID)
+		if err != nil {
+			return nil, fmt.Errorf("gains calculate: list all txs for security %d: %w", secID, err)
+		}
 
-		_, history := CalculateACBWithHistory(secID, txs)
+		adj := ComputeSuperficialAdjustments(secID, txs, allTxs)
+		_, history := CalculateACBWithHistory(secID, txs, adj)
 
 		for _, row := range history {
 			if !isDisposalType(row.Tx.Type) || row.Tx.TradeDate.Year() != year {
@@ -113,11 +118,7 @@ func (s *GainsService) Calculate(ctx context.Context, userID int64, year int) (*
 			}
 
 			if gainLoss.IsNegative() {
-				superficial, err := s.isSuperficialLoss(ctx, secID, userID, row.Tx.TradeDate)
-				if err != nil {
-					return nil, fmt.Errorf("gains calculate: superficial loss check: %w", err)
-				}
-				line.IsSuperficialLoss = superficial
+				line.IsSuperficialLoss = checkSuperficialLoss(allTxs, row.Tx.TradeDate)
 			}
 
 			if gainLoss.IsPositive() {
@@ -172,7 +173,12 @@ func (s *GainsService) HistoryForSecurity(ctx context.Context, securityID, userI
 		return sec, nil, nil
 	}
 
-	_, history := CalculateACBWithHistory(securityID, txs)
+	allTxs, err := s.txStore.ListBySecurityAllAccounts(ctx, securityID, userID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("history for security %d: list all transactions: %w", securityID, err)
+	}
+	adj := ComputeSuperficialAdjustments(securityID, txs, allTxs)
+	_, history := CalculateACBWithHistory(securityID, txs, adj)
 
 	lastIdx := -1
 	for i, row := range history {
@@ -198,44 +204,3 @@ func (s *GainsService) HistoryForSecurity(ctx context.Context, securityID, userI
 	return sec, out, nil
 }
 
-func (s *GainsService) isSuperficialLoss(ctx context.Context, securityID, userID int64, sellDate time.Time) (bool, error) {
-	allTxs, err := s.txStore.ListBySecurityAllAccounts(ctx, securityID, userID)
-	if err != nil {
-		return false, err
-	}
-	windowStart := sellDate.AddDate(0, 0, -30)
-	windowEnd := sellDate.AddDate(0, 0, 30)
-
-	// CRA requires both: (1) an acquisition within the ±30-day window AND
-	// (2) a positive position at the end of the 30-day period after the sale.
-	hasWindowBuy := false
-	for _, tx := range allTxs {
-		if tx.Type != transaction.TypeBuy && tx.Type != transaction.TypeTransferIn && tx.Type != transaction.TypeJournal {
-			continue
-		}
-		if !tx.TradeDate.Before(windowStart) && !tx.TradeDate.After(windowEnd) {
-			hasWindowBuy = true
-			break
-		}
-	}
-	if !hasWindowBuy {
-		return false, nil
-	}
-
-	// Compute net position across all accounts at end of window.
-	var shares decimal.Decimal
-	for _, tx := range allTxs {
-		if tx.TradeDate.After(windowEnd) {
-			break
-		}
-		switch tx.Type {
-		case transaction.TypeBuy, transaction.TypeTransferIn, transaction.TypeJournal:
-			shares = shares.Add(tx.Quantity)
-		case transaction.TypeSell, transaction.TypeTransferOut:
-			shares = shares.Sub(tx.Quantity)
-		case transaction.TypeDividend, transaction.TypeROCAdjustment, transaction.TypeFXConversion:
-			// no share count impact
-		}
-	}
-	return shares.IsPositive(), nil
-}

@@ -374,3 +374,102 @@ func TestGainsService_NeedsReview_NoACBBuy(t *testing.T) {
 		t.Errorf("NeedsReview sells must not inflate totals: TotalGains=%s", report.TotalGains)
 	}
 }
+
+func TestGainsService_SuperficialLoss_NonRegRepurchase_CarryForward(t *testing.T) {
+	// Buy 100 @ $10, sell 100 @ $8 (loss=$200) then buy 50 @ $8.50 in same non-reg within 30 days.
+	// Superficial loss: $200 denied loss carries forward to replacement buy's ACB.
+	// Replacement buy cost: 50*8.50 = $425 + $200 carry-forward = $625 total ACB.
+	txs := []*transaction.Transaction{
+		{ID: 1, SecurityID: 6, Type: transaction.TypeBuy, TradeDate: date("2024-01-15"), Quantity: d("100"), PriceCAD: d("10"), CommissionCAD: d("0")},
+		{ID: 2, SecurityID: 6, Type: transaction.TypeSell, TradeDate: date("2024-06-01"), Quantity: d("100"), PriceCAD: d("8"), CommissionCAD: d("0")},
+		{ID: 3, SecurityID: 6, Type: transaction.TypeBuy, TradeDate: date("2024-06-10"), Quantity: d("50"), PriceCAD: d("8.50"), CommissionCAD: d("0")},
+	}
+	sec := &security.Security{ID: 6, Ticker: "XYZ", Exchange: "TSX"}
+	store := &mockTxStore{
+		nonRegistered: map[int64][]*transaction.Transaction{6: txs},
+		allAccounts:   map[int64][]*transaction.Transaction{6: txs},
+		sellsByUser:   txs[1:2],
+	}
+	svc := service.NewGainsService(store, &mockSecStore{secs: map[int64]*security.Security{6: sec}})
+
+	report, err := svc.Calculate(context.Background(), 1, 2024)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(report.Lines) != 1 {
+		t.Fatalf("expected 1 gains line, got %d", len(report.Lines))
+	}
+	if !report.Lines[0].IsSuperficialLoss {
+		t.Error("expected superficial loss flag on sell")
+	}
+	if !report.SuperficialLossTotal.Equal(d("200")) {
+		t.Errorf("superficial loss total: got %s want 200", report.SuperficialLossTotal)
+	}
+
+	// Verify carry-forward applied to replacement buy via HistoryForSecurity.
+	_, history, err := svc.HistoryForSecurity(context.Background(), 6, 1, 2024)
+	if err != nil {
+		t.Fatalf("HistoryForSecurity error: %v", err)
+	}
+	// history is trimmed to last disposal in 2024, which is the sell (ID=2); buy ID=3 is after
+	if len(history) != 2 {
+		t.Fatalf("expected 2 history rows (buy+sell), got %d", len(history))
+	}
+}
+
+func TestComputeSuperficialAdjustments_CarryForward(t *testing.T) {
+	// Same scenario as above but tested directly on the pure function.
+	txs := []*transaction.Transaction{
+		{ID: 1, SecurityID: 7, Type: transaction.TypeBuy, TradeDate: date("2024-01-15"), Quantity: d("100"), PriceCAD: d("10"), CommissionCAD: d("0")},
+		{ID: 2, SecurityID: 7, Type: transaction.TypeSell, TradeDate: date("2024-06-01"), Quantity: d("100"), PriceCAD: d("8"), CommissionCAD: d("0")},
+		{ID: 3, SecurityID: 7, Type: transaction.TypeBuy, TradeDate: date("2024-06-10"), Quantity: d("50"), PriceCAD: d("8.50"), CommissionCAD: d("0")},
+	}
+
+	adj := service.ComputeSuperficialAdjustments(7, txs, txs)
+	if adj == nil {
+		t.Fatal("expected non-nil adjustments map")
+	}
+	if !adj[3].Equal(d("200")) {
+		t.Errorf("carry-forward on tx ID=3: got %s want 200", adj[3])
+	}
+	if !adj[1].IsZero() {
+		t.Errorf("buy tx ID=1 should have no adjustment, got %s", adj[1])
+	}
+
+	// Pass 2: ACB with adjustments applied.
+	_, history := service.CalculateACBWithHistory(7, txs, adj)
+	// Row 2 (index 2) is the replacement buy (ID=3).
+	if len(history) != 3 {
+		t.Fatalf("expected 3 history rows, got %d", len(history))
+	}
+	replacementRow := history[2]
+	if !replacementRow.SuperficialLossAdj.Equal(d("200")) {
+		t.Errorf("SuperficialLossAdj on replacement row: got %s want 200", replacementRow.SuperficialLossAdj)
+	}
+	// ACB after replacement buy: 50*8.50 + 200 carry-forward = 625; ACB/share = 12.50
+	if !replacementRow.RunningACB.Equal(d("625")) {
+		t.Errorf("RunningACB after replacement buy: got %s want 625", replacementRow.RunningACB)
+	}
+	if !replacementRow.RunningACBPerShare.Equal(d("12.5")) {
+		t.Errorf("RunningACBPerShare after replacement buy: got %s want 12.50", replacementRow.RunningACBPerShare)
+	}
+}
+
+func TestComputeSuperficialAdjustments_RegisteredRepurchase_NoCarryForward(t *testing.T) {
+	// Replacement buy is in registered account only — no carry-forward to non-reg.
+	nonRegTxs := []*transaction.Transaction{
+		{ID: 1, SecurityID: 8, Type: transaction.TypeBuy, TradeDate: date("2024-01-15"), Quantity: d("100"), PriceCAD: d("10"), CommissionCAD: d("0")},
+		{ID: 2, SecurityID: 8, Type: transaction.TypeSell, TradeDate: date("2024-06-01"), Quantity: d("100"), PriceCAD: d("8"), CommissionCAD: d("0")},
+	}
+	regBuy := &transaction.Transaction{
+		ID: 3, SecurityID: 8, Type: transaction.TypeBuy, TradeDate: date("2024-06-10"), Quantity: d("50"), PriceCAD: d("8.50"), CommissionCAD: d("0"),
+	}
+	allTxs := make([]*transaction.Transaction, len(nonRegTxs)+1)
+	copy(allTxs, nonRegTxs)
+	allTxs[len(nonRegTxs)] = regBuy
+
+	adj := service.ComputeSuperficialAdjustments(8, nonRegTxs, allTxs)
+	if adj != nil {
+		t.Errorf("expected nil adj when replacement is registered-only, got %v", adj)
+	}
+}

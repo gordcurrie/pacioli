@@ -80,7 +80,7 @@ func (h *Handler) showACB(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, rows := service.CalculateACBWithHistory(id, txs)
+	result, rows := service.CalculateACBWithHistory(id, txs, nil)
 
 	h.render(w, r,"acb", acbDetailPageData{
 		Security:     sec,

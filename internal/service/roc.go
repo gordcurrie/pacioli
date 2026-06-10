@@ -78,7 +78,7 @@ func (s *ROCService) PreviewROC(ctx context.Context, userID int64, taxYear int) 
 			}
 		}
 
-		_, history := CalculateACBWithHistory(d.SecurityID, upToYearEnd)
+		_, history := CalculateACBWithHistory(d.SecurityID, upToYearEnd, nil)
 		var sharesAtYearEnd decimal.Decimal
 		if len(history) > 0 {
 			sharesAtYearEnd = history[len(history)-1].RunningShares
