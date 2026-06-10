@@ -147,7 +147,10 @@ func (h *Handler) updateSecurity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	snapshot, _ := json.Marshal(sec)
+	snapshot, err := json.Marshal(sec)
+	if err != nil {
+		loggerFromCtx(r.Context()).Error("snapshot marshal", "entity", "security", "id", sec.ID, "err", err)
+	}
 
 	sec.Ticker = r.FormValue("ticker")
 	sec.Exchange = r.FormValue("exchange")

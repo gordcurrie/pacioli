@@ -167,8 +167,10 @@ func (h *Handler) adminAuditLog(w http.ResponseWriter, r *http.Request) {
 		UserID:     f.UserID,
 	}
 
-	// Count first so we can validate and clamp the page before fetching rows.
-	total, err := h.audits.Count(r.Context(), baseFilter)
+	lf := baseFilter
+	lf.Limit = auditPageSize
+	lf.Offset = (page - 1) * auditPageSize
+	entries, total, err := h.audits.Page(r.Context(), lf)
 	if err != nil {
 		h.serverError(w, r, err)
 		return
@@ -179,15 +181,6 @@ func (h *Handler) adminAuditLog(w http.ResponseWriter, r *http.Request) {
 	}
 	if page > totalPages {
 		http.Redirect(w, r, auditURL(f, totalPages), http.StatusSeeOther)
-		return
-	}
-
-	lf := baseFilter
-	lf.Limit = auditPageSize
-	lf.Offset = (page - 1) * auditPageSize
-	entries, err := h.audits.List(r.Context(), lf)
-	if err != nil {
-		h.serverError(w, r, err)
 		return
 	}
 

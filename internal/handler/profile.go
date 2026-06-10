@@ -55,6 +55,13 @@ func (h *Handler) updatePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	fresh, err := h.users.GetByID(r.Context(), u.ID)
+	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
+	snapshot := marshalUserSnapshot(fresh)
+
 	hash, err := bcrypt.GenerateFromPassword([]byte(newPw), bcryptCost)
 	if err != nil {
 		h.serverError(w, r, err)
@@ -87,7 +94,7 @@ func (h *Handler) updatePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.SetCookie(w, h.sessionCookie(raw, int(sessionDuration.Seconds())))
-	h.logAudit(r, audit.ActionUpdate, audit.EntityUser, u.ID, audit.SourceManual, marshalUserSnapshot(u))
+	h.logAudit(r, audit.ActionUpdate, audit.EntityUser, u.ID, audit.SourceManual, snapshot)
 	if u.TOTPEnabled {
 		http.Redirect(w, r, "/login/2fa", http.StatusSeeOther)
 		return
@@ -219,13 +226,18 @@ func (h *Handler) totpEnable(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, r, err)
 		return
 	}
+	freshEnable, err := h.users.GetByID(r.Context(), u.ID)
+	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
 	// EnableTOTPWithCodes is atomic: TOTP secret + recovery codes are written in one
 	// transaction so a partial failure cannot leave the user with TOTP on but no codes.
 	if err := h.users.EnableTOTPWithCodes(r.Context(), u.ID, secret, dbCodes); err != nil {
 		h.serverError(w, r, err)
 		return
 	}
-	h.logAudit(r, audit.ActionUpdate, audit.EntityUser, u.ID, audit.SourceManual, marshalUserSnapshot(u))
+	h.logAudit(r, audit.ActionUpdate, audit.EntityUser, u.ID, audit.SourceManual, marshalUserSnapshot(freshEnable))
 
 	h.render(w, r, "profile_2fa", totpSetupPageData{
 		TOTPEnabled:   true,
@@ -259,6 +271,11 @@ func (h *Handler) totpDisable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	freshDisable, err := h.users.GetByID(r.Context(), u.ID)
+	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
 	if err := h.users.UpdateTOTP(r.Context(), u.ID, "", false); err != nil {
 		h.serverError(w, r, err)
 		return
@@ -288,7 +305,7 @@ func (h *Handler) totpDisable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.SetCookie(w, h.sessionCookie(raw, int(sessionDuration.Seconds())))
-	h.logAudit(r, audit.ActionUpdate, audit.EntityUser, u.ID, audit.SourceManual, marshalUserSnapshot(u))
+	h.logAudit(r, audit.ActionUpdate, audit.EntityUser, u.ID, audit.SourceManual, marshalUserSnapshot(freshDisable))
 	h.render(w, r, "profile_2fa", totpSetupPageData{TOTPDisabled: true})
 }
 

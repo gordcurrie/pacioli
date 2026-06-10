@@ -337,7 +337,10 @@ func (h *Handler) updateTransactionFX(w http.ResponseWriter, r *http.Request) {
 	priceCAD := tx.PriceNative.Mul(fxRate)
 	commCAD := tx.CommissionNative.Mul(fxRate)
 
-	snapshot, _ := json.Marshal(tx)
+	snapshot, err := json.Marshal(tx)
+	if err != nil {
+		loggerFromCtx(r.Context()).Error("snapshot marshal", "entity", "transaction", "id", id, "err", err)
+	}
 	if err := h.transactions.UpdateFXRate(r.Context(), id, &fxRate, priceCAD, commCAD); err != nil {
 		h.serverError(w, r, err)
 		return

@@ -125,7 +125,10 @@ func (h *Handler) updateAccount(w http.ResponseWriter, r *http.Request) {
 		AccountNumber: r.FormValue("account_number"),
 	}
 
-	snapshot, _ := json.Marshal(existing)
+	snapshot, err := json.Marshal(existing)
+	if err != nil {
+		loggerFromCtx(r.Context()).Error("snapshot marshal", "entity", "account", "id", id, "err", err)
+	}
 	if err := h.accounts.Update(r.Context(), a); err != nil {
 		h.render(w, r,"account_form", accountFormData{
 			Account: a,

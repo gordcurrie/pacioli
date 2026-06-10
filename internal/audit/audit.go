@@ -57,4 +57,5 @@ type Store interface {
 	Log(ctx context.Context, e *Entry) error
 	List(ctx context.Context, f ListFilter) ([]*Entry, error)
 	Count(ctx context.Context, f ListFilter) (int, error)
+	Page(ctx context.Context, f ListFilter) ([]*Entry, int, error)
 }

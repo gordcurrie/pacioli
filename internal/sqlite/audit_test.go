@@ -154,4 +154,96 @@ t.Run("log create entry", func(t *testing.T) {
 			t.Errorf("Count(delete) = %d, want 1", n)
 		}
 	})
+
+	t.Run("list filtered by action", func(t *testing.T) {
+		entries, err := store.List(ctx, audit.ListFilter{Action: audit.ActionUpdate, Limit: 10})
+		if err != nil {
+			t.Fatalf("List(update): %v", err)
+		}
+		if len(entries) != 1 {
+			t.Fatalf("List(update) returned %d entries, want 1", len(entries))
+		}
+		if entries[0].Action != audit.ActionUpdate {
+			t.Errorf("entry action = %q, want update", entries[0].Action)
+		}
+	})
+
+	t.Run("list filtered by user_id", func(t *testing.T) {
+		entries, err := store.List(ctx, audit.ListFilter{UserID: 1, Limit: 10})
+		if err != nil {
+			t.Fatalf("List(user_id=1): %v", err)
+		}
+		for _, e := range entries {
+			if e.UserID != 1 {
+				t.Errorf("entry user_id = %d, want 1", e.UserID)
+			}
+		}
+		if len(entries) < 3 {
+			t.Errorf("List(user_id=1) returned %d entries, want >= 3", len(entries))
+		}
+	})
+
+	t.Run("list pagination offset", func(t *testing.T) {
+		all, err := store.List(ctx, audit.ListFilter{Limit: 10})
+		if err != nil {
+			t.Fatalf("List all: %v", err)
+		}
+		if len(all) < 2 {
+			t.Skip("need at least 2 entries for pagination test")
+		}
+		page1, err := store.List(ctx, audit.ListFilter{Limit: 1, Offset: 0})
+		if err != nil {
+			t.Fatalf("List page1: %v", err)
+		}
+		page2, err := store.List(ctx, audit.ListFilter{Limit: 1, Offset: 1})
+		if err != nil {
+			t.Fatalf("List page2: %v", err)
+		}
+		if len(page1) != 1 || len(page2) != 1 {
+			t.Fatalf("page1 len=%d, page2 len=%d; want 1 each", len(page1), len(page2))
+		}
+		if page1[0].ID == page2[0].ID {
+			t.Errorf("page1 and page2 returned same entry id=%d", page1[0].ID)
+		}
+	})
+
+	t.Run("page returns entries and total", func(t *testing.T) {
+		entries, total, err := store.Page(ctx, audit.ListFilter{Limit: 10})
+		if err != nil {
+			t.Fatalf("Page: %v", err)
+		}
+		if total < 3 {
+			t.Errorf("Page total = %d, want >= 3", total)
+		}
+		if len(entries) != total {
+			t.Errorf("Page len(entries) = %d, want %d", len(entries), total)
+		}
+	})
+
+	t.Run("page filtered matches count", func(t *testing.T) {
+		entries, total, err := store.Page(ctx, audit.ListFilter{Action: audit.ActionCreate, Limit: 10})
+		if err != nil {
+			t.Fatalf("Page(create): %v", err)
+		}
+		if total != 1 {
+			t.Errorf("Page(create) total = %d, want 1", total)
+		}
+		if len(entries) != 1 {
+			t.Errorf("Page(create) entries = %d, want 1", len(entries))
+		}
+		if entries[0].Action != audit.ActionCreate {
+			t.Errorf("entry action = %q, want create", entries[0].Action)
+		}
+	})
+
+	t.Run("page total reflects all rows not just limit", func(t *testing.T) {
+		// Total should be the unfiltered count even when Limit < total.
+		_, total, err := store.Page(ctx, audit.ListFilter{Limit: 1})
+		if err != nil {
+			t.Fatalf("Page(limit=1): %v", err)
+		}
+		if total < 3 {
+			t.Errorf("Page(limit=1) total = %d, want >= 3 (total of all rows, not just returned)", total)
+		}
+	})
 }
