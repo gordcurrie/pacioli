@@ -65,7 +65,7 @@
       {{range .Entries}}
       <tr>
         <td><small>{{.CreatedAt.Format "2006-01-02 15:04:05"}}</small></td>
-        <td><small>{{.UserEmail}}</small></td>
+        <td><small>{{if .UserEmail}}{{.UserEmail}}{{else}}(deleted){{end}}</small></td>
         <td>
           {{if eq (print .Action) "create"}}<span class="badge badge-create">create</span>
           {{else if eq (print .Action) "update"}}<span class="badge badge-update">update</span>

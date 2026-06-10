@@ -103,7 +103,7 @@ func (s *AuditStore) Count(ctx context.Context, f audit.ListFilter) (int, error)
 }
 
 func (s *AuditStore) Page(ctx context.Context, f audit.ListFilter) ([]*audit.Entry, int, error) {
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return nil, 0, fmt.Errorf("audit page: %w", err)
 	}

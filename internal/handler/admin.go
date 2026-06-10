@@ -158,6 +158,9 @@ func (h *Handler) adminAuditLog(w http.ResponseWriter, r *http.Request) {
 	if p := q.Get("page"); p != "" {
 		if n, err := strconv.Atoi(p); err == nil && n > 1 {
 			page = n
+		} else if err == nil && n <= 0 {
+			http.Redirect(w, r, auditURL(f, 1), http.StatusSeeOther)
+			return
 		}
 	}
 
