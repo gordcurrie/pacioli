@@ -402,8 +402,13 @@ func TestGainsService_SuperficialLoss_NonRegRepurchase_CarryForward(t *testing.T
 	if !report.Lines[0].IsSuperficialLoss {
 		t.Error("expected superficial loss flag on sell")
 	}
-	if !report.SuperficialLossTotal.Equal(d("200")) {
-		t.Errorf("superficial loss total: got %s want 200", report.SuperficialLossTotal)
+	// Proportional denial: min(50, 100)/100 × 200 = 100.
+	if !report.SuperficialLossTotal.Equal(d("100")) {
+		t.Errorf("superficial loss total: got %s want 100", report.SuperficialLossTotal)
+	}
+	// Claimable portion: 200 − 100 = 100.
+	if !report.TotalLosses.Equal(d("100")) {
+		t.Errorf("total losses: got %s want 100", report.TotalLosses)
 	}
 
 	// Verify carry-forward applied to replacement buy via HistoryForSecurity.
@@ -425,15 +430,22 @@ func TestComputeSuperficialAdjustments_CarryForward(t *testing.T) {
 		{ID: 3, SecurityID: 7, Type: transaction.TypeBuy, TradeDate: date("2024-06-10"), Quantity: d("50"), PriceCAD: d("8.50"), CommissionCAD: d("0")},
 	}
 
-	adj := service.ComputeSuperficialAdjustments(7, txs, txs)
+	// Proportional: min(50, 100)/100 × 200 = 100.
+	adj, denied := service.ComputeSuperficialAdjustments(7, txs, txs)
 	if adj == nil {
 		t.Fatal("expected non-nil adjustments map")
 	}
-	if !adj[3].Equal(d("200")) {
-		t.Errorf("carry-forward on tx ID=3: got %s want 200", adj[3])
+	if !adj[3].Equal(d("100")) {
+		t.Errorf("carry-forward on tx ID=3: got %s want 100", adj[3])
 	}
 	if !adj[1].IsZero() {
 		t.Errorf("buy tx ID=1 should have no adjustment, got %s", adj[1])
+	}
+	if denied == nil {
+		t.Fatal("expected non-nil denied map")
+	}
+	if !denied[2].Equal(d("100")) {
+		t.Errorf("denied loss on sell ID=2: got %s want 100", denied[2])
 	}
 
 	// Pass 2: ACB with adjustments applied.
@@ -443,15 +455,15 @@ func TestComputeSuperficialAdjustments_CarryForward(t *testing.T) {
 		t.Fatalf("expected 3 history rows, got %d", len(history))
 	}
 	replacementRow := history[2]
-	if !replacementRow.SuperficialLossAdj.Equal(d("200")) {
-		t.Errorf("SuperficialLossAdj on replacement row: got %s want 200", replacementRow.SuperficialLossAdj)
+	if !replacementRow.SuperficialLossAdj.Equal(d("100")) {
+		t.Errorf("SuperficialLossAdj on replacement row: got %s want 100", replacementRow.SuperficialLossAdj)
 	}
-	// ACB after replacement buy: 50*8.50 + 200 carry-forward = 625; ACB/share = 12.50
-	if !replacementRow.RunningACB.Equal(d("625")) {
-		t.Errorf("RunningACB after replacement buy: got %s want 625", replacementRow.RunningACB)
+	// ACB after replacement buy: 50*8.50 + 100 carry-forward = 525; ACB/share = 10.50
+	if !replacementRow.RunningACB.Equal(d("525")) {
+		t.Errorf("RunningACB after replacement buy: got %s want 525", replacementRow.RunningACB)
 	}
-	if !replacementRow.RunningACBPerShare.Equal(d("12.5")) {
-		t.Errorf("RunningACBPerShare after replacement buy: got %s want 12.50", replacementRow.RunningACBPerShare)
+	if !replacementRow.RunningACBPerShare.Equal(d("10.5")) {
+		t.Errorf("RunningACBPerShare after replacement buy: got %s want 10.50", replacementRow.RunningACBPerShare)
 	}
 }
 
@@ -468,8 +480,31 @@ func TestComputeSuperficialAdjustments_RegisteredRepurchase_NoCarryForward(t *te
 	copy(allTxs, nonRegTxs)
 	allTxs[len(nonRegTxs)] = regBuy
 
-	adj := service.ComputeSuperficialAdjustments(8, nonRegTxs, allTxs)
+	adj, _ := service.ComputeSuperficialAdjustments(8, nonRegTxs, allTxs)
 	if adj != nil {
 		t.Errorf("expected nil adj when replacement is registered-only, got %v", adj)
+	}
+}
+
+func TestComputeSuperficialAdjustments_PreSellCarryForward(t *testing.T) {
+	// Buy 150 @ $10 on Day 1; sell 50 @ $8 on Day 20 (partial sell, loss=$100).
+	// No post-sell buy; pre-sell buy (Day 1, qty=150) is the fallback.
+	// Proportional: min(150,50)/50 × 100 = 100 — full denial since replacement qty > sold qty.
+	txs := []*transaction.Transaction{
+		{ID: 1, SecurityID: 9, Type: transaction.TypeBuy, TradeDate: date("2024-05-01"), Quantity: d("150"), PriceCAD: d("10"), CommissionCAD: d("0")},
+		{ID: 2, SecurityID: 9, Type: transaction.TypeSell, TradeDate: date("2024-05-20"), Quantity: d("50"), PriceCAD: d("8"), CommissionCAD: d("0")},
+	}
+	adj, denied := service.ComputeSuperficialAdjustments(9, txs, txs)
+	if adj == nil {
+		t.Fatal("expected non-nil adj for pre-sell carry-forward")
+	}
+	if !adj[1].Equal(d("100")) {
+		t.Errorf("carry-forward to pre-sell buy (ID=1): got %s want 100", adj[1])
+	}
+	if denied == nil {
+		t.Fatal("expected non-nil denied map")
+	}
+	if !denied[2].Equal(d("100")) {
+		t.Errorf("denied loss on sell (ID=2): got %s want 100", denied[2])
 	}
 }

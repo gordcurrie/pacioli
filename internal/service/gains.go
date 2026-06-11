@@ -90,7 +90,7 @@ func (s *GainsService) Calculate(ctx context.Context, userID int64, year int) (*
 			return nil, fmt.Errorf("gains calculate: list all txs for security %d: %w", secID, err)
 		}
 
-		adj := ComputeSuperficialAdjustments(secID, txs, allTxs)
+		adj, denied := ComputeSuperficialAdjustments(secID, txs, allTxs)
 		_, history := CalculateACBWithHistory(secID, txs, adj)
 
 		for _, row := range history {
@@ -117,17 +117,23 @@ func (s *GainsService) Calculate(ctx context.Context, userID int64, year int) (*
 				continue
 			}
 
+			var deniedAmt decimal.Decimal
 			if gainLoss.IsNegative() {
-				line.IsSuperficialLoss = checkSuperficialLoss(allTxs, row.Tx.TradeDate)
+				if da, ok := denied[row.Tx.ID]; ok {
+					line.IsSuperficialLoss = true
+					deniedAmt = da
+				}
 			}
 
 			if gainLoss.IsPositive() {
 				report.TotalGains = report.TotalGains.Add(gainLoss)
 			} else if gainLoss.IsNegative() {
-				report.TotalLosses = report.TotalLosses.Add(gainLoss.Abs())
+				if claimable := gainLoss.Abs().Sub(deniedAmt); claimable.IsPositive() {
+					report.TotalLosses = report.TotalLosses.Add(claimable)
+				}
 			}
 			if line.IsSuperficialLoss {
-				report.SuperficialLossTotal = report.SuperficialLossTotal.Add(gainLoss.Abs())
+				report.SuperficialLossTotal = report.SuperficialLossTotal.Add(deniedAmt)
 			}
 
 			report.Lines = append(report.Lines, line)
@@ -177,7 +183,7 @@ func (s *GainsService) HistoryForSecurity(ctx context.Context, securityID, userI
 	if err != nil {
 		return nil, nil, fmt.Errorf("history for security %d: list all transactions: %w", securityID, err)
 	}
-	adj := ComputeSuperficialAdjustments(securityID, txs, allTxs)
+	adj, _ := ComputeSuperficialAdjustments(securityID, txs, allTxs)
 	_, history := CalculateACBWithHistory(securityID, txs, adj)
 
 	lastIdx := -1

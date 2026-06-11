@@ -46,7 +46,7 @@ func (s *ACBService) Calculate(ctx context.Context, securityID, userID int64) (*
 	if err != nil {
 		return nil, fmt.Errorf("acb calculate: all accounts: %w", err)
 	}
-	adj := ComputeSuperficialAdjustments(securityID, txs, allTxs)
+	adj, _ := ComputeSuperficialAdjustments(securityID, txs, allTxs)
 	r, _ := CalculateACBWithHistory(securityID, txs, adj)
 	return r, nil
 }
@@ -159,34 +159,30 @@ func checkSuperficialLoss(allTxs []*transaction.Transaction, sellDate time.Time)
 	return shares.IsPositive()
 }
 
-// ComputeSuperficialAdjustments returns a map of transactionID → ACB carry-forward amount.
-// For each superficial loss sell in nonRegTxs, the denied loss is added to the ACB of
-// the nearest replacement buy in nonRegTxs within 30 days after the sell.
+// ComputeSuperficialAdjustments returns two maps:
+//   - adj: transactionID → ACB carry-forward amount for replacement buys
+//   - denied: transactionID → denied loss amount for superficial loss sells
 //
-// If the replacement buy is only in a registered account (present in allTxs but absent
-// from nonRegTxs), the denied loss cannot be carried forward — the loss is permanently denied.
+// The denied amount is proportional: min(replacementQty, soldQty)/soldQty × totalLoss.
+// Post-sell replacement (same-day included) is preferred; falls back to the nearest
+// pre-sell buy within 30 days. When no non-reg replacement exists (registered-only),
+// the full loss is denied with no carry-forward.
 //
-// Both slices must be sorted by trade_date ascending. Returns nil when there are no adjustments.
-//
-// Note: this handles the common case where the replacement buy occurs after the sell.
-// Pre-sell replacement buys (within the 30-day prior window) are detected and flagged as
-// superficial but the carry-forward is not applied retroactively in this implementation.
-func ComputeSuperficialAdjustments(securityID int64, nonRegTxs, allTxs []*transaction.Transaction) map[int64]decimal.Decimal {
+// Both slices must be sorted by trade_date ascending. Returns nil, nil when there are
+// no superficial losses.
+func ComputeSuperficialAdjustments(securityID int64, nonRegTxs, allTxs []*transaction.Transaction) (adj, denied map[int64]decimal.Decimal) {
 	if len(allTxs) == 0 {
-		return nil
+		return nil, nil
 	}
 
-	// Pass 1: compute ACBs without adjustments to determine gain/loss per sell.
 	_, history := CalculateACBWithHistory(securityID, nonRegTxs, nil)
-
-	var adj map[int64]decimal.Decimal
 
 	for _, row := range history {
 		if row.Tx.Type != transaction.TypeSell && row.Tx.Type != transaction.TypeTransferOut {
 			continue
 		}
 		if row.PreTxShares.IsZero() {
-			continue // NeedsReview row — ACB unknown, skip
+			continue
 		}
 
 		proceeds := row.Tx.Quantity.Mul(row.Tx.PriceCAD).Sub(row.Tx.CommissionCAD)
@@ -200,27 +196,65 @@ func ComputeSuperficialAdjustments(securityID int64, nonRegTxs, allTxs []*transa
 			continue
 		}
 
-		deniedLoss := gainLoss.Abs()
+		windowStart := row.Tx.TradeDate.AddDate(0, 0, -30)
 		windowEnd := row.Tx.TradeDate.AddDate(0, 0, 30)
 
-		// Find the nearest replacement buy in non-registered txs within 30 days after the sell.
+		// Post-sell search: same-day counts (use Before not After so equal dates pass).
+		var replacementTx *transaction.Transaction
 		for _, tx := range nonRegTxs {
-			if !tx.TradeDate.After(row.Tx.TradeDate) {
+			if tx.TradeDate.Before(row.Tx.TradeDate) {
 				continue
 			}
 			if tx.TradeDate.After(windowEnd) {
 				break
 			}
 			if tx.Type == transaction.TypeBuy || tx.Type == transaction.TypeTransferIn || tx.Type == transaction.TypeJournal {
-				if adj == nil {
-					adj = make(map[int64]decimal.Decimal)
-				}
-				adj[tx.ID] = adj[tx.ID].Add(deniedLoss)
+				replacementTx = tx
 				break
 			}
 		}
-		// No non-registered replacement buy found → loss permanently denied, no carry-forward.
+
+		// Pre-sell fallback: nearest buy strictly before the sell within 30 days.
+		if replacementTx == nil {
+			for i := len(nonRegTxs) - 1; i >= 0; i-- {
+				tx := nonRegTxs[i]
+				if !tx.TradeDate.Before(row.Tx.TradeDate) {
+					continue
+				}
+				if tx.TradeDate.Before(windowStart) {
+					break
+				}
+				if tx.Type == transaction.TypeBuy || tx.Type == transaction.TypeTransferIn || tx.Type == transaction.TypeJournal {
+					replacementTx = tx
+					break
+				}
+			}
+		}
+
+		soldQty := row.Tx.Quantity
+		var proportionalLoss decimal.Decimal
+		if replacementTx != nil {
+			replQty := replacementTx.Quantity
+			if replQty.GreaterThan(soldQty) {
+				replQty = soldQty
+			}
+			proportionalLoss = gainLoss.Abs().Mul(replQty).Div(soldQty)
+		} else {
+			proportionalLoss = gainLoss.Abs()
+		}
+
+		if denied == nil {
+			denied = make(map[int64]decimal.Decimal)
+		}
+		denied[row.Tx.ID] = denied[row.Tx.ID].Add(proportionalLoss)
+
+		if replacementTx != nil {
+			if adj == nil {
+				adj = make(map[int64]decimal.Decimal)
+			}
+			adj[replacementTx.ID] = adj[replacementTx.ID].Add(proportionalLoss)
+		}
 	}
 
-	return adj
+	return adj, denied
 }
