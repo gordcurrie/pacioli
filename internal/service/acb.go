@@ -279,14 +279,29 @@ func computeAdjDenied(securityID int64, nonRegTxs, allTxs []*transaction.Transac
 		if netAtEnd.LessThan(remaining) {
 			remaining = netAtEnd
 		}
+		// preSellPool tracks remaining carry-forward capacity for pre-sell replacements.
+		// Pre-sell shares can only carry forward to shares still in the pool after the sell.
+		// If the sell empties the pool, pre-sell buys count toward denial but produce no
+		// carry-forward; without this cap their adj would be keyed to the sell ID and deferred
+		// via pendingAdj to the next acquisition, which may be outside the ±30-day window.
+		preSellPool := row.PreTxShares.Sub(soldQty)
+		if preSellPool.IsNegative() {
+			preSellPool = decimal.Zero
+		}
 		for _, r := range repls {
 			avail := r.tx.Quantity.Sub(allocated[r.tx.ID])
+			if r.preSell && preSellPool.LessThan(avail) {
+				avail = preSellPool
+			}
 			if !avail.IsPositive() {
 				continue
 			}
 			contrib := avail
 			if remaining.LessThan(contrib) {
 				contrib = remaining
+			}
+			if r.preSell {
+				preSellPool = preSellPool.Sub(contrib)
 			}
 			contribs = append(contribs, replContrib{tx: r.tx, contrib: contrib, preSell: r.preSell, nonReg: r.nonReg})
 			remaining = remaining.Sub(contrib)

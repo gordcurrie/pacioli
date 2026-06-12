@@ -531,12 +531,12 @@ func TestComputeSuperficialAdjustments_RegisteredRepurchase_NoCarryForward(t *te
 }
 
 func TestCalculateACBWithHistory_PreSellCarryForwardDeferred(t *testing.T) {
-	// Non-reg: buy 100@$10 May-01, sell ALL 100@$8 May-20 (loss=$200, pre-sell replacement).
-	// RRSP buy on May-30 satisfies checkSuperficialLoss (positive position at windowEnd)
-	// but is not in nonRegTxs, so the post-sell search finds nothing.
-	// Pre-sell fallback finds the May-01 buy → preSell=true, adj[sell.ID=2]=$200.
-	// Non-reg rebuy at Jul-15 is outside the 30-day window so it's not a post-sell replacement.
-	// Fix: the sell empties the pool, so the carry-forward is deferred to the Jul-15 buy.
+	// Non-reg: buy 100@$10 May-01, sell ALL 100@$8 May-20 (loss=$200).
+	// RRSP buy on May-30 (inside ±30-day window) — triggers denial via affiliated-person rule,
+	// but replacement is registered-only: no carry-forward to the non-reg pool.
+	// Pre-sell pool is zero (sell empties it), so the pre-sell buy has no carry-forward capacity.
+	// Non-reg rebuy at Jul-15 is outside the window — not a replacement.
+	// Result: loss fully denied ($200), no adj generated, Jul-15 buy gets plain ACB.
 	secID := int64(20)
 	nonRegTxs := []*transaction.Transaction{
 		{ID: 1, SecurityID: secID, Type: transaction.TypeBuy, TradeDate: date("2024-05-01"), Quantity: d("100"), PriceCAD: d("10"), CommissionCAD: d("0")},
@@ -548,44 +548,39 @@ func TestCalculateACBWithHistory_PreSellCarryForwardDeferred(t *testing.T) {
 	}
 	allTxs := []*transaction.Transaction{nonRegTxs[0], nonRegTxs[1], rrspBuy, nonRegTxs[2]}
 
-	adj, denied, _ := service.ComputeSuperficialAdjustments(secID, nonRegTxs, allTxs)
-	if adj == nil {
-		t.Fatal("expected non-nil adj")
-	}
-	if !adj[2].Equal(d("200")) {
-		t.Errorf("carry-forward keyed to sell ID=2: got %s want 200", adj[2])
-	}
-	if denied == nil {
-		t.Fatal("expected non-nil denied")
-	}
+	adj, denied, withCarryFwd := service.ComputeSuperficialAdjustments(secID, nonRegTxs, allTxs)
+
+	// Loss is denied: RRSP replacement (100 shares) / 100 sold → full $200 denied.
 	if !denied[2].Equal(d("200")) {
 		t.Errorf("denied on sell ID=2: got %s want 200", denied[2])
 	}
+	// Replacement is registered-only and pre-sell pool is zero → no carry-forward.
+	if len(adj) != 0 {
+		t.Errorf("expected no adj when replacement is registered-only, got %v", adj)
+	}
+	if _, ok := withCarryFwd[2]; ok {
+		t.Error("sell must not be in withCarryFwd when replacement is registered-only")
+	}
 
+	// History: Jul-15 buy gets plain ACB (no pendingAdj), sell row is clean.
 	_, history := service.CalculateACBWithHistory(secID, nonRegTxs, adj)
 	if len(history) != 3 {
 		t.Fatalf("expected 3 history rows, got %d", len(history))
 	}
-
 	sellRow := history[1]
-	// Sell empties pool — carry-forward deferred, NOT applied here.
 	if !sellRow.RunningShares.IsZero() {
 		t.Errorf("RunningShares after sell-all: got %s want 0", sellRow.RunningShares)
 	}
 	if !sellRow.RunningACB.IsZero() {
 		t.Errorf("RunningACB after sell-all: got %s want 0", sellRow.RunningACB)
 	}
-	if !sellRow.SuperficialLossAdj.IsZero() {
-		t.Errorf("SuperficialLossAdj on sell row should be 0 (deferred): got %s", sellRow.SuperficialLossAdj)
-	}
-
 	nextBuyRow := history[2]
-	// ACB = 50*9 + $200 deferred = $650; ACB/share = $13.
-	if !nextBuyRow.RunningACB.Equal(d("650")) {
-		t.Errorf("RunningACB after deferred carry-forward: got %s want 650", nextBuyRow.RunningACB)
+	// ACB = 50*9 = $450 only — no carry-forward.
+	if !nextBuyRow.RunningACB.Equal(d("450")) {
+		t.Errorf("RunningACB for unrelated buy: got %s want 450", nextBuyRow.RunningACB)
 	}
-	if !nextBuyRow.SuperficialLossAdj.Equal(d("200")) {
-		t.Errorf("SuperficialLossAdj on next buy (deferred): got %s want 200", nextBuyRow.SuperficialLossAdj)
+	if nextBuyRow.SuperficialLossAdj.IsPositive() {
+		t.Errorf("SuperficialLossAdj on unrelated buy should be 0, got %s", nextBuyRow.SuperficialLossAdj)
 	}
 }
 
@@ -925,12 +920,52 @@ func TestComputeSuperficialAdjustments_NetPositionCapsDenial(t *testing.T) {
 	if !denied[2].Equal(d("3")) {
 		t.Errorf("denied: got %s want 3", denied[2])
 	}
-	// carry-forward = $3 eventually reaches the post-sell buy (via pendingAdj)
-	if len(adj) == 0 {
-		t.Error("expected adj entry for carry-forward")
+	// Pre-sell pool is empty after the sell, so carry-forward goes directly to the post-sell
+	// buy (ID=3), not via pendingAdj. adj[3] must be $3; adj[2] (sell) must be absent.
+	if !adj[3].Equal(d("3")) {
+		t.Errorf("carry-forward on post-sell buy (ID=3): got %s want 3", adj[3])
+	}
+	if adj[2].IsPositive() {
+		t.Errorf("carry-forward must not be keyed to sell (ID=2), got %s", adj[2])
 	}
 	if _, ok := withCarryFwd[2]; !ok {
 		t.Error("expected withCarryFwd for sell ID=2")
+	}
+}
+
+// TestComputeSuperficialAdjustments_FullDisposalRegisteredReplOnly verifies that when a sell
+// empties the non-registered pool and the only in-window replacement is registered, no carry-forward
+// is generated and withCarryFwd is not set. Before the fix, the pre-sell buy (non-reg) would
+// incorrectly produce a carry-forward keyed to the sell ID, which CalculateACBWithHistory deferred
+// via pendingAdj to the next non-reg acquisition outside the ±30-day window.
+func TestComputeSuperficialAdjustments_FullDisposalRegisteredReplOnly(t *testing.T) {
+	// Non-reg: buy 100 @ $10, sell all 100 @ $7 (loss=$300). Pool is empty after sell.
+	// Registered: buy 50 @ $7 inside the window (counts for denial, not carry-forward).
+	// Pre-sell pool = 0 → pre-sell buy contributes 0 carry-forward capacity.
+	// Only registered post-sell buy contributes → denial exists, no non-reg carry-forward.
+	nonRegTxs := []*transaction.Transaction{
+		{ID: 1, SecurityID: 10, Type: transaction.TypeBuy, TradeDate: date("2024-06-05"), Quantity: d("100"), PriceCAD: d("10"), CommissionCAD: d("0")},
+		{ID: 2, SecurityID: 10, Type: transaction.TypeSell, TradeDate: date("2024-06-15"), Quantity: d("100"), PriceCAD: d("7"), CommissionCAD: d("0")},
+	}
+	registeredBuy := &transaction.Transaction{
+		ID: 3, SecurityID: 10, Type: transaction.TypeBuy, TradeDate: date("2024-06-20"), Quantity: d("50"), PriceCAD: d("7"), CommissionCAD: d("0"),
+	}
+	allTxs := make([]*transaction.Transaction, len(nonRegTxs)+1)
+	copy(allTxs, nonRegTxs)
+	allTxs[len(nonRegTxs)] = registeredBuy
+
+	adj, denied, withCarryFwd := service.ComputeSuperficialAdjustments(10, nonRegTxs, allTxs)
+
+	// Loss is denied proportionally (50 replacement / 100 sold → $150 denied).
+	if !denied[2].Equal(d("150")) {
+		t.Errorf("denied: got %s want 150", denied[2])
+	}
+	// No non-reg carry-forward: pre-sell pool is zero, post-sell replacement is registered.
+	if len(adj) != 0 {
+		t.Errorf("expected no carry-forward adj, got %v", adj)
+	}
+	if _, ok := withCarryFwd[2]; ok {
+		t.Error("sell must not be in withCarryFwd when replacement is registered-only")
 	}
 }
 
