@@ -2,6 +2,7 @@ package service_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -13,12 +14,18 @@ import (
 
 // mockTxStore is a minimal in-memory transaction.Store for testing.
 type mockTxStore struct {
-	nonRegistered map[int64][]*transaction.Transaction // securityID → txs
-	allAccounts   map[int64][]*transaction.Transaction // securityID → txs (all accounts)
-	sellsByUser   []*transaction.Transaction           // user-level sells by date range
+	nonRegistered    map[int64][]*transaction.Transaction // securityID → txs
+	allAccounts      map[int64][]*transaction.Transaction // securityID → txs (all accounts)
+	sellsByUser      []*transaction.Transaction           // user-level sells by date range
+	errListDisposals error
+	errListNonReg    error
+	errListAll       error
+	errCreate        error
 }
 
-func (m *mockTxStore) Create(_ context.Context, tx *transaction.Transaction) error { return nil }
+func (m *mockTxStore) Create(_ context.Context, _ *transaction.Transaction) error {
+	return m.errCreate
+}
 func (m *mockTxStore) GetByID(_ context.Context, _ int64) (*transaction.Transaction, error) {
 	return nil, nil
 }
@@ -26,9 +33,15 @@ func (m *mockTxStore) ListByAccount(_ context.Context, _ int64) ([]*transaction.
 	return nil, nil
 }
 func (m *mockTxStore) ListBySecurityNonRegistered(_ context.Context, securityID, _ int64) ([]*transaction.Transaction, error) {
+	if m.errListNonReg != nil {
+		return nil, m.errListNonReg
+	}
 	return m.nonRegistered[securityID], nil
 }
 func (m *mockTxStore) ListNonRegisteredDisposalsByUser(_ context.Context, _ int64, from, to time.Time) ([]*transaction.Transaction, error) {
+	if m.errListDisposals != nil {
+		return nil, m.errListDisposals
+	}
 	var out []*transaction.Transaction
 	for _, tx := range m.sellsByUser {
 		if !tx.TradeDate.Before(from) && !tx.TradeDate.After(to) {
@@ -38,6 +51,9 @@ func (m *mockTxStore) ListNonRegisteredDisposalsByUser(_ context.Context, _ int6
 	return out, nil
 }
 func (m *mockTxStore) ListBySecurityAllAccounts(_ context.Context, securityID, _ int64) ([]*transaction.Transaction, error) {
+	if m.errListAll != nil {
+		return nil, m.errListAll
+	}
 	return m.allAccounts[securityID], nil
 }
 func (m *mockTxStore) ListByDateRange(_ context.Context, _ int64, _, _ time.Time) ([]*transaction.Transaction, error) {
@@ -50,11 +66,15 @@ func (m *mockTxStore) UpdateFXRate(_ context.Context, _ int64, _ *decimal.Decima
 
 // mockSecStore is a minimal in-memory security.Store for testing.
 type mockSecStore struct {
-	secs map[int64]*security.Security
+	secs       map[int64]*security.Security
+	errGetByID error
 }
 
 func (m *mockSecStore) Create(_ context.Context, _ *security.Security) error { return nil }
 func (m *mockSecStore) GetByID(_ context.Context, id int64) (*security.Security, error) {
+	if m.errGetByID != nil {
+		return nil, m.errGetByID
+	}
 	return m.secs[id], nil
 }
 func (m *mockSecStore) GetByTickerExchange(_ context.Context, _, _ string) (*security.Security, error) {
@@ -431,7 +451,7 @@ func TestComputeSuperficialAdjustments_CarryForward(t *testing.T) {
 	}
 
 	// Proportional: min(50, 100)/100 × 200 = 100.
-	adj, denied := service.ComputeSuperficialAdjustments(7, txs, txs)
+	adj, denied, _ := service.ComputeSuperficialAdjustments(7, txs, txs)
 	if adj == nil {
 		t.Fatal("expected non-nil adjustments map")
 	}
@@ -480,9 +500,74 @@ func TestComputeSuperficialAdjustments_RegisteredRepurchase_NoCarryForward(t *te
 	copy(allTxs, nonRegTxs)
 	allTxs[len(nonRegTxs)] = regBuy
 
-	adj, _ := service.ComputeSuperficialAdjustments(8, nonRegTxs, allTxs)
+	adj, denied, _ := service.ComputeSuperficialAdjustments(8, nonRegTxs, allTxs)
 	if adj != nil {
 		t.Errorf("expected nil adj when replacement is registered-only, got %v", adj)
+	}
+	if denied == nil {
+		t.Fatal("expected non-nil denied map")
+	}
+	if !denied[2].Equal(d("200")) {
+		t.Errorf("denied loss on sell (ID=2): got %s want 200", denied[2])
+	}
+}
+
+func TestCalculateACBWithHistory_PreSellCarryForwardDeferred(t *testing.T) {
+	// Non-reg: buy 100@$10 May-01, sell ALL 100@$8 May-20 (loss=$200, pre-sell replacement).
+	// RRSP buy on May-30 satisfies checkSuperficialLoss (positive position at windowEnd)
+	// but is not in nonRegTxs, so the post-sell search finds nothing.
+	// Pre-sell fallback finds the May-01 buy → preSell=true, adj[sell.ID=2]=$200.
+	// Non-reg rebuy at Jul-15 is outside the 30-day window so it's not a post-sell replacement.
+	// Fix: the sell empties the pool, so the carry-forward is deferred to the Jul-15 buy.
+	secID := int64(20)
+	nonRegTxs := []*transaction.Transaction{
+		{ID: 1, SecurityID: secID, Type: transaction.TypeBuy, TradeDate: date("2024-05-01"), Quantity: d("100"), PriceCAD: d("10"), CommissionCAD: d("0")},
+		{ID: 2, SecurityID: secID, Type: transaction.TypeSell, TradeDate: date("2024-05-20"), Quantity: d("100"), PriceCAD: d("8"), CommissionCAD: d("0")},
+		{ID: 4, SecurityID: secID, Type: transaction.TypeBuy, TradeDate: date("2024-07-15"), Quantity: d("50"), PriceCAD: d("9"), CommissionCAD: d("0")},
+	}
+	rrspBuy := &transaction.Transaction{
+		ID: 3, SecurityID: secID, Type: transaction.TypeBuy, TradeDate: date("2024-05-30"), Quantity: d("100"), PriceCAD: d("8"), CommissionCAD: d("0"),
+	}
+	allTxs := []*transaction.Transaction{nonRegTxs[0], nonRegTxs[1], rrspBuy, nonRegTxs[2]}
+
+	adj, denied, _ := service.ComputeSuperficialAdjustments(secID, nonRegTxs, allTxs)
+	if adj == nil {
+		t.Fatal("expected non-nil adj")
+	}
+	if !adj[2].Equal(d("200")) {
+		t.Errorf("carry-forward keyed to sell ID=2: got %s want 200", adj[2])
+	}
+	if denied == nil {
+		t.Fatal("expected non-nil denied")
+	}
+	if !denied[2].Equal(d("200")) {
+		t.Errorf("denied on sell ID=2: got %s want 200", denied[2])
+	}
+
+	_, history := service.CalculateACBWithHistory(secID, nonRegTxs, adj)
+	if len(history) != 3 {
+		t.Fatalf("expected 3 history rows, got %d", len(history))
+	}
+
+	sellRow := history[1]
+	// Sell empties pool — carry-forward deferred, NOT applied here.
+	if !sellRow.RunningShares.IsZero() {
+		t.Errorf("RunningShares after sell-all: got %s want 0", sellRow.RunningShares)
+	}
+	if !sellRow.RunningACB.IsZero() {
+		t.Errorf("RunningACB after sell-all: got %s want 0", sellRow.RunningACB)
+	}
+	if !sellRow.SuperficialLossAdj.IsZero() {
+		t.Errorf("SuperficialLossAdj on sell row should be 0 (deferred): got %s", sellRow.SuperficialLossAdj)
+	}
+
+	nextBuyRow := history[2]
+	// ACB = 50*9 + $200 deferred = $650; ACB/share = $13.
+	if !nextBuyRow.RunningACB.Equal(d("650")) {
+		t.Errorf("RunningACB after deferred carry-forward: got %s want 650", nextBuyRow.RunningACB)
+	}
+	if !nextBuyRow.SuperficialLossAdj.Equal(d("200")) {
+		t.Errorf("SuperficialLossAdj on next buy (deferred): got %s want 200", nextBuyRow.SuperficialLossAdj)
 	}
 }
 
@@ -490,21 +575,276 @@ func TestComputeSuperficialAdjustments_PreSellCarryForward(t *testing.T) {
 	// Buy 150 @ $10 on Day 1; sell 50 @ $8 on Day 20 (partial sell, loss=$100).
 	// No post-sell buy; pre-sell buy (Day 1, qty=150) is the fallback.
 	// Proportional: min(150,50)/50 × 100 = 100 — full denial since replacement qty > sold qty.
+	//
+	// G3 fix: carry-forward is keyed to the sell ID (not the pre-sell buy ID) so that
+	// CalculateACBWithHistory applies it post-sell to the remaining pool, leaving prior
+	// disposals unchanged.
 	txs := []*transaction.Transaction{
 		{ID: 1, SecurityID: 9, Type: transaction.TypeBuy, TradeDate: date("2024-05-01"), Quantity: d("150"), PriceCAD: d("10"), CommissionCAD: d("0")},
 		{ID: 2, SecurityID: 9, Type: transaction.TypeSell, TradeDate: date("2024-05-20"), Quantity: d("50"), PriceCAD: d("8"), CommissionCAD: d("0")},
 	}
-	adj, denied := service.ComputeSuperficialAdjustments(9, txs, txs)
+	adj, denied, _ := service.ComputeSuperficialAdjustments(9, txs, txs)
 	if adj == nil {
 		t.Fatal("expected non-nil adj for pre-sell carry-forward")
 	}
-	if !adj[1].Equal(d("100")) {
-		t.Errorf("carry-forward to pre-sell buy (ID=1): got %s want 100", adj[1])
+	// carry-forward is on the sell ID (applied post-sell to remaining shares)
+	if !adj[2].Equal(d("100")) {
+		t.Errorf("carry-forward keyed to sell (ID=2): got %s want 100", adj[2])
+	}
+	// pre-sell buy gets no direct ACB adjustment
+	if !adj[1].IsZero() {
+		t.Errorf("pre-sell buy (ID=1) should have no adj, got %s", adj[1])
 	}
 	if denied == nil {
 		t.Fatal("expected non-nil denied map")
 	}
 	if !denied[2].Equal(d("100")) {
 		t.Errorf("denied loss on sell (ID=2): got %s want 100", denied[2])
+	}
+
+	// Verify CalculateACBWithHistory applies the carry-forward post-sell.
+	// After sell: 100 shares remain at $10 ACB/share = $1000. Post-sell adj $100 → $1100 = $11/share.
+	_, history := service.CalculateACBWithHistory(9, txs, adj)
+	if len(history) != 2 {
+		t.Fatalf("expected 2 history rows, got %d", len(history))
+	}
+	sellRow := history[1]
+	if !sellRow.RunningACB.Equal(d("1100")) {
+		t.Errorf("RunningACB after pre-sell carry-forward: got %s want 1100", sellRow.RunningACB)
+	}
+	if !sellRow.RunningACBPerShare.Equal(d("11")) {
+		t.Errorf("RunningACBPerShare after pre-sell carry-forward: got %s want 11", sellRow.RunningACBPerShare)
+	}
+	if !sellRow.SuperficialLossAdj.Equal(d("100")) {
+		t.Errorf("SuperficialLossAdj on sell row: got %s want 100", sellRow.SuperficialLossAdj)
+	}
+	// pre-sell buy row must be unchanged ($1500 ACB, $10/share)
+	buyRow := history[0]
+	if !buyRow.RunningACB.Equal(d("1500")) {
+		t.Errorf("RunningACB for pre-sell buy should be unchanged: got %s want 1500", buyRow.RunningACB)
+	}
+}
+
+// TestComputeSuperficialAdjustments_ExhaustedCapacity verifies that when two sells share one
+// replacement buy and the first sell consumes all of its capacity, the second sell is not denied
+// (the !available.IsPositive() continue branch in computeAdjDenied).
+func TestComputeSuperficialAdjustments_ExhaustedCapacity(t *testing.T) {
+	// Buy 100@$10; sell 30@$8 (loss=$60) and sell 30@$8 (loss=$60) on same day;
+	// replacement buy 30@$9 after both sells. First sell exhausts the replacement's 30-share capacity;
+	// second sell finds zero available capacity and is not denied.
+	secID := int64(30)
+	txs := []*transaction.Transaction{
+		{ID: 1, SecurityID: secID, Type: transaction.TypeBuy, TradeDate: date("2024-01-01"), Quantity: d("100"), PriceCAD: d("10"), CommissionCAD: d("0")},
+		{ID: 2, SecurityID: secID, Type: transaction.TypeSell, TradeDate: date("2024-06-01"), Quantity: d("30"), PriceCAD: d("8"), CommissionCAD: d("0")},
+		{ID: 3, SecurityID: secID, Type: transaction.TypeSell, TradeDate: date("2024-06-01"), Quantity: d("30"), PriceCAD: d("8"), CommissionCAD: d("0")},
+		{ID: 4, SecurityID: secID, Type: transaction.TypeBuy, TradeDate: date("2024-06-10"), Quantity: d("30"), PriceCAD: d("9"), CommissionCAD: d("0")},
+	}
+
+	adj, denied, withCarryFwd := service.ComputeSuperficialAdjustments(secID, txs, txs)
+
+	// First sell: full denial (replacement qty=30 == sold qty=30).
+	if denied == nil {
+		t.Fatal("expected non-nil denied map")
+	}
+	if !denied[2].Equal(d("60")) {
+		t.Errorf("denied[sell1]: got %s want 60", denied[2])
+	}
+	// Second sell: replacement capacity exhausted — no denial.
+	if !denied[3].IsZero() {
+		t.Errorf("denied[sell2]: got %s want 0 (capacity exhausted)", denied[3])
+	}
+	// Carry-forward only for first sell.
+	if adj == nil {
+		t.Fatal("expected non-nil adj map")
+	}
+	if !adj[4].Equal(d("60")) {
+		t.Errorf("adj[replacement]: got %s want 60", adj[4])
+	}
+	if _, ok := withCarryFwd[2]; !ok {
+		t.Error("withCarryFwd should have sell ID=2")
+	}
+	if _, ok := withCarryFwd[3]; ok {
+		t.Error("withCarryFwd should NOT have sell ID=3 (capacity exhausted)")
+	}
+}
+
+// TestComputeSuperficialAdjustments_TypeTransferOut verifies that TypeTransferOut (a CRA deemed
+// disposition) triggers the superficial loss rule, same as TypeSell.
+func TestComputeSuperficialAdjustments_TypeTransferOut(t *testing.T) {
+	// Buy 100@$10; transfer-out 50@$8 (loss=$100, deemed disposition);
+	// buy back 50 within 30 days — superficial loss applies.
+	secID := int64(31)
+	txs := []*transaction.Transaction{
+		{ID: 1, SecurityID: secID, Type: transaction.TypeBuy, TradeDate: date("2024-01-15"), Quantity: d("100"), PriceCAD: d("10"), CommissionCAD: d("0")},
+		{ID: 2, SecurityID: secID, Type: transaction.TypeTransferOut, TradeDate: date("2024-06-01"), Quantity: d("50"), PriceCAD: d("8"), CommissionCAD: d("0")},
+		{ID: 3, SecurityID: secID, Type: transaction.TypeBuy, TradeDate: date("2024-06-10"), Quantity: d("50"), PriceCAD: d("8"), CommissionCAD: d("0")},
+	}
+
+	adj, denied, withCarryFwd := service.ComputeSuperficialAdjustments(secID, txs, txs)
+
+	if denied == nil {
+		t.Fatal("expected non-nil denied map")
+	}
+	// Proportional: min(50,50)/50 × 100 = 100 (full denial).
+	if !denied[2].Equal(d("100")) {
+		t.Errorf("denied[transfer-out]: got %s want 100", denied[2])
+	}
+	if adj == nil {
+		t.Fatal("expected non-nil adj map")
+	}
+	if !adj[3].Equal(d("100")) {
+		t.Errorf("adj[replacement buy]: got %s want 100", adj[3])
+	}
+	if _, ok := withCarryFwd[2]; !ok {
+		t.Error("withCarryFwd should have transfer-out ID=2")
+	}
+}
+
+// TestGainsService_HistoryForSecurity_RegisteredRepurchase_HasCarryForwardFalse verifies that
+// when the replacement is registered-only, GainsDetailRow.HasCarryForward is false.
+func TestGainsService_HistoryForSecurity_RegisteredRepurchase_HasCarryForwardFalse(t *testing.T) {
+	secID := int64(40)
+	nonRegTxs := []*transaction.Transaction{
+		{ID: 1, SecurityID: secID, Type: transaction.TypeBuy, TradeDate: date("2024-01-15"), Quantity: d("100"), PriceCAD: d("10"), CommissionCAD: d("0")},
+		{ID: 2, SecurityID: secID, Type: transaction.TypeSell, TradeDate: date("2024-06-01"), Quantity: d("100"), PriceCAD: d("8"), CommissionCAD: d("0")},
+	}
+	regBuy := &transaction.Transaction{
+		ID: 3, SecurityID: secID, Type: transaction.TypeBuy, TradeDate: date("2024-06-10"), Quantity: d("50"), PriceCAD: d("8.50"), CommissionCAD: d("0"),
+	}
+	allTxs := make([]*transaction.Transaction, len(nonRegTxs)+1)
+	copy(allTxs, nonRegTxs)
+	allTxs[len(nonRegTxs)] = regBuy
+	sec := &security.Security{ID: secID, Ticker: "REG", Exchange: "TSX"}
+	store := &mockTxStore{
+		nonRegistered: map[int64][]*transaction.Transaction{secID: nonRegTxs},
+		allAccounts:   map[int64][]*transaction.Transaction{secID: allTxs},
+	}
+	svc := service.NewGainsService(store, &mockSecStore{secs: map[int64]*security.Security{secID: sec}})
+
+	_, history, err := svc.HistoryForSecurity(context.Background(), secID, 1, 2024)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(history) != 2 {
+		t.Fatalf("expected 2 rows, got %d", len(history))
+	}
+	sellRow := history[1]
+	if !sellRow.IsSuperficialLoss {
+		t.Error("expected IsSuperficialLoss=true")
+	}
+	if sellRow.HasCarryForward {
+		t.Error("HasCarryForward should be false for registered-only replacement")
+	}
+	if !sellRow.DeniedAmt.Equal(d("200")) {
+		t.Errorf("DeniedAmt: got %s want 200", sellRow.DeniedAmt)
+	}
+}
+
+// Error path tests for GainsService.Calculate.
+
+func TestGainsService_Calculate_ListDisposalsError(t *testing.T) {
+	store := &mockTxStore{errListDisposals: fmt.Errorf("db error")}
+	svc := service.NewGainsService(store, &mockSecStore{})
+	_, err := svc.Calculate(context.Background(), 1, 2024)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+}
+
+func TestGainsService_Calculate_SecStoreError(t *testing.T) {
+	sell := &transaction.Transaction{
+		ID: 1, SecurityID: 50, Type: transaction.TypeSell, TradeDate: date("2024-06-01"),
+		Quantity: d("10"), PriceCAD: d("10"), CommissionCAD: d("0"),
+	}
+	store := &mockTxStore{
+		nonRegistered: map[int64][]*transaction.Transaction{50: {sell}},
+		allAccounts:   map[int64][]*transaction.Transaction{50: {sell}},
+		sellsByUser:   []*transaction.Transaction{sell},
+	}
+	svc := service.NewGainsService(store, &mockSecStore{errGetByID: fmt.Errorf("sec not found")})
+	_, err := svc.Calculate(context.Background(), 1, 2024)
+	if err == nil {
+		t.Fatal("expected error from secStore, got nil")
+	}
+}
+
+func TestGainsService_Calculate_ListNonRegError(t *testing.T) {
+	sell := &transaction.Transaction{
+		ID: 1, SecurityID: 51, Type: transaction.TypeSell, TradeDate: date("2024-06-01"),
+		Quantity: d("10"), PriceCAD: d("10"), CommissionCAD: d("0"),
+	}
+	sec := &security.Security{ID: 51, Ticker: "ERR", Exchange: "TSX"}
+	store := &mockTxStore{
+		sellsByUser:   []*transaction.Transaction{sell},
+		errListNonReg: fmt.Errorf("list nonreg error"),
+	}
+	svc := service.NewGainsService(store, &mockSecStore{secs: map[int64]*security.Security{51: sec}})
+	_, err := svc.Calculate(context.Background(), 1, 2024)
+	if err == nil {
+		t.Fatal("expected error from ListBySecurityNonRegistered, got nil")
+	}
+}
+
+func TestGainsService_Calculate_ListAllError(t *testing.T) {
+	sell := &transaction.Transaction{
+		ID: 1, SecurityID: 52, Type: transaction.TypeSell, TradeDate: date("2024-06-01"),
+		Quantity: d("10"), PriceCAD: d("10"), CommissionCAD: d("0"),
+	}
+	buy := &transaction.Transaction{
+		ID: 2, SecurityID: 52, Type: transaction.TypeBuy, TradeDate: date("2024-01-01"),
+		Quantity: d("10"), PriceCAD: d("10"), CommissionCAD: d("0"),
+	}
+	sec := &security.Security{ID: 52, Ticker: "ERR2", Exchange: "TSX"}
+	store := &mockTxStore{
+		nonRegistered: map[int64][]*transaction.Transaction{52: {buy, sell}},
+		sellsByUser:   []*transaction.Transaction{sell},
+		errListAll:    fmt.Errorf("list all error"),
+	}
+	svc := service.NewGainsService(store, &mockSecStore{secs: map[int64]*security.Security{52: sec}})
+	_, err := svc.Calculate(context.Background(), 1, 2024)
+	if err == nil {
+		t.Fatal("expected error from ListBySecurityAllAccounts, got nil")
+	}
+}
+
+// Error path tests for GainsService.HistoryForSecurity.
+
+func TestGainsService_HistoryForSecurity_SecStoreError(t *testing.T) {
+	svc := service.NewGainsService(&mockTxStore{}, &mockSecStore{errGetByID: fmt.Errorf("not found")})
+	_, _, err := svc.HistoryForSecurity(context.Background(), 99, 1, 2024)
+	if err == nil {
+		t.Fatal("expected error from secStore, got nil")
+	}
+}
+
+func TestGainsService_HistoryForSecurity_ListNonRegError(t *testing.T) {
+	sec := &security.Security{ID: 60, Ticker: "X", Exchange: "TSX"}
+	store := &mockTxStore{errListNonReg: fmt.Errorf("list error")}
+	svc := service.NewGainsService(store, &mockSecStore{secs: map[int64]*security.Security{60: sec}})
+	_, _, err := svc.HistoryForSecurity(context.Background(), 60, 1, 2024)
+	if err == nil {
+		t.Fatal("expected error from ListBySecurityNonRegistered, got nil")
+	}
+}
+
+func TestGainsService_HistoryForSecurity_ListAllError(t *testing.T) {
+	secID := int64(61)
+	sec := &security.Security{ID: secID, Ticker: "Y", Exchange: "TSX"}
+	sell := &transaction.Transaction{
+		ID: 1, SecurityID: secID, Type: transaction.TypeSell, TradeDate: date("2024-06-01"),
+		Quantity: d("10"), PriceCAD: d("10"), CommissionCAD: d("0"),
+	}
+	buy := &transaction.Transaction{
+		ID: 2, SecurityID: secID, Type: transaction.TypeBuy, TradeDate: date("2024-01-01"),
+		Quantity: d("10"), PriceCAD: d("10"), CommissionCAD: d("0"),
+	}
+	store := &mockTxStore{
+		nonRegistered: map[int64][]*transaction.Transaction{secID: {buy, sell}},
+		errListAll:    fmt.Errorf("all accts error"),
+	}
+	svc := service.NewGainsService(store, &mockSecStore{secs: map[int64]*security.Security{secID: sec}})
+	_, _, err := svc.HistoryForSecurity(context.Background(), secID, 1, 2024)
+	if err == nil {
+		t.Fatal("expected error from ListBySecurityAllAccounts, got nil")
 	}
 }

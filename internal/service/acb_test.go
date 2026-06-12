@@ -1,6 +1,8 @@
 package service_test
 
 import (
+	"context"
+	"fmt"
 	"testing"
 
 	"github.com/gordcurrie/pacioli/internal/service"
@@ -108,5 +110,51 @@ func TestCalculateACB_Empty(t *testing.T) {
 	r := service.CalculateACB(1, nil)
 	if !r.Shares.IsZero() || !r.TotalACB.IsZero() {
 		t.Error("empty transaction list should produce zero result")
+	}
+}
+
+func TestACBService_Calculate_Happy(t *testing.T) {
+	txs := []*transaction.Transaction{
+		{ID: 1, SecurityID: 1, Type: transaction.TypeBuy, Quantity: d("100"), PriceCAD: d("10"), CommissionCAD: d("0")},
+		{ID: 2, SecurityID: 1, Type: transaction.TypeSell, Quantity: d("50"), PriceCAD: d("12"), CommissionCAD: d("0")},
+	}
+	store := &mockTxStore{
+		nonRegistered: map[int64][]*transaction.Transaction{1: txs},
+		allAccounts:   map[int64][]*transaction.Transaction{1: txs},
+	}
+	svc := service.NewACBService(store)
+	result, err := svc.Calculate(context.Background(), 1, 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.Shares.Equal(d("50")) {
+		t.Errorf("shares: got %s want 50", result.Shares)
+	}
+	if !result.TotalACB.Equal(d("500")) {
+		t.Errorf("total ACB: got %s want 500", result.TotalACB)
+	}
+}
+
+func TestACBService_Calculate_ListNonRegError(t *testing.T) {
+	store := &mockTxStore{errListNonReg: fmt.Errorf("db error")}
+	svc := service.NewACBService(store)
+	_, err := svc.Calculate(context.Background(), 1, 1)
+	if err == nil {
+		t.Fatal("expected error from ListBySecurityNonRegistered, got nil")
+	}
+}
+
+func TestACBService_Calculate_ListAllError(t *testing.T) {
+	txs := []*transaction.Transaction{
+		{ID: 1, SecurityID: 1, Type: transaction.TypeBuy, Quantity: d("100"), PriceCAD: d("10"), CommissionCAD: d("0")},
+	}
+	store := &mockTxStore{
+		nonRegistered: map[int64][]*transaction.Transaction{1: txs},
+		errListAll:    fmt.Errorf("all accts error"),
+	}
+	svc := service.NewACBService(store)
+	_, err := svc.Calculate(context.Background(), 1, 1)
+	if err == nil {
+		t.Fatal("expected error from ListBySecurityAllAccounts, got nil")
 	}
 }

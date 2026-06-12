@@ -90,7 +90,7 @@ func (s *GainsService) Calculate(ctx context.Context, userID int64, year int) (*
 			return nil, fmt.Errorf("gains calculate: list all txs for security %d: %w", secID, err)
 		}
 
-		adj, denied := ComputeSuperficialAdjustments(secID, txs, allTxs)
+		adj, denied, _ := ComputeSuperficialAdjustments(secID, txs, allTxs)
 		_, history := CalculateACBWithHistory(secID, txs, adj)
 
 		for _, row := range history {
@@ -148,9 +148,12 @@ func (s *GainsService) Calculate(ctx context.Context, userID int64, year int) (*
 // disposition detail page.
 type GainsDetailRow struct {
 	HistoryRow
-	IsDisposal  bool
-	NeedsReview bool            // disposal with no prior share position — ACB unknown, GainLoss suppressed
-	GainLoss    decimal.Decimal // zero for non-disposal rows and NeedsReview disposals
+	IsDisposal        bool
+	NeedsReview       bool            // disposal with no prior share position — ACB unknown, GainLoss suppressed
+	GainLoss          decimal.Decimal // zero for non-disposal rows and NeedsReview disposals
+	IsSuperficialLoss bool            // loss is (fully or partially) denied under CRA superficial loss rules
+	HasCarryForward   bool            // true when denied loss carries forward to a non-reg replacement; false for registered-only replacement
+	DeniedAmt         decimal.Decimal // portion of the loss that is denied
 }
 
 // HistoryForSecurity returns the ACB history for a security trimmed to all rows
@@ -183,7 +186,7 @@ func (s *GainsService) HistoryForSecurity(ctx context.Context, securityID, userI
 	if err != nil {
 		return nil, nil, fmt.Errorf("history for security %d: list all transactions: %w", securityID, err)
 	}
-	adj, _ := ComputeSuperficialAdjustments(securityID, txs, allTxs)
+	adj, denied, withCarryFwd := ComputeSuperficialAdjustments(securityID, txs, allTxs)
 	_, history := CalculateACBWithHistory(securityID, txs, adj)
 
 	lastIdx := -1
@@ -192,9 +195,6 @@ func (s *GainsService) HistoryForSecurity(ctx context.Context, securityID, userI
 			lastIdx = i
 		}
 	}
-	if lastIdx == -1 {
-		return sec, nil, nil
-	}
 
 	trimmed := history[:lastIdx+1]
 	out := make([]GainsDetailRow, len(trimmed))
@@ -202,10 +202,26 @@ func (s *GainsService) HistoryForSecurity(ctx context.Context, securityID, userI
 		isDisposal := isDisposalType(row.Tx.Type)
 		needsReview := isDisposal && row.PreTxShares.IsZero()
 		var gainLoss decimal.Decimal
+		var isSuperficialLoss bool
+		var hasCarryForward bool
+		var deniedAmt decimal.Decimal
 		if isDisposal && !needsReview {
 			gainLoss = proceedsCAD(row.Tx).Sub(row.PreTxACBPerShare.Mul(row.Tx.Quantity))
+			if da, ok := denied[row.Tx.ID]; ok {
+				isSuperficialLoss = true
+				deniedAmt = da
+				_, hasCarryForward = withCarryFwd[row.Tx.ID]
+			}
 		}
-		out[i] = GainsDetailRow{HistoryRow: row, IsDisposal: isDisposal, NeedsReview: needsReview, GainLoss: gainLoss}
+		out[i] = GainsDetailRow{
+			HistoryRow:        row,
+			IsDisposal:        isDisposal,
+			NeedsReview:       needsReview,
+			GainLoss:          gainLoss,
+			IsSuperficialLoss: isSuperficialLoss,
+			HasCarryForward:   hasCarryForward,
+			DeniedAmt:         deniedAmt,
+		}
 	}
 	return sec, out, nil
 }

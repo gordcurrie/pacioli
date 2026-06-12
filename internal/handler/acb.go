@@ -86,7 +86,7 @@ func (h *Handler) showACB(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	adj, _ := service.ComputeSuperficialAdjustments(id, txs, allTxs)
+	adj, _, _ := service.ComputeSuperficialAdjustments(id, txs, allTxs)
 	result, rows := service.CalculateACBWithHistory(id, txs, adj)
 
 	h.render(w, r,"acb", acbDetailPageData{
