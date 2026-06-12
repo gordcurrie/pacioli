@@ -153,10 +153,13 @@ func checkSuperficialLoss(allTxs []*transaction.Transaction, sellDate time.Time)
 
 	hasWindowBuy := false
 	for _, tx := range allTxs {
+		if tx.TradeDate.After(windowEnd) {
+			break
+		}
 		if !isAcquisitionType(tx.Type) {
 			continue
 		}
-		if !tx.TradeDate.Before(windowStart) && !tx.TradeDate.After(windowEnd) {
+		if !tx.TradeDate.Before(windowStart) {
 			hasWindowBuy = true
 			break
 		}
@@ -210,12 +213,12 @@ func computeAdjDenied(securityID int64, nonRegTxs, allTxs []*transaction.Transac
 		windowStart, windowEnd := superficialLossWindow(row.Tx.TradeDate)
 
 		// Post-sell search: same-day acquisitions count as replacements per CRA.
+		// Start at histIdx (the sell itself) — nonRegTxs[histIdx] == row.Tx, which is not an
+		// acquisition type, so it's skipped without an extra date check.
 		var replacementTx *transaction.Transaction
 		preSell := false
-		for _, tx := range nonRegTxs {
-			if tx.TradeDate.Before(row.Tx.TradeDate) {
-				continue
-			}
+		for i := histIdx; i < len(nonRegTxs); i++ {
+			tx := nonRegTxs[i]
 			if tx.TradeDate.After(windowEnd) {
 				break
 			}
