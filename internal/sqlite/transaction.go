@@ -96,7 +96,10 @@ func (r *TransactionStore) ListDistinctNonRegisteredSecurityIDsByUser(ctx contex
 		}
 		ids = append(ids, id)
 	}
-	return ids, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list distinct security IDs with disposals: %w", err)
+	}
+	return ids, nil
 }
 
 func (r *TransactionStore) ListNonRegisteredDisposalsByUser(ctx context.Context, userID int64, from, to time.Time) ([]*transaction.Transaction, error) {

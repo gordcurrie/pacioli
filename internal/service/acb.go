@@ -200,6 +200,11 @@ func computeAdjDenied(securityID int64, nonRegTxs, allTxs []*transaction.Transac
 
 	allocated := make(map[int64]decimal.Decimal) // replacement capacity already used across sells
 
+	// replFloor is a moving lower-bound index into allTxs (sorted trade_date asc).
+	// Sells are processed in ascending date order so windowStart is non-decreasing;
+	// replFloor only advances, keeping the per-sell window scan O(window-size).
+	replFloor := 0
+
 	for _, row := range history {
 		if !isDisposalType(row.Tx.Type) {
 			continue
@@ -222,15 +227,20 @@ func computeAdjDenied(securityID int64, nonRegTxs, allTxs []*transaction.Transac
 		windowStart, windowEnd := superficialLossWindow(row.Tx.TradeDate)
 		soldQty := row.Tx.Quantity
 
+		// Advance replFloor to the first allTxs entry on or after windowStart.
+		// Sells are in ascending date order so windowStart is non-decreasing;
+		// replFloor only moves forward across the entire outer loop.
+		for replFloor < len(allTxs) && allTxs[replFloor].TradeDate.Before(windowStart) {
+			replFloor++
+		}
+
 		// Collect ALL acquisitions in [windowStart, windowEnd] from allTxs (all accounts).
 		// allTxs is sorted trade_date asc; break early once past windowEnd.
 		// Pre-sell and post-sell replacements both contribute to denial per CRA.
 		// Non-reg buys receive carry-forward; registered buys count for denial only.
 		var repls []replCandidate
-		for _, tx := range allTxs {
-			if tx.TradeDate.Before(windowStart) {
-				continue
-			}
+		for i := replFloor; i < len(allTxs); i++ {
+			tx := allTxs[i]
 			if tx.TradeDate.After(windowEnd) {
 				break
 			}
