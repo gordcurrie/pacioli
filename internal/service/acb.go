@@ -157,7 +157,12 @@ func CalculateACB(securityID int64, txs []*transaction.Transaction) *ACBResult {
 // reverse Norbert's acquisitions will be under-counted as a result, but that is the less harmful
 // direction (may miss a superficial loss, not create a false one). A direction field on Transaction
 // would eliminate the ambiguity.
-func checkSuperficialLoss(allTxs []*transaction.Transaction, sellDate time.Time) bool {
+// checkSuperficialLoss returns (isSuperf, netSharesAtWindowEnd).
+// isSuperf is true when the sell qualifies as a superficial loss: there is an acquisition
+// within the ±30-day window AND the net position at windowEnd is positive.
+// netSharesAtWindowEnd is the running net share count at the end of the window across all
+// accounts — used by the caller to cap the effective replacement quantity per CRA rules.
+func checkSuperficialLoss(allTxs []*transaction.Transaction, sellDate time.Time) (bool, decimal.Decimal) {
 	windowStart, windowEnd := superficialLossWindow(sellDate)
 
 	var shares decimal.Decimal
@@ -176,7 +181,7 @@ func checkSuperficialLoss(allTxs []*transaction.Transaction, sellDate time.Time)
 			shares = shares.Sub(tx.Quantity)
 		}
 	}
-	return hasWindowBuy && shares.IsPositive()
+	return hasWindowBuy && shares.IsPositive(), shares
 }
 
 // replCandidate is a replacement acquisition found in the superficial-loss window.
@@ -220,7 +225,8 @@ func computeAdjDenied(securityID int64, nonRegTxs, allTxs []*transaction.Transac
 		if !gainLoss.IsNegative() {
 			continue
 		}
-		if !checkSuperficialLoss(allTxs, row.Tx.TradeDate) {
+		isSuperf, netAtEnd := checkSuperficialLoss(allTxs, row.Tx.TradeDate)
+		if !isSuperf {
 			continue
 		}
 
@@ -266,7 +272,13 @@ func computeAdjDenied(securityID int64, nonRegTxs, allTxs []*transaction.Transac
 			nonReg  bool
 		}
 		var contribs []replContrib
+		// Cap effective replacement at the net position at windowEnd per CRA rules.
+		// Prevents over-denial when window acquisitions exceed the final held position
+		// (e.g. pre-sell buy 100, sell all 100, post-sell buy 1 → only 1/100 denied).
 		remaining := soldQty
+		if netAtEnd.LessThan(remaining) {
+			remaining = netAtEnd
+		}
 		for _, r := range repls {
 			avail := r.tx.Quantity.Sub(allocated[r.tx.ID])
 			if !avail.IsPositive() {

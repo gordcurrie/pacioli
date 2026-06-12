@@ -414,8 +414,8 @@ func TestGainsService_NeedsReview_NoACBBuy(t *testing.T) {
 
 func TestGainsService_SuperficialLoss_NonRegRepurchase_CarryForward(t *testing.T) {
 	// Buy 100 @ $10, sell 100 @ $8 (loss=$200) then buy 50 @ $8.50 in same non-reg within 30 days.
-	// Superficial loss: $200 denied loss carries forward to replacement buy's ACB.
-	// Replacement buy cost: 50*8.50 = $425 + $200 carry-forward = $625 total ACB.
+	// Proportional denial: 50 replacement / 100 sold → $100 carry-forward to replacement buy's ACB.
+	// Replacement buy cost: 50*8.50 = $425 + $100 carry-forward = $525 total ACB.
 	txs := []*transaction.Transaction{
 		{ID: 1, SecurityID: 6, Type: transaction.TypeBuy, TradeDate: date("2024-01-15"), Quantity: d("100"), PriceCAD: d("10"), CommissionCAD: d("0")},
 		{ID: 2, SecurityID: 6, Type: transaction.TypeSell, TradeDate: date("2024-06-01"), Quantity: d("100"), PriceCAD: d("8"), CommissionCAD: d("0")},
@@ -903,6 +903,34 @@ func TestComputeSuperficialAdjustments_RegisteredAndNonRegReplacement(t *testing
 	}
 	if _, ok := withCarryFwd[2]; !ok {
 		t.Error("withCarryFwd should have sell ID=2")
+	}
+}
+
+// TestComputeSuperficialAdjustments_NetPositionCapsDenial verifies that denial is proportional
+// to the net position at windowEnd, not total window acquisitions. When all pre-sell shares are
+// disposed in the triggering sell, only post-sell replacement shares count toward the denied fraction.
+func TestComputeSuperficialAdjustments_NetPositionCapsDenial(t *testing.T) {
+	// Buy 100 @ $10 (pre-sell, inside window), sell all 100 @ $7 (loss=$300), buy 1 @ $7 (post-sell).
+	// Net position at windowEnd = 1. Only 1 of 100 sold shares is replaced → denial = 300 × 1/100 = 3.
+	txs := []*transaction.Transaction{
+		{ID: 1, SecurityID: 9, Type: transaction.TypeBuy, TradeDate: date("2024-06-05"), Quantity: d("100"), PriceCAD: d("10"), CommissionCAD: d("0")},
+		{ID: 2, SecurityID: 9, Type: transaction.TypeSell, TradeDate: date("2024-06-15"), Quantity: d("100"), PriceCAD: d("7"), CommissionCAD: d("0")},
+		{ID: 3, SecurityID: 9, Type: transaction.TypeBuy, TradeDate: date("2024-06-20"), Quantity: d("1"), PriceCAD: d("7"), CommissionCAD: d("0")},
+	}
+	adj, denied, withCarryFwd := service.ComputeSuperficialAdjustments(9, txs, txs)
+	if len(denied) != 1 {
+		t.Fatalf("expected 1 denied entry, got %d", len(denied))
+	}
+	// denial = 300 × 1/100 = 3
+	if !denied[2].Equal(d("3")) {
+		t.Errorf("denied: got %s want 3", denied[2])
+	}
+	// carry-forward = $3 eventually reaches the post-sell buy (via pendingAdj)
+	if len(adj) == 0 {
+		t.Error("expected adj entry for carry-forward")
+	}
+	if _, ok := withCarryFwd[2]; !ok {
+		t.Error("expected withCarryFwd for sell ID=2")
 	}
 }
 
