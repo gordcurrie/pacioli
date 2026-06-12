@@ -58,19 +58,9 @@ func (s *GainsService) Calculate(ctx context.Context, userID int64, year int) (*
 	from := time.Date(year, 1, 1, 0, 0, 0, 0, time.UTC)
 	to := time.Date(year, 12, 31, 0, 0, 0, 0, time.UTC)
 
-	sells, err := s.txStore.ListNonRegisteredDisposalsByUser(ctx, userID, from, to)
+	secIDs, err := s.txStore.ListDistinctNonRegisteredSecurityIDsByUser(ctx, userID, from, to)
 	if err != nil {
 		return nil, fmt.Errorf("gains calculate: %w", err)
-	}
-
-	// collect distinct security IDs in first-seen order to keep report stable
-	seen := make(map[int64]struct{})
-	var secIDs []int64
-	for _, tx := range sells {
-		if _, ok := seen[tx.SecurityID]; !ok {
-			seen[tx.SecurityID] = struct{}{}
-			secIDs = append(secIDs, tx.SecurityID)
-		}
 	}
 
 	report := &GainsReport{Year: year}

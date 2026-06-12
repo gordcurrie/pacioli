@@ -38,6 +38,22 @@ func (m *mockTxStore) ListBySecurityNonRegistered(_ context.Context, securityID,
 	}
 	return m.nonRegistered[securityID], nil
 }
+func (m *mockTxStore) ListDistinctNonRegisteredSecurityIDsByUser(_ context.Context, _ int64, from, to time.Time) ([]int64, error) {
+	if m.errListDisposals != nil {
+		return nil, m.errListDisposals
+	}
+	seen := make(map[int64]struct{})
+	var ids []int64
+	for _, tx := range m.sellsByUser {
+		if !tx.TradeDate.Before(from) && !tx.TradeDate.After(to) {
+			if _, ok := seen[tx.SecurityID]; !ok {
+				seen[tx.SecurityID] = struct{}{}
+				ids = append(ids, tx.SecurityID)
+			}
+		}
+	}
+	return ids, nil
+}
 func (m *mockTxStore) ListNonRegisteredDisposalsByUser(_ context.Context, _ int64, from, to time.Time) ([]*transaction.Transaction, error) {
 	if m.errListDisposals != nil {
 		return nil, m.errListDisposals
@@ -194,8 +210,9 @@ func TestGainsService_SuperficialLoss_RegisteredRepurchase(t *testing.T) {
 	if !report.Lines[0].IsSuperficialLoss {
 		t.Error("expected superficial loss flag")
 	}
-	if !report.SuperficialLossTotal.Equal(d("200")) {
-		t.Errorf("superficial loss total: got %s want 200", report.SuperficialLossTotal)
+	// Proportional: min(50,100)/100 × 200 = 100.
+	if !report.SuperficialLossTotal.Equal(d("100")) {
+		t.Errorf("superficial loss total: got %s want 100", report.SuperficialLossTotal)
 	}
 }
 
@@ -507,8 +524,9 @@ func TestComputeSuperficialAdjustments_RegisteredRepurchase_NoCarryForward(t *te
 	if denied == nil {
 		t.Fatal("expected non-nil denied map")
 	}
-	if !denied[2].Equal(d("200")) {
-		t.Errorf("denied loss on sell (ID=2): got %s want 200", denied[2])
+	// Proportional: min(50,100)/100 × 200 = 100.
+	if !denied[2].Equal(d("100")) {
+		t.Errorf("denied loss on sell (ID=2): got %s want 100", denied[2])
 	}
 }
 
@@ -700,6 +718,70 @@ func TestComputeSuperficialAdjustments_TypeTransferOut(t *testing.T) {
 	}
 }
 
+// TestComputeSuperficialAdjustments_MultipleReplacementBuys verifies that when there are
+// multiple post-sell acquisition transactions within the window, ALL are treated as replacements
+// and carry-forward is distributed proportionally across them.
+func TestComputeSuperficialAdjustments_MultipleReplacementBuys(t *testing.T) {
+	// Buy 100@$10; sell 100@$7 (loss=$300);
+	// replacement buy1 10@$7.50 on day+5, replacement buy2 50@$8 on day+25.
+	// Effective replacement = 60 shares = 60% of loss denied.
+	// denied = 300 × 60/100 = 180
+	// adj[buy1] = 300 × 10/100 = 30; adj[buy2] = 300 × 50/100 = 150
+	secID := int64(50)
+	txs := []*transaction.Transaction{
+		{ID: 1, SecurityID: secID, Type: transaction.TypeBuy, TradeDate: date("2024-01-01"), Quantity: d("100"), PriceCAD: d("10"), CommissionCAD: d("0")},
+		{ID: 2, SecurityID: secID, Type: transaction.TypeSell, TradeDate: date("2024-06-01"), Quantity: d("100"), PriceCAD: d("7"), CommissionCAD: d("0")},
+		{ID: 3, SecurityID: secID, Type: transaction.TypeBuy, TradeDate: date("2024-06-06"), Quantity: d("10"), PriceCAD: d("7.50"), CommissionCAD: d("0")},
+		{ID: 4, SecurityID: secID, Type: transaction.TypeBuy, TradeDate: date("2024-06-26"), Quantity: d("50"), PriceCAD: d("8"), CommissionCAD: d("0")},
+	}
+
+	adj, denied, withCarryFwd := service.ComputeSuperficialAdjustments(secID, txs, txs)
+
+	if denied == nil {
+		t.Fatal("expected non-nil denied map")
+	}
+	if !denied[2].Equal(d("180")) {
+		t.Errorf("denied[sell]: got %s want 180", denied[2])
+	}
+	if adj == nil {
+		t.Fatal("expected non-nil adj map")
+	}
+	if !adj[3].Equal(d("30")) {
+		t.Errorf("adj[buy1]: got %s want 30", adj[3])
+	}
+	if !adj[4].Equal(d("150")) {
+		t.Errorf("adj[buy2]: got %s want 150", adj[4])
+	}
+	if _, ok := withCarryFwd[2]; !ok {
+		t.Error("withCarryFwd should have sell ID=2")
+	}
+}
+
+// TestComputeSuperficialAdjustments_FXConversionReducesNetPosition verifies that a
+// TypeFXConversion disposal (Norbert's Gambit give-leg) reduces the net position in
+// checkSuperficialLoss, so a subsequent sell is NOT flagged as superficial.
+func TestComputeSuperficialAdjustments_FXConversionReducesNetPosition(t *testing.T) {
+	// Buy 100 DLR.TO; convert all via Norbert's Gambit (TypeFXConversion disposes 100 shares);
+	// buy back 10 within 30 days; sell those 10 at a loss.
+	// After the FXConversion, net position at window end = 10 (bought back) - 10 (sold) = 0.
+	// checkSuperficialLoss should return false → no denial.
+	secID := int64(51)
+	txs := []*transaction.Transaction{
+		{ID: 1, SecurityID: secID, Type: transaction.TypeBuy, TradeDate: date("2024-01-01"), Quantity: d("100"), PriceCAD: d("10"), CommissionCAD: d("0")},
+		{ID: 2, SecurityID: secID, Type: transaction.TypeFXConversion, TradeDate: date("2024-06-01"), Quantity: d("100"), PriceCAD: d("10"), CommissionCAD: d("0")},
+		{ID: 3, SecurityID: secID, Type: transaction.TypeBuy, TradeDate: date("2024-06-05"), Quantity: d("10"), PriceCAD: d("9"), CommissionCAD: d("0")},
+		{ID: 4, SecurityID: secID, Type: transaction.TypeSell, TradeDate: date("2024-06-10"), Quantity: d("10"), PriceCAD: d("8"), CommissionCAD: d("0")},
+	}
+	// nonRegTxs excludes the FXConversion (it doesn't affect ACB); allTxs includes everything
+	nonRegTxs := []*transaction.Transaction{txs[0], txs[2], txs[3]}
+
+	_, denied, _ := service.ComputeSuperficialAdjustments(secID, nonRegTxs, txs)
+
+	if denied != nil && !denied[4].IsZero() {
+		t.Errorf("sell should not be superficial (net position = 0 after FXConversion), got denied=%s", denied[4])
+	}
+}
+
 // TestGainsService_HistoryForSecurity_RegisteredRepurchase_HasCarryForwardFalse verifies that
 // when the replacement is registered-only, GainsDetailRow.HasCarryForward is false.
 func TestGainsService_HistoryForSecurity_RegisteredRepurchase_HasCarryForwardFalse(t *testing.T) {
@@ -735,8 +817,92 @@ func TestGainsService_HistoryForSecurity_RegisteredRepurchase_HasCarryForwardFal
 	if sellRow.HasCarryForward {
 		t.Error("HasCarryForward should be false for registered-only replacement")
 	}
-	if !sellRow.DeniedAmt.Equal(d("200")) {
-		t.Errorf("DeniedAmt: got %s want 200", sellRow.DeniedAmt)
+	// Proportional: min(50,100)/100 × 200 = 100.
+	if !sellRow.DeniedAmt.Equal(d("100")) {
+		t.Errorf("DeniedAmt: got %s want 100", sellRow.DeniedAmt)
+	}
+}
+
+// TestComputeSuperficialAdjustments_PreAndPostSellBothContribute verifies that pre-sell and
+// post-sell non-reg replacement buys both contribute to denial proportionally.
+func TestComputeSuperficialAdjustments_PreAndPostSellBothContribute(t *testing.T) {
+	// Buy 50@$10 (day-35, outside window). Buy 20@$10 (day-10, pre-sell, inside window).
+	// ACB is $10/share throughout, so sell ACB is exact.
+	// Sell 50@$7 (day 0, loss = 50*7 - 50*10 = -150).
+	// Buy 30@$7.50 (day+15, post-sell, inside window).
+	// Total replacement capacity = 20+30=50 = soldQty → full denial.
+	// adj[sell] = 150*20/50 = 60 (pre-sell → keyed to sell ID).
+	// adj[postBuy] = 150*30/50 = 90 (post-sell → keyed to buy ID).
+	secID := int64(60)
+	base := date("2024-06-01") // sell date
+	txs := []*transaction.Transaction{
+		{ID: 1, SecurityID: secID, Type: transaction.TypeBuy, TradeDate: base.AddDate(0, 0, -35), Quantity: d("50"), PriceCAD: d("10"), CommissionCAD: d("0")},
+		{ID: 2, SecurityID: secID, Type: transaction.TypeBuy, TradeDate: base.AddDate(0, 0, -10), Quantity: d("20"), PriceCAD: d("10"), CommissionCAD: d("0")},
+		{ID: 3, SecurityID: secID, Type: transaction.TypeSell, TradeDate: base, Quantity: d("50"), PriceCAD: d("7"), CommissionCAD: d("0")},
+		{ID: 4, SecurityID: secID, Type: transaction.TypeBuy, TradeDate: base.AddDate(0, 0, 15), Quantity: d("30"), PriceCAD: d("7.50"), CommissionCAD: d("0")},
+	}
+
+	adj, denied, withCarryFwd := service.ComputeSuperficialAdjustments(secID, txs, txs)
+
+	if denied == nil {
+		t.Fatal("expected non-nil denied map")
+	}
+	if !denied[3].Equal(d("150")) {
+		t.Errorf("denied[sell]: got %s want 150 (full denial)", denied[3])
+	}
+	if adj == nil {
+		t.Fatal("expected non-nil adj map")
+	}
+	if !adj[3].Equal(d("60")) {
+		t.Errorf("adj[sell] (pre-sell carry-forward): got %s want 60", adj[3])
+	}
+	if !adj[4].Equal(d("90")) {
+		t.Errorf("adj[postBuy] (post-sell carry-forward): got %s want 90", adj[4])
+	}
+	if _, ok := withCarryFwd[3]; !ok {
+		t.Error("withCarryFwd should have sell ID=3")
+	}
+}
+
+// TestComputeSuperficialAdjustments_RegisteredAndNonRegReplacement verifies that when both
+// a registered and a non-reg replacement buy exist in the window, the registered buy contributes
+// to the denial but only the non-reg buy receives a carry-forward.
+func TestComputeSuperficialAdjustments_RegisteredAndNonRegReplacement(t *testing.T) {
+	// Sell 100@$8 (loss=$200). Non-reg buy 30 post-sell. Registered buy 40 post-sell.
+	// Total replacement = 30+40=70 → denied = 200*70/100 = 140.
+	// adj[nonRegBuy] = 200*30/100 = 60; registered buy gets no carry-forward.
+	secID := int64(61)
+	nonRegTxs := []*transaction.Transaction{
+		{ID: 1, SecurityID: secID, Type: transaction.TypeBuy, TradeDate: date("2024-01-15"), Quantity: d("100"), PriceCAD: d("10"), CommissionCAD: d("0")},
+		{ID: 2, SecurityID: secID, Type: transaction.TypeSell, TradeDate: date("2024-06-01"), Quantity: d("100"), PriceCAD: d("8"), CommissionCAD: d("0")},
+		{ID: 3, SecurityID: secID, Type: transaction.TypeBuy, TradeDate: date("2024-06-10"), Quantity: d("30"), PriceCAD: d("8"), CommissionCAD: d("0")},
+	}
+	regBuy := &transaction.Transaction{
+		ID: 4, SecurityID: secID, Type: transaction.TypeBuy, TradeDate: date("2024-06-15"), Quantity: d("40"), PriceCAD: d("8"), CommissionCAD: d("0"),
+	}
+	allTxs := make([]*transaction.Transaction, len(nonRegTxs)+1)
+	copy(allTxs, nonRegTxs)
+	allTxs[len(nonRegTxs)] = regBuy
+
+	adj, denied, withCarryFwd := service.ComputeSuperficialAdjustments(secID, nonRegTxs, allTxs)
+
+	if denied == nil {
+		t.Fatal("expected non-nil denied map")
+	}
+	if !denied[2].Equal(d("140")) {
+		t.Errorf("denied[sell]: got %s want 140", denied[2])
+	}
+	if adj == nil {
+		t.Fatal("expected non-nil adj map")
+	}
+	if !adj[3].Equal(d("60")) {
+		t.Errorf("adj[nonRegBuy]: got %s want 60", adj[3])
+	}
+	if !adj[4].IsZero() {
+		t.Errorf("adj[regBuy]: got %s want 0 (registered, no carry-forward)", adj[4])
+	}
+	if _, ok := withCarryFwd[2]; !ok {
+		t.Error("withCarryFwd should have sell ID=2")
 	}
 }
 

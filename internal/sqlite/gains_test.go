@@ -69,6 +69,63 @@ func TestTransactionStore_ListNonRegisteredDisposalsByUser(t *testing.T) {
 	}
 }
 
+func TestTransactionStore_ListDistinctNonRegisteredSecurityIDsByUser(t *testing.T) {
+	db := newTestDB(t)
+	accounts := sqlite.NewAccountStore(db)
+	securities := sqlite.NewSecurityStore(db)
+	txStore := sqlite.NewTransactionStore(db)
+	ctx := context.Background()
+
+	margin := &account.Account{UserID: 1, Name: "Margin", Type: account.TypeMargin, Broker: "B", Currency: "CAD"}
+	tfsa := &account.Account{UserID: 1, Name: "TFSA", Type: account.TypeTFSA, Broker: "B", Currency: "CAD"}
+	other := &account.Account{UserID: 2, Name: "Other", Type: account.TypeMargin, Broker: "B", Currency: "CAD"}
+	for _, acc := range []*account.Account{margin, tfsa, other} {
+		if err := accounts.Create(ctx, acc); err != nil {
+			t.Fatalf("create account: %v", err)
+		}
+	}
+
+	sec1 := &security.Security{Ticker: "S1", Exchange: "TSX", Name: "S1", Type: security.TypeEquity, Currency: "CAD"}
+	sec2 := &security.Security{Ticker: "S2", Exchange: "TSX", Name: "S2", Type: security.TypeEquity, Currency: "CAD"}
+	for _, s := range []*security.Security{sec1, sec2} {
+		if err := securities.Create(ctx, s); err != nil {
+			t.Fatalf("create security: %v", err)
+		}
+	}
+
+	inYear := time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC)
+	seed := func(accID, secID int64, typ transaction.Type, date time.Time) {
+		tx := &transaction.Transaction{
+			AccountID: accID, SecurityID: secID, Type: typ,
+			TradeDate: date, SettledDate: date,
+			Quantity: decimal.NewFromInt(10), PriceCAD: decimal.NewFromFloat(10),
+			Source: transaction.SourceManual,
+		}
+		if err := txStore.Create(ctx, tx); err != nil {
+			t.Fatalf("seed tx: %v", err)
+		}
+	}
+
+	seed(margin.ID, sec1.ID, transaction.TypeSell, inYear)                                   // user1 non-reg sec1 — included
+	seed(margin.ID, sec2.ID, transaction.TypeSell, inYear)                                   // user1 non-reg sec2 — included
+	seed(margin.ID, sec1.ID, transaction.TypeSell, inYear.AddDate(0, 0, 1))                  // duplicate sec1 — deduplicated
+	seed(tfsa.ID, sec1.ID, transaction.TypeSell, inYear)                                     // registered — excluded
+	seed(other.ID, sec1.ID, transaction.TypeSell, inYear)                                    // user2 — excluded
+	seed(margin.ID, sec1.ID, transaction.TypeBuy, inYear)                                    // wrong type — excluded
+	seed(margin.ID, sec1.ID, transaction.TypeSell, time.Date(2023, 6, 1, 0, 0, 0, 0, time.UTC)) // out of range — excluded
+
+	from := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	to := time.Date(2024, 12, 31, 0, 0, 0, 0, time.UTC)
+
+	got, err := txStore.ListDistinctNonRegisteredSecurityIDsByUser(ctx, 1, from, to)
+	if err != nil {
+		t.Fatalf("ListDistinctNonRegisteredSecurityIDsByUser: %v", err)
+	}
+	if len(got) != 2 {
+		t.Errorf("expected 2 distinct security IDs, got %d: %v", len(got), got)
+	}
+}
+
 func TestTransactionStore_ListBySecurityAllAccounts(t *testing.T) {
 	db := newTestDB(t)
 	accounts := sqlite.NewAccountStore(db)

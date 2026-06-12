@@ -70,7 +70,12 @@ func superficialLossWindow(sellDate time.Time) (start, end time.Time) {
 func CalculateACBWithHistory(securityID int64, txs []*transaction.Transaction, adj map[int64]decimal.Decimal) (*ACBResult, []HistoryRow) {
 	r := &ACBResult{SecurityID: securityID}
 	rows := make([]HistoryRow, 0, len(txs))
-	var pendingAdj decimal.Decimal // pre-sell carry-forward deferred when a sell emptied the pool
+	// pendingAdj holds a pre-sell carry-forward that couldn't be applied because a sell emptied
+	// the pool. It is applied to the next acquisition. If no acquisition follows in this dataset
+	// (e.g. the buy is in a later import batch), pendingAdj is silently lost — a known limitation
+	// at import boundaries. Returning it from this function and threading it through callers
+	// would fix this but is out of scope for now.
+	var pendingAdj decimal.Decimal
 	for _, tx := range txs {
 		preTxShares := r.Shares
 		var preTxACBPerShare decimal.Decimal
@@ -148,27 +153,15 @@ func CalculateACB(securityID int64, txs []*transaction.Transaction) *ACBResult {
 // there must be an acquisition within the ±30-day window AND a positive net position
 // across all accounts at the end of that window.
 // allTxs must be sorted by trade_date ascending and include transactions from all accounts.
+// TypeFXConversion (Norbert's Gambit give-leg) is treated as a disposal for net position purposes;
+// reverse Norbert's acquisitions will be under-counted as a result, but that is the less harmful
+// direction (may miss a superficial loss, not create a false one). A direction field on Transaction
+// would eliminate the ambiguity.
 func checkSuperficialLoss(allTxs []*transaction.Transaction, sellDate time.Time) bool {
 	windowStart, windowEnd := superficialLossWindow(sellDate)
 
-	hasWindowBuy := false
-	for _, tx := range allTxs {
-		if tx.TradeDate.After(windowEnd) {
-			break
-		}
-		if !isAcquisitionType(tx.Type) {
-			continue
-		}
-		if !tx.TradeDate.Before(windowStart) {
-			hasWindowBuy = true
-			break
-		}
-	}
-	if !hasWindowBuy {
-		return false
-	}
-
 	var shares decimal.Decimal
+	hasWindowBuy := false
 	for _, tx := range allTxs {
 		if tx.TradeDate.After(windowEnd) {
 			break
@@ -176,11 +169,21 @@ func checkSuperficialLoss(allTxs []*transaction.Transaction, sellDate time.Time)
 		switch {
 		case isAcquisitionType(tx.Type):
 			shares = shares.Add(tx.Quantity)
-		case isDisposalType(tx.Type):
+			if !tx.TradeDate.Before(windowStart) {
+				hasWindowBuy = true
+			}
+		case isDisposalType(tx.Type) || tx.Type == transaction.TypeFXConversion:
 			shares = shares.Sub(tx.Quantity)
 		}
 	}
-	return shares.IsPositive()
+	return hasWindowBuy && shares.IsPositive()
+}
+
+// replCandidate is a replacement acquisition found in the superficial-loss window.
+type replCandidate struct {
+	tx      *transaction.Transaction
+	preSell bool // true when the acquisition precedes the sell date
+	nonReg  bool // true when the acquisition is in a non-registered account (carry-forward eligible)
 }
 
 // computeAdjDenied is the inner single-pass computation used by ComputeSuperficialAdjustments.
@@ -189,9 +192,15 @@ func checkSuperficialLoss(allTxs []*transaction.Transaction, sellDate time.Time)
 func computeAdjDenied(securityID int64, nonRegTxs, allTxs []*transaction.Transaction, priorAdj map[int64]decimal.Decimal) (adj, denied map[int64]decimal.Decimal, withCarryFwd map[int64]struct{}) {
 	_, history := CalculateACBWithHistory(securityID, nonRegTxs, priorAdj)
 
+	// Index non-reg transactions for O(1) carry-forward eligibility checks.
+	nonRegByID := make(map[int64]struct{}, len(nonRegTxs))
+	for _, tx := range nonRegTxs {
+		nonRegByID[tx.ID] = struct{}{}
+	}
+
 	allocated := make(map[int64]decimal.Decimal) // replacement capacity already used across sells
 
-	for histIdx, row := range history {
+	for _, row := range history {
 		if !isDisposalType(row.Tx.Type) {
 			continue
 		}
@@ -211,87 +220,118 @@ func computeAdjDenied(securityID int64, nonRegTxs, allTxs []*transaction.Transac
 		}
 
 		windowStart, windowEnd := superficialLossWindow(row.Tx.TradeDate)
+		soldQty := row.Tx.Quantity
 
-		// Post-sell search: same-day acquisitions count as replacements per CRA.
-		// Start at histIdx (the sell itself) — nonRegTxs[histIdx] == row.Tx, which is not an
-		// acquisition type, so it's skipped without an extra date check.
-		var replacementTx *transaction.Transaction
-		preSell := false
-		for i := histIdx; i < len(nonRegTxs); i++ {
-			tx := nonRegTxs[i]
+		// Collect ALL acquisitions in [windowStart, windowEnd] from allTxs (all accounts).
+		// allTxs is sorted trade_date asc; break early once past windowEnd.
+		// Pre-sell and post-sell replacements both contribute to denial per CRA.
+		// Non-reg buys receive carry-forward; registered buys count for denial only.
+		var repls []replCandidate
+		for _, tx := range allTxs {
+			if tx.TradeDate.Before(windowStart) {
+				continue
+			}
 			if tx.TradeDate.After(windowEnd) {
 				break
 			}
-			if isAcquisitionType(tx.Type) {
-				replacementTx = tx
+			if tx.ID == row.Tx.ID {
+				continue // skip the sell itself
+			}
+			if !isAcquisitionType(tx.Type) {
+				continue
+			}
+			_, isNonReg := nonRegByID[tx.ID]
+			repls = append(repls, replCandidate{
+				tx:      tx,
+				preSell: tx.TradeDate.Before(row.Tx.TradeDate),
+				nonReg:  isNonReg,
+			})
+		}
+
+		// Compute per-replacement contributions in a single pass, respecting cross-sell allocation.
+		type replContrib struct {
+			tx      *transaction.Transaction
+			contrib decimal.Decimal
+			preSell bool
+			nonReg  bool
+		}
+		var contribs []replContrib
+		remaining := soldQty
+		for _, r := range repls {
+			avail := r.tx.Quantity.Sub(allocated[r.tx.ID])
+			if !avail.IsPositive() {
+				continue
+			}
+			contrib := avail
+			if remaining.LessThan(contrib) {
+				contrib = remaining
+			}
+			contribs = append(contribs, replContrib{tx: r.tx, contrib: contrib, preSell: r.preSell, nonReg: r.nonReg})
+			remaining = remaining.Sub(contrib)
+			if !remaining.IsPositive() {
 				break
 			}
 		}
 
-		// Pre-sell fallback: nearest acquisition strictly before the sell within the 30-day window.
-		// Start from the sell's slice position and scan backward — O(window-size), not O(n).
-		if replacementTx == nil {
-			for i := histIdx - 1; i >= 0; i-- {
-				tx := nonRegTxs[i]
-				if tx.TradeDate.Before(windowStart) {
-					break
-				}
-				if isAcquisitionType(tx.Type) {
-					replacementTx = tx
-					preSell = true
-					break
-				}
-			}
+		if len(contribs) == 0 {
+			continue // all replacement capacity exhausted by earlier sells
 		}
 
-		soldQty := row.Tx.Quantity
-		var proportionalLoss decimal.Decimal
-
-		if replacementTx != nil {
-			// G4: cap against remaining unallocated capacity on the replacement buy.
-			// When multiple sells share the same replacement, the total allocated qty across
-			// them cannot exceed the replacement's total quantity (CRA proportionality rule).
-			used := allocated[replacementTx.ID]
-			available := replacementTx.Quantity.Sub(used)
-			if !available.IsPositive() {
-				// Replacement capacity exhausted — this sell has no effective replacement.
-				continue
-			}
-			effectiveQty := available
-			if soldQty.LessThan(effectiveQty) {
-				effectiveQty = soldQty
-			}
-			proportionalLoss = gainLoss.Abs().Mul(effectiveQty).Div(soldQty)
-			allocated[replacementTx.ID] = used.Add(effectiveQty)
-		} else {
-			proportionalLoss = gainLoss.Abs() // registered-only replacement: full denial, no carry-forward
+		var totalEffective decimal.Decimal
+		for _, c := range contribs {
+			totalEffective = totalEffective.Add(c.contrib)
 		}
+		proportionalLoss := gainLoss.Abs().Mul(totalEffective).Div(soldQty)
 
 		if denied == nil {
 			denied = make(map[int64]decimal.Decimal)
 		}
 		denied[row.Tx.ID] = denied[row.Tx.ID].Add(proportionalLoss)
 
-		if replacementTx != nil {
+		// Distribute carry-forward to non-reg buys only; update allocated for all.
+		// Pre-sell non-reg: carry-forward keyed to sell ID — CalculateACBWithHistory applies it
+		// to the remaining pool after the sell (not retroactively to the pre-sell buy itself).
+		// Post-sell non-reg: carry-forward keyed to the buy ID — added to that buy's cost.
+		hasNonRegRepl := false
+		for _, c := range contribs {
+			allocated[c.tx.ID] = allocated[c.tx.ID].Add(c.contrib)
+			if !c.nonReg {
+				continue
+			}
+			carryFwd := gainLoss.Abs().Mul(c.contrib).Div(soldQty)
 			if adj == nil {
 				adj = make(map[int64]decimal.Decimal)
 			}
+			if c.preSell {
+				adj[row.Tx.ID] = adj[row.Tx.ID].Add(carryFwd)
+			} else {
+				adj[c.tx.ID] = adj[c.tx.ID].Add(carryFwd)
+			}
+			hasNonRegRepl = true
+		}
+		if hasNonRegRepl {
 			if withCarryFwd == nil {
 				withCarryFwd = make(map[int64]struct{})
 			}
 			withCarryFwd[row.Tx.ID] = struct{}{}
-			if preSell {
-				// G3: carry-forward keyed to the sell ID rather than the pre-sell buy ID.
-				// CalculateACBWithHistory applies it to the pool after the sell completes,
-				// so prior disposals processed before this sell are not retroactively changed.
-				adj[row.Tx.ID] = adj[row.Tx.ID].Add(proportionalLoss)
-			} else {
-				adj[replacementTx.ID] = adj[replacementTx.ID].Add(proportionalLoss)
-			}
 		}
 	}
 
 	return adj, denied, withCarryFwd
+}
+
+// adjEqual reports whether two adj maps are identical (same keys, same values).
+func adjEqual(a, b map[int64]decimal.Decimal) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k, v := range a {
+		bv, ok := b[k]
+		if !ok || !v.Equal(bv) {
+			return false
+		}
+	}
+	return true
 }
 
 // ComputeSuperficialAdjustments returns three maps:
@@ -300,31 +340,32 @@ func computeAdjDenied(securityID int64, nonRegTxs, allTxs []*transaction.Transac
 //   - withCarryFwd: sell IDs present when a non-registered carry-forward was created.
 //                   Absent (nil or key missing) when the replacement was registered-only.
 //
-// Denial is proportional: effectiveReplQty/soldQty × totalLoss, where effectiveReplQty is
-// the remaining unallocated capacity of the replacement buy (capped so multiple sells sharing
-// the same replacement don't over-allocate it). Post-sell replacement (same-day included) is
-// preferred; falls back to the nearest pre-sell acquisition within 30 days. Registered-only
-// replacement yields full denial with no carry-forward. Both TypeSell and TypeTransferOut
-// trigger the rule (both are CRA deemed dispositions).
+// Denial is proportional: effectiveReplQty/soldQty × totalLoss. Replacement acquisitions
+// are collected from allTxs (all accounts) across the full ±30-day window; pre-sell and
+// post-sell buys both contribute. Non-registered buys receive a carry-forward adjustment;
+// registered-only replacements trigger denial without carry-forward. Multiple sells sharing
+// a replacement buy allocate capacity FIFO by sell date to prevent over-allocation.
 //
-// Three internal passes ensure adj and denied are mutually consistent with the ACBs callers
-// see when they run CalculateACBWithHistory(txs, adj): pass 1 builds adj from raw ACBs;
-// pass 2 refines adj using pass-1-adjusted ACBs (handles cascading pre-sell carry-forwards);
-// pass 3 recomputes denied using pass-2 adj so denied matches the ACBs callers will see.
+// Internally, computeAdjDenied is called repeatedly until adj stabilises (cascading pre-sell
+// carry-forwards can shift ACBs that affect whether a later sell is a loss). A final call
+// recomputes denied against the stable adj so callers see consistent values.
 //
-// Both slices must be sorted by trade_date ascending. Returns nil, nil, nil when there are no
-// superficial losses.
+// Both slices must be sorted by trade_date ascending. Returns nil, nil, nil when allTxs is empty.
 func ComputeSuperficialAdjustments(securityID int64, nonRegTxs, allTxs []*transaction.Transaction) (adj, denied map[int64]decimal.Decimal, withCarryFwd map[int64]struct{}) {
 	if len(allTxs) == 0 {
 		return nil, nil, nil
 	}
-	// Pass 1: build adj from raw ACBs.
 	adj, _, _ = computeAdjDenied(securityID, nonRegTxs, allTxs, nil)
-	// Pass 2: refine adj using pass-1-adjusted ACBs so cascading pre-sell carry-forwards
-	// are reflected in subsequent sells before their denial amounts are calculated.
-	adj, _, _ = computeAdjDenied(securityID, nonRegTxs, allTxs, adj)
-	// Pass 3: recompute denied with pass-2 adj applied — denied now matches the ACBs
-	// callers will see when they call CalculateACBWithHistory(txs, adj).
+	// Iterate until adj stabilises — handles cascading pre-sell carry-forwards where one
+	// sell's adjustment shifts the ACB of a later sell. Cap at 9 refinements to bound cost
+	// on pathological inputs; in practice 1-2 iterations are sufficient.
+	for range 9 {
+		next, _, _ := computeAdjDenied(securityID, nonRegTxs, allTxs, adj)
+		if adjEqual(adj, next) {
+			break
+		}
+		adj = next
+	}
 	_, denied, withCarryFwd = computeAdjDenied(securityID, nonRegTxs, allTxs, adj)
 	return adj, denied, withCarryFwd
 }
