@@ -212,6 +212,7 @@ func (c *Client) SymbolSearch(ctx context.Context, prefix string) ([]SymbolInfo,
 
 // Activity is one entry from the Questrade activities endpoint.
 type Activity struct {
+	ID          int64
 	TradeDate   time.Time
 	SettledDate time.Time
 	Action      string
@@ -230,6 +231,7 @@ type activitiesJSON struct {
 }
 
 type activityJSON struct {
+	ID          int64       `json:"id"`
 	TradeDate   string      `json:"tradeDate"`
 	SettledDate string      `json:"settlementDate"`
 	Action      string      `json:"action"`
@@ -316,6 +318,7 @@ func parseActivity(a *activityJSON) (Activity, error) {
 	}
 
 	return Activity{
+		ID:          a.ID,
 		TradeDate:   tradeDate,
 		SettledDate: settledDate,
 		Action:      a.Action,

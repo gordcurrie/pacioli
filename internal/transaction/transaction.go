@@ -44,6 +44,7 @@ type Transaction struct {
 	Source              Source
 	Notes               string
 	LinkedTransactionID *int64 // pairs Norbert's Gambit legs
+	QtActivityID        *int64 // Questrade activity ID for dedup; nil for non-QT transactions
 	CreatedAt           time.Time
 }
 

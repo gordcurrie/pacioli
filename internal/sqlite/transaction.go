@@ -29,13 +29,13 @@ func (r *TransactionStore) Create(ctx context.Context, tx *transaction.Transacti
 		`INSERT INTO transactions
 		 (account_id, security_id, type, trade_date, settled_date,
 		  quantity, price_native, commission_native, fx_rate, price_cad, commission_cad,
-		  source, notes, linked_transaction_id)
-		 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		  source, notes, linked_transaction_id, qt_activity_id)
+		 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		tx.AccountID, tx.SecurityID, string(tx.Type),
 		tx.TradeDate.Format(time.DateOnly), tx.SettledDate.Format(time.DateOnly),
 		tx.Quantity.String(), tx.PriceNative.String(), tx.CommissionNative.String(),
 		fxRate, tx.PriceCAD.String(), tx.CommissionCAD.String(),
-		string(tx.Source), tx.Notes, tx.LinkedTransactionID,
+		string(tx.Source), tx.Notes, tx.LinkedTransactionID, tx.QtActivityID,
 	)
 	if err != nil {
 		return fmt.Errorf("create transaction: %w", err)
@@ -208,7 +208,8 @@ func (r *TransactionStore) UpdateFXRate(ctx context.Context, id int64, fxRate *d
 const txSelectSQL = `
 	SELECT t.id, t.account_id, t.security_id, t.type, t.trade_date, t.settled_date,
 	       t.quantity, t.price_native, t.commission_native, t.fx_rate,
-	       t.price_cad, t.commission_cad, t.source, t.notes, t.linked_transaction_id, t.created_at
+	       t.price_cad, t.commission_cad, t.source, t.notes, t.linked_transaction_id,
+	       t.qt_activity_id, t.created_at
 	FROM transactions t
 	JOIN accounts a ON a.id = t.account_id`
 
@@ -223,11 +224,13 @@ func scanTransaction(s txScanner) (*transaction.Transaction, error) {
 	var qty, priceNative, commNative, priceCAD, commCAD string
 	var fxRate *string
 	var linkedID *int64
+	var qtActivityID *int64
 
 	err := s.Scan(
 		&tx.ID, &tx.AccountID, &tx.SecurityID, &txType, &tradeDate, &settledDate,
 		&qty, &priceNative, &commNative, &fxRate,
-		&priceCAD, &commCAD, &source, &tx.Notes, &linkedID, &createdAt,
+		&priceCAD, &commCAD, &source, &tx.Notes, &linkedID,
+		&qtActivityID, &createdAt,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("scan transaction: %w", err)
@@ -236,6 +239,7 @@ func scanTransaction(s txScanner) (*transaction.Transaction, error) {
 	tx.Type = transaction.Type(txType)
 	tx.Source = transaction.Source(source)
 	tx.LinkedTransactionID = linkedID
+	tx.QtActivityID = qtActivityID
 	tx.TradeDate, _ = time.Parse(time.DateOnly, tradeDate)
 	tx.SettledDate, _ = time.Parse(time.DateOnly, settledDate)
 	tx.CreatedAt, _ = time.Parse(time.DateTime, createdAt)
