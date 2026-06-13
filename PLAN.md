@@ -129,9 +129,7 @@
 Close the gaps that can produce wrong ACB numbers before building reporting on top of them.
 
 - ✅ Superficial loss ACB carry-forward — denied loss added to replacement position's ACB; convergence loop handles cross-sell dependency; pre/post-sell and registered vs non-reg replacements handled correctly; `HasCarryForward` flag on detail rows
-- ✅ Norbert's Gambit auto-detection (PR #13) — detect unlinked DLR/DLR.U `transfer_out`+`journal` pairs by ticker root; preview UI + confirm link; give-leg converted to `fx_conversion` type on link
-  - ⚠️ Known limitation: only supports CAD→USD direction (DLR→DLR.U); USD→CAD (DLR.U→DLR) not yet detected
-  - ⚠️ Known limitation: ticker constants are `"DLR"` / `"DLR.U"` — Questrade-synced securities store the full symbol (e.g. `"DLR.TO"`) so auto-detection will miss them; needs flexible matching or updated constants (follow-up)
+- ✅ Norbert's Gambit auto-detection (PR #13) — detect unlinked DLR/DLR.U `transfer_out`+`journal` pairs; preview UI + confirm link; give-leg converted to `fx_conversion` type on link; both CAD→USD and USD→CAD directions supported; Questrade-synced securities (`.TO`-suffixed tickers) detected via fallback lookup
 - ⬜ Stock splits / consolidations — new-shares-for-old at zero cost; adjusts ACB/share and share count; needed for any position that has split
 - ⬜ Stock dividends — shares issued in lieu of cash dividend; FMV of shares received is income, same FMV becomes ACB of new shares
 - ⬜ Phantom distributions — reinvested distributions that increase ACB without a cash inflow (common in ETFs); T3 box 42 data

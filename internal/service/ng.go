@@ -11,13 +11,14 @@ import (
 	"github.com/gordcurrie/pacioli/internal/transaction"
 )
 
-// giveTicker / receiveTicker / ngExchange identify the Norbert's Gambit security pair.
+// ngCADTicker / ngUSDTicker / ngExchange identify the Norbert's Gambit security pair.
 // DLR (CAD) is journalled to DLR.U (USD) on the TSX.
+// Questrade-synced securities append ".TO" (e.g. "DLR.TO"); lookupNGSecurity tries both forms.
 const (
-	ngGiveTicker    = "DLR"
-	ngReceiveTicker = "DLR.U"
-	ngExchange      = "TSX"
-	ngWindowDays    = 3
+	ngCADTicker  = "DLR"
+	ngUSDTicker  = "DLR.U"
+	ngExchange   = "TSX"
+	ngWindowDays = 3
 )
 
 // NGPair is a matched Norbert's Gambit journal pair awaiting linkage.
@@ -36,31 +37,42 @@ func NewNGService(txStore transaction.Store, secStore security.Store) *NGService
 }
 
 // DetectPairs finds unlinked Norbert's Gambit journal pairs for a user.
-// It looks for TypeTransferOut on DLR matched by quantity and date (±ngWindowDays)
-// to TypeJournal on DLR.U that are not yet linked.
+// Supports both CAD→USD (DLR→DLR.U) and USD→CAD (DLR.U→DLR) directions.
+// Matches by quantity and date within ±ngWindowDays.
 func (s *NGService) DetectPairs(ctx context.Context, userID int64) ([]NGPair, error) {
-	giveSec, err := s.secStore.GetByTickerExchange(ctx, ngGiveTicker, ngExchange)
+	cadSec, err := s.lookupNGSecurity(ctx, ngCADTicker, ngExchange)
 	if err != nil {
-		if errors.Is(err, errs.ErrNotFound) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("ng detect: give security: %w", err)
+		return nil, fmt.Errorf("ng detect: CAD security: %w", err)
 	}
-	recvSec, err := s.secStore.GetByTickerExchange(ctx, ngReceiveTicker, ngExchange)
+	usdSec, err := s.lookupNGSecurity(ctx, ngUSDTicker, ngExchange)
 	if err != nil {
-		if errors.Is(err, errs.ErrNotFound) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("ng detect: receive security: %w", err)
+		return nil, fmt.Errorf("ng detect: USD security: %w", err)
+	}
+	if cadSec == nil || usdSec == nil {
+		return nil, nil
 	}
 
-	gives, err := s.txStore.ListUnlinkedBySecurityAndType(ctx, giveSec.ID, userID, transaction.TypeTransferOut)
+	cadToUSD, err := s.detectDirectional(ctx, userID, cadSec.ID, usdSec.ID)
 	if err != nil {
-		return nil, fmt.Errorf("ng detect: give legs: %w", err)
+		return nil, err
 	}
-	recvs, err := s.txStore.ListUnlinkedBySecurityAndType(ctx, recvSec.ID, userID, transaction.TypeJournal)
+	usdToCAD, err := s.detectDirectional(ctx, userID, usdSec.ID, cadSec.ID)
 	if err != nil {
-		return nil, fmt.Errorf("ng detect: receive legs: %w", err)
+		return nil, err
+	}
+	return append(cadToUSD, usdToCAD...), nil
+}
+
+// detectDirectional finds give+receive pairs where give is TypeTransferOut on giveSecID
+// and receive is TypeJournal on recvSecID, matched by quantity and date.
+func (s *NGService) detectDirectional(ctx context.Context, userID, giveSecID, recvSecID int64) ([]NGPair, error) {
+	gives, err := s.txStore.ListUnlinkedBySecurityAndType(ctx, giveSecID, userID, transaction.TypeTransferOut)
+	if err != nil {
+		return nil, fmt.Errorf("ng detect: give legs (sec %d): %w", giveSecID, err)
+	}
+	recvs, err := s.txStore.ListUnlinkedBySecurityAndType(ctx, recvSecID, userID, transaction.TypeJournal)
+	if err != nil {
+		return nil, fmt.Errorf("ng detect: receive legs (sec %d): %w", recvSecID, err)
 	}
 
 	used := make(map[int64]bool, len(recvs))
@@ -74,6 +86,28 @@ func (s *NGService) DetectPairs(ctx context.Context, userID int64) ([]NGPair, er
 		pairs = append(pairs, NGPair{GiveLeg: give, ReceiveLeg: best})
 	}
 	return pairs, nil
+}
+
+// lookupNGSecurity finds the security for ticker on exchange.
+// Tries the plain ticker first (manually-entered securities), then the ".TO"-suffixed form
+// (Questrade-synced securities which store the full exchange symbol, e.g. "DLR.TO").
+// Returns nil, nil when the security is not found in any form.
+func (s *NGService) lookupNGSecurity(ctx context.Context, ticker, exchange string) (*security.Security, error) {
+	sec, err := s.secStore.GetByTickerExchange(ctx, ticker, exchange)
+	if err == nil {
+		return sec, nil
+	}
+	if !errors.Is(err, errs.ErrNotFound) {
+		return nil, err
+	}
+	sec, err = s.secStore.GetByTickerExchange(ctx, ticker+".TO", exchange)
+	if err == nil {
+		return sec, nil
+	}
+	if errors.Is(err, errs.ErrNotFound) {
+		return nil, nil
+	}
+	return nil, err
 }
 
 // matchReceive returns the closest-date unlinked receive-leg with the same quantity

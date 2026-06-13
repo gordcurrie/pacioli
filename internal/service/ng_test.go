@@ -240,6 +240,75 @@ func TestNGService_LinkPairs_CallsStore(t *testing.T) {
 	}
 }
 
+func TestNGService_DetectPairs_USDToCAD(t *testing.T) {
+	// Reverse direction: TransferOut on DLR.U + Journal on DLR
+	dlrSec := &security.Security{ID: 1, Ticker: "DLR", Exchange: "TSX"}
+	dlruSec := &security.Security{ID: 2, Ticker: "DLR.U", Exchange: "TSX"}
+
+	give := &transaction.Transaction{ID: 30, SecurityID: 2, Type: transaction.TypeTransferOut,
+		TradeDate: ngDate("2024-09-10"), Quantity: ngQty("500")}
+	recv := &transaction.Transaction{ID: 40, SecurityID: 1, Type: transaction.TypeJournal,
+		TradeDate: ngDate("2024-09-10"), Quantity: ngQty("500")}
+
+	txStore := &ngMockTxStore{
+		bySecType: map[int64]map[transaction.Type][]*transaction.Transaction{
+			2: {transaction.TypeTransferOut: []*transaction.Transaction{give}},
+			1: {transaction.TypeJournal: []*transaction.Transaction{recv}},
+		},
+	}
+	secStore := &ngMockSecStore{byTickerExchange: map[string]*security.Security{
+		"DLR|TSX":   dlrSec,
+		"DLR.U|TSX": dlruSec,
+	}}
+
+	svc := service.NewNGService(txStore, secStore)
+	pairs, err := svc.DetectPairs(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("DetectPairs: %v", err)
+	}
+	if len(pairs) != 1 {
+		t.Fatalf("expected 1 USD→CAD pair, got %d", len(pairs))
+	}
+	if pairs[0].GiveLeg.ID != 30 || pairs[0].ReceiveLeg.ID != 40 {
+		t.Errorf("wrong pair: give=%d recv=%d", pairs[0].GiveLeg.ID, pairs[0].ReceiveLeg.ID)
+	}
+}
+
+func TestNGService_DetectPairs_QuestradeSuffixedTickers(t *testing.T) {
+	// Questrade-synced securities use "DLR.TO" / "DLR.U.TO" as tickers.
+	dlrSec := &security.Security{ID: 1, Ticker: "DLR.TO", Exchange: "TSX"}
+	dlruSec := &security.Security{ID: 2, Ticker: "DLR.U.TO", Exchange: "TSX"}
+
+	give := &transaction.Transaction{ID: 10, SecurityID: 1, Type: transaction.TypeTransferOut,
+		TradeDate: ngDate("2024-06-15"), Quantity: ngQty("200")}
+	recv := &transaction.Transaction{ID: 20, SecurityID: 2, Type: transaction.TypeJournal,
+		TradeDate: ngDate("2024-06-15"), Quantity: ngQty("200")}
+
+	txStore := &ngMockTxStore{
+		bySecType: map[int64]map[transaction.Type][]*transaction.Transaction{
+			1: {transaction.TypeTransferOut: []*transaction.Transaction{give}},
+			2: {transaction.TypeJournal: []*transaction.Transaction{recv}},
+		},
+	}
+	// Store indexed by the suffixed tickers that Questrade sync produces.
+	secStore := &ngMockSecStore{byTickerExchange: map[string]*security.Security{
+		"DLR.TO|TSX":   dlrSec,
+		"DLR.U.TO|TSX": dlruSec,
+	}}
+
+	svc := service.NewNGService(txStore, secStore)
+	pairs, err := svc.DetectPairs(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("DetectPairs with suffixed tickers: %v", err)
+	}
+	if len(pairs) != 1 {
+		t.Fatalf("expected 1 pair with suffixed tickers, got %d", len(pairs))
+	}
+	if pairs[0].GiveLeg.ID != 10 || pairs[0].ReceiveLeg.ID != 20 {
+		t.Errorf("wrong pair: give=%d recv=%d", pairs[0].GiveLeg.ID, pairs[0].ReceiveLeg.ID)
+	}
+}
+
 func TestNGService_DetectPairs_PicksClosestReceiveLeg(t *testing.T) {
 	// Two receive legs matching same qty: one same day, one 2 days later — pick same day.
 	dlrSec := &security.Security{ID: 1, Ticker: "DLR", Exchange: "TSX"}
