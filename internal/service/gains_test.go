@@ -969,6 +969,42 @@ func TestComputeSuperficialAdjustments_FullDisposalRegisteredReplOnly(t *testing
 	}
 }
 
+// TestComputeSuperficialAdjustments_SameDateBuyLowerID verifies that a same-date buy with a
+// lower transaction ID is treated as pre-sell (not post-sell) because CalculateACBWithHistory
+// processes transactions in (trade_date, id) order — that buy precedes the sell in the ACB walk
+// and must be subject to the preSellPool cap so its carry-forward is keyed to the sell ID, not
+// the buy ID, preventing the carry-forward from being applied before the sell runs.
+func TestComputeSuperficialAdjustments_SameDateBuyLowerID(t *testing.T) {
+	// Same date: buy 100 @ $10 (ID=1, lower), sell all 100 @ $7 (ID=2, higher).
+	// Pool empty after sell → preSellPool=0 → same-date pre-sell buy contributes nothing.
+	// Post-sell buy ID=3 @ $7 (50 shares) is the only eligible replacement.
+	// netAtEnd = 100 − 100 + 50 = 50; remaining = min(100, 50) = 50.
+	// denial = 300 × 50/100 = 150; carry-forward $150 keyed to post-sell buy ID=3.
+	txs := []*transaction.Transaction{
+		{ID: 1, SecurityID: 11, Type: transaction.TypeBuy, TradeDate: date("2024-06-15"), Quantity: d("100"), PriceCAD: d("10"), CommissionCAD: d("0")},
+		{ID: 2, SecurityID: 11, Type: transaction.TypeSell, TradeDate: date("2024-06-15"), Quantity: d("100"), PriceCAD: d("7"), CommissionCAD: d("0")},
+		{ID: 3, SecurityID: 11, Type: transaction.TypeBuy, TradeDate: date("2024-06-20"), Quantity: d("50"), PriceCAD: d("7"), CommissionCAD: d("0")},
+	}
+	adj, denied, withCarryFwd := service.ComputeSuperficialAdjustments(11, txs, txs)
+
+	if !denied[2].Equal(d("150")) {
+		t.Errorf("denied: got %s want 150", denied[2])
+	}
+	// carry-forward must be on the post-sell buy (ID=3), not on the same-date buy (ID=1) or the sell (ID=2)
+	if !adj[3].Equal(d("150")) {
+		t.Errorf("carry-forward on post-sell buy (ID=3): got %s want 150", adj[3])
+	}
+	if adj[1].IsPositive() {
+		t.Errorf("same-date pre-sell buy (ID=1) must not carry forward (pool empty), got %s", adj[1])
+	}
+	if adj[2].IsPositive() {
+		t.Errorf("sell (ID=2) must not have carry-forward keyed to it, got %s", adj[2])
+	}
+	if _, ok := withCarryFwd[2]; !ok {
+		t.Error("expected withCarryFwd for sell ID=2")
+	}
+}
+
 // Error path tests for GainsService.Calculate.
 
 func TestGainsService_Calculate_ListDisposalsError(t *testing.T) {

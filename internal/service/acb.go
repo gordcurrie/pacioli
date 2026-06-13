@@ -257,9 +257,15 @@ func computeAdjDenied(securityID int64, nonRegTxs, allTxs []*transaction.Transac
 				continue
 			}
 			_, isNonReg := nonRegByID[tx.ID]
+			// preSell is true when the acquisition is processed before the sell in
+			// CalculateACBWithHistory, which walks txs in (trade_date, id) order.
+			// Same-date buys with a lower ID precede the sell in that walk and must
+			// be treated as pre-sell so the preSellPool cap applies correctly.
+			preSell := tx.TradeDate.Before(row.Tx.TradeDate) ||
+				(!tx.TradeDate.After(row.Tx.TradeDate) && tx.ID < row.Tx.ID)
 			repls = append(repls, replCandidate{
 				tx:      tx,
-				preSell: tx.TradeDate.Before(row.Tx.TradeDate),
+				preSell: preSell,
 				nonReg:  isNonReg,
 			})
 		}
