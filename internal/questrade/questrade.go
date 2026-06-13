@@ -17,6 +17,9 @@ import (
 
 const oauthEndpoint = "https://login.questrade.com/oauth2/token"
 
+// ErrUnauthorized is returned when the API responds with 401 (token expired or invalid).
+var ErrUnauthorized = fmt.Errorf("questrade: unauthorized")
+
 // Secret is an opaque string that redacts itself in logs, fmt output, and JSON
 // marshaling. Use Reveal() only at trust boundaries (HTTP headers, SQL params).
 type Secret string
@@ -351,6 +354,9 @@ func (c *Client) get(ctx context.Context, path string, dest any) error {
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
+		if resp.StatusCode == http.StatusUnauthorized {
+			return ErrUnauthorized
+		}
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
 		return fmt.Errorf("unexpected status %d: %s", resp.StatusCode, bytes.TrimSpace(body))
 	}

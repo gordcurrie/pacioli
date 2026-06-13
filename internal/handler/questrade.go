@@ -312,7 +312,7 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 	activities, err := client.Activities(ctx, qtAccountNo, start, end.AddDate(0, 0, 1))
 	if err != nil {
 		loggerFromCtx(ctx).Error("questrade fetch activities", "err", err)
-		if strings.Contains(err.Error(), "unexpected status 401") {
+		if errors.Is(err, questrade.ErrUnauthorized) {
 			renderErr("Questrade token expired — reconnect via the button above")
 		} else {
 			renderErr("failed to fetch activities — check account number and date range")
