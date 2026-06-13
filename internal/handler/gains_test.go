@@ -90,6 +90,7 @@ func newTestEnv(t *testing.T) *testEnv {
 	acbSvc := service.NewACBService(txStore)
 	gainsSvc := service.NewGainsService(txStore, secStore)
 	rocSvc := service.NewROCService(txStore, distStore, secStore)
+	ngSvc := service.NewNGService(txStore, secStore)
 
 	h, err := handler.New(&handler.Config{
 		Accounts:     accountStore,
@@ -101,6 +102,7 @@ func newTestEnv(t *testing.T) *testEnv {
 		ACBSvc:       acbSvc,
 		GainsSvc:     gainsSvc,
 		ROCSvc:       rocSvc,
+		NGSvc:        ngSvc,
 		Logger:       slog.Default(),
 		TemplateFS:   web.Templates,
 	})

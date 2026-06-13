@@ -2,7 +2,6 @@ package handler
 
 import (
 	"crypto/rand"
-	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -571,7 +570,7 @@ func (h *Handler) questradeCommit(w http.ResponseWriter, r *http.Request) {
 		}
 		sec, err := h.securities.GetByID(ctx, id)
 		if err != nil {
-			if errors.Is(err, sql.ErrNoRows) {
+			if errors.Is(err, errs.ErrNotFound) {
 				secCache[id] = cachedSec{}
 				return cachedSec{}, nil
 			}
