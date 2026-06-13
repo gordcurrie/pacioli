@@ -340,6 +340,17 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	existing, err := h.transactions.ListByDateRange(ctx, pAccountID, start, end.AddDate(0, 0, 1))
+	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
+	alreadyImported := make(map[string]bool, len(existing))
+	for _, tx := range existing {
+		key := fmt.Sprintf("%d|%s|%s|%s", tx.SecurityID, tx.TradeDate.Format(time.DateOnly), string(tx.Type), tx.Quantity.String())
+		alreadyImported[key] = true
+	}
+
 	// tryAutoCreateSecurity calls Questrade symbol search and creates the security in the DB
 	// if an exact ticker match is found. Returns the new secRef on success, false on failure.
 	// Results are idempotent — a second call for the same ticker finds the security via secByTicker.
@@ -465,6 +476,15 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 			totFlag++
 			baseRow.Status = qtStatusFlag
 			baseRow.StatusMsg = "unsupported currency (" + act.Currency + ") — only CAD and USD securities can be imported"
+			previewRows = append(previewRows, baseRow)
+			continue
+		}
+
+		dupKey := fmt.Sprintf("%d|%s|%s|%s", sec.ID, act.TradeDate.Format(time.DateOnly), string(txType), qty.String())
+		if alreadyImported[dupKey] {
+			totSkip++
+			baseRow.Status = qtStatusFlag
+			baseRow.StatusMsg = "already imported — skipped"
 			previewRows = append(previewRows, baseRow)
 			continue
 		}
