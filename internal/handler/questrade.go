@@ -336,6 +336,41 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// tryAutoCreateSecurity calls Questrade symbol search and creates the security in the DB
+	// if an exact ticker match is found. Returns the new secRef on success, false on failure.
+	// Results are idempotent — a second call for the same ticker finds the security via secByTicker.
+	tryAutoCreateSecurity := func(ticker, currency string) (secRef, bool) {
+		results, err := client.SymbolSearch(ctx, ticker)
+		if err != nil {
+			return secRef{}, false
+		}
+		sec := &security.Security{
+			Ticker:   ticker,
+			Name:     ticker,
+			Type:     security.TypeEquity,
+			Currency: currency,
+			Source:   string(audit.SourceQuestrade),
+		}
+		for _, sr := range results {
+			if sr.Symbol != ticker {
+				continue
+			}
+			sec.Exchange = sr.Exchange
+			sec.Name = sr.Description
+			sec.Type = mapQTSecurityType(sr.SecurityType)
+			if validCurrencies[sr.Currency] {
+				sec.Currency = sr.Currency
+			}
+			break
+		}
+		if err := h.securities.Create(ctx, sec); err != nil {
+			return secRef{}, false
+		}
+		h.logAudit(r, audit.ActionCreate, audit.EntitySecurity, sec.ID, audit.SourceQuestrade, "")
+		return secRef{sec.ID, sec.Currency}, true
+	}
+
+	notFoundTickers := make(map[string]bool)
 	var previewRows []qtPreviewRow
 	var commitRows []qtCommitRow
 	totOK, totSkip, totFlag := 0, 0, 0
@@ -391,6 +426,15 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 		}
 
 		sec, secOK := secByTicker[act.Symbol]
+		if !secOK && tickerCount[act.Symbol] <= 1 && !notFoundTickers[act.Symbol] {
+			if ref, ok := tryAutoCreateSecurity(act.Symbol, act.Currency); ok {
+				secByTicker[act.Symbol] = ref
+				sec = ref
+				secOK = true
+			} else {
+				notFoundTickers[act.Symbol] = true
+			}
+		}
 		if !secOK {
 			totFlag++
 			baseRow.Status = qtStatusFlag
