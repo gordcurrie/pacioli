@@ -18,8 +18,10 @@ import (
 
 // stubFXStore is an in-memory fx.Store for testing.
 type stubFXStore struct {
-	mu    sync.Mutex
-	rates map[string]decimal.Decimal // key: "date|from|to"
+	mu           sync.Mutex
+	rates        map[string]decimal.Decimal // key: "date|from|to"
+	errGetRate   error
+	errStoreRate error
 }
 
 func newStubFXStore() *stubFXStore { return &stubFXStore{rates: make(map[string]decimal.Decimal)} }
@@ -31,6 +33,9 @@ func fxKey(date time.Time, from, to string) string {
 func (s *stubFXStore) GetRate(_ context.Context, date time.Time, from, to string) (decimal.Decimal, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.errGetRate != nil {
+		return decimal.Zero, s.errGetRate
+	}
 	if r, ok := s.rates[fxKey(date, from, to)]; ok {
 		return r, nil
 	}
@@ -40,6 +45,9 @@ func (s *stubFXStore) GetRate(_ context.Context, date time.Time, from, to string
 func (s *stubFXStore) StoreRate(_ context.Context, date time.Time, from, to string, rate decimal.Decimal, _ string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.errStoreRate != nil {
+		return s.errStoreRate
+	}
 	s.rates[fxKey(date, from, to)] = rate
 	return nil
 }
@@ -214,5 +222,105 @@ func TestUSDCADRate_ServerError(t *testing.T) {
 	_, err := bocFetcher(store, srv).USDCADRate(context.Background(), date)
 	if err == nil {
 		t.Fatal("expected error on non-200 response, got nil")
+	}
+}
+
+// TestUSDCADRate_CacheGetError verifies a non-ErrNotFound cache error propagates immediately.
+func TestUSDCADRate_CacheGetError(t *testing.T) {
+	store := &stubFXStore{
+		rates:      make(map[string]decimal.Decimal),
+		errGetRate: fmt.Errorf("connection refused"),
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "should not be called", http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	_, err := bocFetcher(store, srv).USDCADRate(context.Background(), time.Date(2024, 3, 15, 0, 0, 0, 0, time.UTC))
+	if err == nil {
+		t.Fatal("expected error from cache GetRate, got nil")
+	}
+}
+
+// TestUSDCADRate_StoreRateError verifies a StoreRate error propagates after a successful fetch.
+func TestUSDCADRate_StoreRateError(t *testing.T) {
+	store := &stubFXStore{
+		rates:        make(map[string]decimal.Decimal),
+		errStoreRate: fmt.Errorf("write failed"),
+	}
+	srv := bocServer(t, map[string]string{"2024-03-15": "1.3612"})
+	defer srv.Close()
+
+	_, err := bocFetcher(store, srv).USDCADRate(context.Background(), time.Date(2024, 3, 15, 0, 0, 0, 0, time.UTC))
+	if err == nil {
+		t.Fatal("expected error from StoreRate, got nil")
+	}
+}
+
+// TestUSDCADRate_FetchConnError verifies an HTTP connection failure propagates as an error.
+func TestUSDCADRate_FetchConnError(t *testing.T) {
+	store := newStubFXStore()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	srv.Close() // close immediately so hc.Do fails
+
+	_, err := bocFetcher(store, srv).USDCADRate(context.Background(), time.Date(2024, 3, 15, 0, 0, 0, 0, time.UTC))
+	if err == nil {
+		t.Fatal("expected connection error, got nil")
+	}
+}
+
+// TestUSDCADRate_DecodeError verifies invalid JSON from BoC propagates as an error.
+func TestUSDCADRate_DecodeError(t *testing.T) {
+	store := newStubFXStore()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte("not-json{{{"))
+	}))
+	defer srv.Close()
+
+	_, err := bocFetcher(store, srv).USDCADRate(context.Background(), time.Date(2024, 3, 15, 0, 0, 0, 0, time.UTC))
+	if err == nil {
+		t.Fatal("expected JSON decode error, got nil")
+	}
+}
+
+// TestUSDCADRate_MalformedObservation verifies that observations with an empty V field or an
+// unparseable date are silently skipped and do not cause a panic or error.
+func TestUSDCADRate_MalformedObservation(t *testing.T) {
+	store := newStubFXStore()
+	// Server returns one observation with empty V (skipped), one with bad date (skipped),
+	// one with unparseable decimal (skipped), and one valid rate.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		// hand-craft JSON to include edge cases not representable via bocServer helper
+		body := `{"observations":[
+			{"d":"not-a-date","FXUSDCAD":{"v":"1.3500"}},
+			{"d":"2024-03-14","FXUSDCAD":{"v":""}},
+			{"d":"2024-03-13","FXUSDCAD":{"v":"not-a-decimal"}},
+			{"d":"2024-03-15","FXUSDCAD":{"v":"1.3612"}}
+		]}`
+		_, _ = fmt.Fprint(w, body)
+	}))
+	defer srv.Close()
+
+	got, err := bocFetcher(store, srv).USDCADRate(context.Background(), time.Date(2024, 3, 15, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := mustDecimal("1.3612")
+	if !got.Equal(want) {
+		t.Errorf("got %s want %s", got, want)
+	}
+}
+
+// TestBOCFetch_InvalidURL verifies that an invalid base URL causes an error on the request build.
+func TestBOCFetch_InvalidURL(t *testing.T) {
+	store := newStubFXStore()
+	f := service.NewBOCFetcher(store)
+	f.BaseURL = "://invalid-url" // causes http.NewRequestWithContext to fail
+
+	_, err := f.USDCADRate(context.Background(), time.Date(2024, 3, 15, 0, 0, 0, 0, time.UTC))
+	if err == nil {
+		t.Fatal("expected error from invalid URL, got nil")
 	}
 }

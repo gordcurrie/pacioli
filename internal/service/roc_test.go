@@ -2,6 +2,7 @@ package service_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -14,8 +15,9 @@ import (
 
 // mockDistStore is a minimal in-memory distribution.Store for testing.
 type mockDistStore struct {
-	byYear     map[int][]*distribution.Distribution
-	bySecurity map[int64][]*distribution.Distribution
+	byYear           map[int][]*distribution.Distribution
+	bySecurity       map[int64][]*distribution.Distribution
+	errListByTaxYear error
 }
 
 func (m *mockDistStore) Upsert(_ context.Context, _ *distribution.Distribution) error { return nil }
@@ -26,6 +28,9 @@ func (m *mockDistStore) ListBySecurity(_ context.Context, secID int64) ([]*distr
 	return m.bySecurity[secID], nil
 }
 func (m *mockDistStore) ListByTaxYear(_ context.Context, taxYear int) ([]*distribution.Distribution, error) {
+	if m.errListByTaxYear != nil {
+		return nil, m.errListByTaxYear
+	}
 	return m.byYear[taxYear], nil
 }
 
@@ -222,4 +227,156 @@ type capturingTxStore struct {
 func (c *capturingTxStore) Create(_ context.Context, tx *transaction.Transaction) error {
 	*c.created = append(*c.created, tx)
 	return nil
+}
+
+func TestROCService_PreviewROC_ListByTaxYearError(t *testing.T) {
+	distStore := &mockDistStore{errListByTaxYear: fmt.Errorf("db error")}
+	svc := service.NewROCService(&mockTxStore{}, distStore, &mockSecStore{})
+	_, err := svc.PreviewROC(context.Background(), 1, 2023)
+	if err == nil {
+		t.Fatal("expected error from ListByTaxYear, got nil")
+	}
+}
+
+func TestROCService_PreviewROC_SecStoreError(t *testing.T) {
+	// Distribution with positive ROC, security has transactions, but secStore.GetByID fails.
+	txs := []*transaction.Transaction{
+		{ID: 1, SecurityID: 1, AccountID: 10, Type: transaction.TypeBuy,
+			TradeDate: date("2023-01-15"), Quantity: decimal.NewFromInt(100),
+			PriceCAD: decimal.NewFromFloat(10), CommissionCAD: decimal.Zero},
+	}
+	distStore := &mockDistStore{
+		byYear: map[int][]*distribution.Distribution{
+			2023: {{SecurityID: 1, TaxYear: 2023, ROCPerUnit: decimal.NewFromFloat(0.10)}},
+		},
+	}
+	store := &mockTxStore{nonRegistered: map[int64][]*transaction.Transaction{1: txs}}
+	svc := service.NewROCService(store, distStore, &mockSecStore{errGetByID: fmt.Errorf("sec not found")})
+	_, err := svc.PreviewROC(context.Background(), 1, 2023)
+	if err == nil {
+		t.Fatal("expected error from secStore.GetByID, got nil")
+	}
+}
+
+func TestROCService_PreviewROC_ListNonRegTxsError(t *testing.T) {
+	distStore := &mockDistStore{
+		byYear: map[int][]*distribution.Distribution{
+			2023: {{SecurityID: 1, TaxYear: 2023, ROCPerUnit: decimal.NewFromFloat(0.10)}},
+		},
+	}
+	store := &mockTxStore{errListNonReg: fmt.Errorf("list error")}
+	svc := service.NewROCService(store, distStore, &mockSecStore{})
+	_, err := svc.PreviewROC(context.Background(), 1, 2023)
+	if err == nil {
+		t.Fatal("expected error from ListBySecurityNonRegistered, got nil")
+	}
+}
+
+func TestROCService_PreviewROC_NoTxsForSecurity_Skipped(t *testing.T) {
+	// Positive ROCPerUnit but no transactions for the security — row should be skipped.
+	distStore := &mockDistStore{
+		byYear: map[int][]*distribution.Distribution{
+			2023: {{SecurityID: 1, TaxYear: 2023, ROCPerUnit: decimal.NewFromFloat(0.10)}},
+		},
+	}
+	// security 1 not in nonRegistered — returns nil (len=0)
+	store := &mockTxStore{nonRegistered: map[int64][]*transaction.Transaction{}}
+	svc := service.NewROCService(store, distStore, &mockSecStore{secs: map[int64]*security.Security{}})
+	rows, err := svc.PreviewROC(context.Background(), 1, 2023)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(rows) != 0 {
+		t.Errorf("expected 0 rows when security has no txs, got %d", len(rows))
+	}
+}
+
+func TestROCService_ApplyROC_PreviewError(t *testing.T) {
+	distStore := &mockDistStore{errListByTaxYear: fmt.Errorf("db error")}
+	svc := service.NewROCService(&mockTxStore{}, distStore, &mockSecStore{})
+	err := svc.ApplyROC(context.Background(), 1, 2023)
+	if err == nil {
+		t.Fatal("expected error propagated from PreviewROC, got nil")
+	}
+}
+
+func TestROCService_ApplyROC_AlreadyApplied_Skipped(t *testing.T) {
+	// AlreadyApplied row — no transaction should be created.
+	sec := &security.Security{ID: 1, Ticker: "XYZ", Exchange: "TSX", Currency: "CAD"}
+	yearEnd := time.Date(2023, 12, 31, 0, 0, 0, 0, time.UTC)
+	txs := []*transaction.Transaction{
+		{ID: 1, SecurityID: 1, AccountID: 10, Type: transaction.TypeBuy,
+			TradeDate: date("2023-01-15"), Quantity: decimal.NewFromInt(100),
+			PriceCAD: decimal.NewFromFloat(10), CommissionCAD: decimal.Zero},
+		{ID: 2, SecurityID: 1, AccountID: 10, Type: transaction.TypeROCAdjustment,
+			TradeDate: yearEnd, Quantity: decimal.NewFromInt(100),
+			PriceCAD: decimal.NewFromFloat(0.15), CommissionCAD: decimal.Zero},
+	}
+	var created []*transaction.Transaction
+	capStore := &capturingTxStore{
+		mockTxStore: &mockTxStore{nonRegistered: map[int64][]*transaction.Transaction{1: txs}},
+		created:     &created,
+	}
+	distStore := &mockDistStore{
+		byYear: map[int][]*distribution.Distribution{
+			2023: {{SecurityID: 1, TaxYear: 2023, ROCPerUnit: decimal.NewFromFloat(0.15)}},
+		},
+	}
+	svc := service.NewROCService(capStore, distStore, &mockSecStore{secs: map[int64]*security.Security{1: sec}})
+	if err := svc.ApplyROC(context.Background(), 1, 2023); err != nil {
+		t.Fatalf("ApplyROC: %v", err)
+	}
+	if len(created) != 0 {
+		t.Errorf("expected 0 transactions for AlreadyApplied row, got %d", len(created))
+	}
+}
+
+func TestROCService_ApplyROC_NonCAD_Skipped(t *testing.T) {
+	// Currency != "CAD" — no transaction should be created.
+	sec := &security.Security{ID: 1, Ticker: "XYZ", Exchange: "NYSE", Currency: "USD"}
+	txs := []*transaction.Transaction{
+		{ID: 1, SecurityID: 1, AccountID: 10, Type: transaction.TypeBuy,
+			TradeDate: date("2023-01-15"), Quantity: decimal.NewFromInt(100),
+			PriceCAD: decimal.NewFromFloat(13), CommissionCAD: decimal.Zero},
+	}
+	var created []*transaction.Transaction
+	capStore := &capturingTxStore{
+		mockTxStore: &mockTxStore{nonRegistered: map[int64][]*transaction.Transaction{1: txs}},
+		created:     &created,
+	}
+	distStore := &mockDistStore{
+		byYear: map[int][]*distribution.Distribution{
+			2023: {{SecurityID: 1, TaxYear: 2023, ROCPerUnit: decimal.NewFromFloat(0.10)}},
+		},
+	}
+	svc := service.NewROCService(capStore, distStore, &mockSecStore{secs: map[int64]*security.Security{1: sec}})
+	if err := svc.ApplyROC(context.Background(), 1, 2023); err != nil {
+		t.Fatalf("ApplyROC: %v", err)
+	}
+	if len(created) != 0 {
+		t.Errorf("expected 0 transactions for non-CAD security, got %d", len(created))
+	}
+}
+
+func TestROCService_ApplyROC_CreateError(t *testing.T) {
+	sec := &security.Security{ID: 1, Ticker: "XYZ", Exchange: "TSX", Currency: "CAD"}
+	txs := []*transaction.Transaction{
+		{ID: 1, SecurityID: 1, AccountID: 10, Type: transaction.TypeBuy,
+			TradeDate: date("2023-01-15"), Quantity: decimal.NewFromInt(100),
+			PriceCAD: decimal.NewFromFloat(10), CommissionCAD: decimal.Zero},
+	}
+	store := &mockTxStore{
+		nonRegistered: map[int64][]*transaction.Transaction{1: txs},
+		errCreate:     fmt.Errorf("create failed"),
+	}
+	distStore := &mockDistStore{
+		byYear: map[int][]*distribution.Distribution{
+			2023: {{SecurityID: 1, TaxYear: 2023, ROCPerUnit: decimal.NewFromFloat(0.15)}},
+		},
+	}
+	svc := service.NewROCService(store, distStore, &mockSecStore{secs: map[int64]*security.Security{1: sec}})
+	err := svc.ApplyROC(context.Background(), 1, 2023)
+	if err == nil {
+		t.Fatal("expected error from Create, got nil")
+	}
 }

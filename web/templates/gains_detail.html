@@ -48,6 +48,9 @@
             {{else}}
             <strong>0.00</strong>
             {{end}}
+            {{if .IsSuperficialLoss}}
+            <br><small style="color:var(--pico-secondary)">{{if .HasCarryForward}}<abbr title="Superficial loss: {{.DeniedAmt.StringFixed 2}} denied — carry-forward added to replacement shares ACB.">superficial: {{.DeniedAmt.StringFixed 2}} denied</abbr>{{else}}<abbr title="Superficial loss: {{.DeniedAmt.StringFixed 2}} denied — replacement was in a registered account; no carry-forward.">superficial: {{.DeniedAmt.StringFixed 2}} denied</abbr>{{end}}</small>
+            {{end}}
           {{end}}
         </td>
       </tr>

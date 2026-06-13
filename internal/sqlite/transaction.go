@@ -74,6 +74,34 @@ func (r *TransactionStore) ListBySecurityNonRegistered(ctx context.Context, secu
 	return scanTransactions(rows)
 }
 
+func (r *TransactionStore) ListDistinctNonRegisteredSecurityIDsByUser(ctx context.Context, userID int64, from, to time.Time) ([]int64, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT t.security_id
+		 FROM transactions t
+		 JOIN accounts a ON a.id = t.account_id
+		 WHERE a.user_id=? AND a.is_registered=0 AND t.type IN ('sell','transfer_out')
+		   AND t.trade_date BETWEEN ? AND ?
+		 GROUP BY t.security_id
+		 ORDER BY MIN(t.trade_date), MIN(t.id)`,
+		userID, from.Format(time.DateOnly), to.Format(time.DateOnly))
+	if err != nil {
+		return nil, fmt.Errorf("list distinct security IDs with disposals: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan security ID: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list distinct security IDs with disposals: %w", err)
+	}
+	return ids, nil
+}
+
 func (r *TransactionStore) ListNonRegisteredDisposalsByUser(ctx context.Context, userID int64, from, to time.Time) ([]*transaction.Transaction, error) {
 	rows, err := r.db.QueryContext(ctx,
 		txSelectSQL+` WHERE a.user_id=? AND a.is_registered=0 AND t.type IN ('sell','transfer_out')

@@ -80,7 +80,14 @@ func (h *Handler) showACB(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, rows := service.CalculateACBWithHistory(id, txs)
+	allTxs, err := h.transactions.ListBySecurityAllAccounts(r.Context(), id, userFromCtx(r.Context()).ID)
+	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
+
+	adj, _, _ := service.ComputeSuperficialAdjustments(id, txs, allTxs)
+	result, rows := service.CalculateACBWithHistory(id, txs, adj)
 
 	h.render(w, r,"acb", acbDetailPageData{
 		Security:     sec,
