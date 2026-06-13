@@ -2,6 +2,7 @@ package handler_test
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -14,7 +15,7 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-func seedNGPair(t *testing.T, env *testEnv) {
+func seedNGPair(t *testing.T, env *testEnv) (giveID, recvID int64) {
 	t.Helper()
 	ctx := context.Background()
 
@@ -55,6 +56,7 @@ func seedNGPair(t *testing.T, env *testEnv) {
 	if err := env.transactions.Create(ctx, recv); err != nil {
 		t.Fatalf("create recv tx: %v", err)
 	}
+	return give.ID, recv.ID
 }
 
 func TestNGHandler_Preview_NoPairs(t *testing.T) {
@@ -115,11 +117,13 @@ func TestNGHandler_Link_NoPairs(t *testing.T) {
 
 func TestNGHandler_Link_WithPairs(t *testing.T) {
 	env := newTestEnv(t)
-	seedNGPair(t, env)
+	giveID, recvID := seedNGPair(t, env)
 	mux := http.NewServeMux()
 	env.handler.Routes(mux)
 
-	req := env.newRequest(http.MethodPost, "/questrade/ng", http.NoBody)
+	body := strings.NewReader(fmt.Sprintf("give_id=%d&recv_id=%d", giveID, recvID))
+	req := env.newRequest(http.MethodPost, "/questrade/ng", body)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rr := httptest.NewRecorder()
 	mux.ServeHTTP(rr, req)
 
@@ -128,6 +132,27 @@ func TestNGHandler_Link_WithPairs(t *testing.T) {
 	}
 	if rr.Header().Get("Location") != "/questrade?ng=1" {
 		t.Errorf("redirect: got %q want /questrade?ng=1", rr.Header().Get("Location"))
+	}
+}
+
+func TestNGHandler_Link_IgnoresUnreviewedPairs(t *testing.T) {
+	env := newTestEnv(t)
+	seedNGPair(t, env)
+	mux := http.NewServeMux()
+	env.handler.Routes(mux)
+
+	// Submit with pair IDs that don't match the seeded pair → nothing linked.
+	body := strings.NewReader("give_id=9999&recv_id=9998")
+	req := env.newRequest(http.MethodPost, "/questrade/ng", body)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusSeeOther {
+		t.Errorf("status: got %d want 303", rr.Code)
+	}
+	if rr.Header().Get("Location") != "/questrade?ng=0" {
+		t.Errorf("redirect: got %q want /questrade?ng=0", rr.Header().Get("Location"))
 	}
 }
 

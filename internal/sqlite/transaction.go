@@ -152,23 +152,33 @@ func (r *TransactionStore) ListUnlinkedBySecurityAndType(ctx context.Context, se
 }
 
 func (r *TransactionStore) LinkNorbertGambitPair(ctx context.Context, giveLegID, receiveLegID int64) error {
-	tx, err := r.db.BeginTx(ctx, nil)
+	dbTx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("link ng pair: begin: %w", err)
 	}
-	defer func() { _ = tx.Rollback() }()
+	defer func() { _ = dbTx.Rollback() }()
 
-	if _, err := tx.ExecContext(ctx,
-		`UPDATE transactions SET type='fx_conversion', linked_transaction_id=? WHERE id=?`,
-		receiveLegID, giveLegID); err != nil {
+	res, err := dbTx.ExecContext(ctx,
+		`UPDATE transactions SET type='fx_conversion', linked_transaction_id=? WHERE id=? AND linked_transaction_id IS NULL`,
+		receiveLegID, giveLegID)
+	if err != nil {
 		return fmt.Errorf("link ng pair: give leg: %w", err)
 	}
-	if _, err := tx.ExecContext(ctx,
-		`UPDATE transactions SET linked_transaction_id=? WHERE id=?`,
-		giveLegID, receiveLegID); err != nil {
+	if n, _ := res.RowsAffected(); n == 0 {
+		return fmt.Errorf("link ng pair: give leg %d already linked", giveLegID)
+	}
+
+	res, err = dbTx.ExecContext(ctx,
+		`UPDATE transactions SET linked_transaction_id=? WHERE id=? AND linked_transaction_id IS NULL`,
+		giveLegID, receiveLegID)
+	if err != nil {
 		return fmt.Errorf("link ng pair: receive leg: %w", err)
 	}
-	if err := tx.Commit(); err != nil {
+	if n, _ := res.RowsAffected(); n == 0 {
+		return fmt.Errorf("link ng pair: receive leg %d already linked", receiveLegID)
+	}
+
+	if err := dbTx.Commit(); err != nil {
 		return fmt.Errorf("link ng pair: commit: %w", err)
 	}
 	return nil

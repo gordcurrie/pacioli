@@ -42,6 +42,10 @@ and sets <code>linked_transaction_id</code> on both legs.</p>
 
 <div style="display:flex; gap:1rem; align-items:center">
   <form method="post" action="/questrade/ng">
+    {{range .Pairs}}
+    <input type="hidden" name="give_id" value="{{.GiveLeg.ID}}">
+    <input type="hidden" name="recv_id" value="{{.ReceiveLeg.ID}}">
+    {{end}}
     <button type="submit">Link {{len .Pairs}} Pair(s)</button>
   </form>
   <a href="/questrade">Cancel</a>

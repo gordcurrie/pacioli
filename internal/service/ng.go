@@ -78,6 +78,9 @@ func (s *NGService) detectDirectional(ctx context.Context, userID, giveSecID, re
 	used := make(map[int64]bool, len(recvs))
 	var pairs []NGPair
 	for _, give := range gives {
+		if !give.Quantity.IsPositive() {
+			continue
+		}
 		best := matchReceive(give, recvs, used)
 		if best == nil {
 			continue

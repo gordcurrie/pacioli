@@ -240,6 +240,36 @@ func TestNGService_LinkPairs_CallsStore(t *testing.T) {
 	}
 }
 
+func TestNGService_DetectPairs_SkipsZeroQuantity(t *testing.T) {
+	dlrSec := &security.Security{ID: 1, Ticker: "DLR", Exchange: "TSX"}
+	dlruSec := &security.Security{ID: 2, Ticker: "DLR.U", Exchange: "TSX"}
+
+	zeroGive := &transaction.Transaction{ID: 10, SecurityID: 1, Type: transaction.TypeTransferOut,
+		TradeDate: ngDate("2024-06-15"), Quantity: ngQty("0")}
+	zeroRecv := &transaction.Transaction{ID: 20, SecurityID: 2, Type: transaction.TypeJournal,
+		TradeDate: ngDate("2024-06-15"), Quantity: ngQty("0")}
+
+	txStore := &ngMockTxStore{
+		bySecType: map[int64]map[transaction.Type][]*transaction.Transaction{
+			1: {transaction.TypeTransferOut: []*transaction.Transaction{zeroGive}},
+			2: {transaction.TypeJournal: []*transaction.Transaction{zeroRecv}},
+		},
+	}
+	secStore := &ngMockSecStore{byTickerExchange: map[string]*security.Security{
+		"DLR|TSX":   dlrSec,
+		"DLR.U|TSX": dlruSec,
+	}}
+
+	svc := service.NewNGService(txStore, secStore)
+	pairs, err := svc.DetectPairs(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("DetectPairs: %v", err)
+	}
+	if len(pairs) != 0 {
+		t.Errorf("expected 0 pairs for zero-quantity transactions, got %d", len(pairs))
+	}
+}
+
 func TestNGService_DetectPairs_USDToCAD(t *testing.T) {
 	// Reverse direction: TransferOut on DLR.U + Journal on DLR
 	dlrSec := &security.Security{ID: 1, Ticker: "DLR", Exchange: "TSX"}
