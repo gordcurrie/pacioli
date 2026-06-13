@@ -9,12 +9,8 @@ import (
 	"io"
 )
 
-// Encrypt and Decrypt are exported wrappers for use outside the sqlite package (e.g. handler layer).
-func Encrypt(key []byte, plaintext string) (string, error) { return encrypt(key, plaintext) }
-func Decrypt(key []byte, encoded string) (string, error)   { return decrypt(key, encoded) }
-
-// encrypt encrypts plaintext with AES-256-GCM using key. Returns base64(nonce||ciphertext).
-func encrypt(key []byte, plaintext string) (string, error) {
+// Encrypt encrypts plaintext with AES-256-GCM using key. Returns base64(nonce||ciphertext).
+func Encrypt(key []byte, plaintext string) (string, error) {
 	if len(key) != 32 {
 		return "", fmt.Errorf("encrypt: key must be 32 bytes for AES-256")
 	}
@@ -34,8 +30,8 @@ func encrypt(key []byte, plaintext string) (string, error) {
 	return base64.StdEncoding.EncodeToString(sealed), nil
 }
 
-// decrypt decrypts a value produced by encrypt.
-func decrypt(key []byte, encoded string) (string, error) {
+// Decrypt decrypts a value produced by Encrypt.
+func Decrypt(key []byte, encoded string) (string, error) {
 	if len(key) != 32 {
 		return "", fmt.Errorf("decrypt: key must be 32 bytes for AES-256")
 	}

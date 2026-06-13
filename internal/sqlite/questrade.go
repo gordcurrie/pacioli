@@ -21,11 +21,11 @@ func NewQTokenStore(db *sql.DB, key []byte) *QTokenStore {
 }
 
 func (s *QTokenStore) Save(ctx context.Context, userID int64, t questrade.Token) error {
-	encAccess, err := encrypt(s.key, t.AccessToken.Reveal())
+	encAccess, err := Encrypt(s.key, t.AccessToken.Reveal())
 	if err != nil {
 		return fmt.Errorf("save questrade token: %w", err)
 	}
-	encRefresh, err := encrypt(s.key, t.RefreshToken.Reveal())
+	encRefresh, err := Encrypt(s.key, t.RefreshToken.Reveal())
 	if err != nil {
 		return fmt.Errorf("save questrade token: %w", err)
 	}
@@ -61,11 +61,11 @@ func (s *QTokenStore) Get(ctx context.Context, userID int64) (questrade.Token, e
 	if err != nil {
 		return questrade.Token{}, fmt.Errorf("get questrade token: %w", err)
 	}
-	accessToken, err := decrypt(s.key, encAccess)
+	accessToken, err := Decrypt(s.key, encAccess)
 	if err != nil {
 		return questrade.Token{}, fmt.Errorf("get questrade token: %w", err)
 	}
-	refreshToken, err := decrypt(s.key, encRefresh)
+	refreshToken, err := Decrypt(s.key, encRefresh)
 	if err != nil {
 		return questrade.Token{}, fmt.Errorf("get questrade token: %w", err)
 	}

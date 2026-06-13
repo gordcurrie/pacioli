@@ -186,7 +186,7 @@ func (s *UserStore) UpdateTOTP(ctx context.Context, userID int64, secret string,
 			return fmt.Errorf("user update totp: TOKEN_ENCRYPTION_KEY required for 2FA")
 		}
 		var err error
-		encSecret, err = encrypt(s.key, secret)
+		encSecret, err = Encrypt(s.key, secret)
 		if err != nil {
 			return fmt.Errorf("user update totp: %w", err)
 		}
@@ -218,7 +218,7 @@ func (s *UserStore) EnableTOTPWithCodes(ctx context.Context, userID int64, secre
 	if len(s.key) != 32 {
 		return fmt.Errorf("enable totp: TOKEN_ENCRYPTION_KEY required")
 	}
-	encSecret, err := encrypt(s.key, secret)
+	encSecret, err := Encrypt(s.key, secret)
 	if err != nil {
 		return fmt.Errorf("enable totp: encrypt: %w", err)
 	}
@@ -346,7 +346,7 @@ func (s *UserStore) scan(row scanner) (*user.User, error) {
 		// Decrypt failure (e.g. rotated key) leaves TOTPSecret empty.
 		// Callers already handle empty TOTPSecret as "key unavailable": TOTP
 		// validation is skipped and the UI surfaces a clear error.
-		if plain, err := decrypt(s.key, encSecret); err == nil {
+		if plain, err := Decrypt(s.key, encSecret); err == nil {
 			u.TOTPSecret = plain
 		}
 	}
