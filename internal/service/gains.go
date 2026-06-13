@@ -45,7 +45,9 @@ func NewGainsService(txStore transaction.Store, secStore security.Store) *GainsS
 }
 
 func isDisposalType(t transaction.Type) bool {
-	return t == transaction.TypeSell || t == transaction.TypeTransferOut
+	// TypeFXConversion is the Norbert's Gambit give-leg: reduces share count in ACB
+	// but is NOT a taxable disposal (gains SQL filters on 'sell','transfer_out' only).
+	return t == transaction.TypeSell || t == transaction.TypeTransferOut || t == transaction.TypeFXConversion
 }
 
 // proceedsCAD computes net disposal proceeds: qty × priceCAD − commissionCAD.

@@ -75,10 +75,14 @@ func (m *mockTxStore) ListBySecurityAllAccounts(_ context.Context, securityID, _
 func (m *mockTxStore) ListByDateRange(_ context.Context, _ int64, _, _ time.Time) ([]*transaction.Transaction, error) {
 	return nil, nil
 }
+func (m *mockTxStore) ListUnlinkedBySecurityAndType(_ context.Context, securityID, _ int64, typ transaction.Type) ([]*transaction.Transaction, error) {
+	return nil, nil
+}
 func (m *mockTxStore) Delete(_ context.Context, _ int64) error { return nil }
 func (m *mockTxStore) UpdateFXRate(_ context.Context, _ int64, _ *decimal.Decimal, _, _ decimal.Decimal) error {
 	return nil
 }
+func (m *mockTxStore) LinkNorbertGambitPair(_ context.Context, _, _ int64) error { return nil }
 
 // mockSecStore is a minimal in-memory security.Store for testing.
 type mockSecStore struct {

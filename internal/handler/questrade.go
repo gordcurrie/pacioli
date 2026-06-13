@@ -27,6 +27,7 @@ type qtPageData struct {
 	Accounts      []qtAccountOption  // Pacioli accounts for "import into" select
 	QTAccounts    []qtSourceAccount  // Questrade source accounts for "import from" select
 	SyncResult    string
+	NGResult      string
 	Error         string
 }
 
@@ -146,16 +147,29 @@ func (h *Handler) questradePage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	var syncResult string
-	if sa := r.URL.Query().Get("sync_accounts"); sa != "" {
-		ss := r.URL.Query().Get("sync_securities")
+	var syncResult, ngResult, errMsg string
+	q := r.URL.Query()
+	if sa := q.Get("sync_accounts"); sa != "" {
+		ss := q.Get("sync_securities")
 		syncResult = fmt.Sprintf("Sync complete — %s new account(s), %s new security(s) created.", sa, ss)
 	}
+	if n := q.Get("ng"); n != "" {
+		if n == "0" {
+			ngResult = "No unlinked Norbert's Gambit pairs found."
+		} else {
+			ngResult = fmt.Sprintf("Linked %s Norbert's Gambit pair(s).", n)
+		}
+	}
+	if e := q.Get("error"); e != "" {
+		errMsg = e
+	}
 
-	h.render(w, r,"questrade", qtPageData{
+	h.render(w, r, "questrade", qtPageData{
 		Configured: true, Connected: connected,
 		Accounts: opts, QTAccounts: qtAccounts,
 		SyncResult: syncResult,
+		NGResult:   ngResult,
+		Error:      errMsg,
 	})
 }
 

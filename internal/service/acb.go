@@ -153,10 +153,6 @@ func CalculateACB(securityID int64, txs []*transaction.Transaction) *ACBResult {
 // there must be an acquisition within the ±30-day window AND a positive net position
 // across all accounts at the end of that window.
 // allTxs must be sorted by trade_date ascending and include transactions from all accounts.
-// TypeFXConversion (Norbert's Gambit give-leg) is treated as a disposal for net position purposes;
-// reverse Norbert's acquisitions will be under-counted as a result, but that is the less harmful
-// direction (may miss a superficial loss, not create a false one). A direction field on Transaction
-// would eliminate the ambiguity.
 // checkSuperficialLoss returns (isSuperf, netSharesAtWindowEnd).
 // isSuperf is true when the sell qualifies as a superficial loss: there is an acquisition
 // within the ±30-day window AND the net position at windowEnd is positive.
@@ -177,7 +173,7 @@ func checkSuperficialLoss(allTxs []*transaction.Transaction, sellDate time.Time)
 			if !tx.TradeDate.Before(windowStart) {
 				hasWindowBuy = true
 			}
-		case isDisposalType(tx.Type) || tx.Type == transaction.TypeFXConversion:
+		case isDisposalType(tx.Type):
 			shares = shares.Sub(tx.Quantity)
 		}
 	}

@@ -66,6 +66,12 @@ type Store interface {
 	// accounts (including registered) — used for superficial loss window checks.
 	ListBySecurityAllAccounts(ctx context.Context, securityID, userID int64) ([]*Transaction, error)
 	ListByDateRange(ctx context.Context, accountID int64, from, to time.Time) ([]*Transaction, error)
+	// ListUnlinkedBySecurityAndType returns all transactions for a security and user of the given
+	// type that have no linked_transaction_id set — used for Norbert's Gambit pair detection.
+	ListUnlinkedBySecurityAndType(ctx context.Context, securityID, userID int64, typ Type) ([]*Transaction, error)
 	Delete(ctx context.Context, id int64) error
 	UpdateFXRate(ctx context.Context, id int64, fxRate *decimal.Decimal, priceCAD, commCAD decimal.Decimal) error
+	// LinkNorbertGambitPair atomically converts the give-leg to TypeFXConversion and sets
+	// linked_transaction_id on both legs.
+	LinkNorbertGambitPair(ctx context.Context, giveLegID, receiveLegID int64) error
 }

@@ -139,6 +139,41 @@ func (r *TransactionStore) ListByDateRange(ctx context.Context, accountID int64,
 	return scanTransactions(rows)
 }
 
+func (r *TransactionStore) ListUnlinkedBySecurityAndType(ctx context.Context, securityID, userID int64, typ transaction.Type) ([]*transaction.Transaction, error) {
+	rows, err := r.db.QueryContext(ctx,
+		txSelectSQL+` WHERE t.security_id=? AND a.user_id=? AND t.type=? AND t.linked_transaction_id IS NULL
+		              ORDER BY t.trade_date, t.id`,
+		securityID, userID, string(typ))
+	if err != nil {
+		return nil, fmt.Errorf("list unlinked transactions: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	return scanTransactions(rows)
+}
+
+func (r *TransactionStore) LinkNorbertGambitPair(ctx context.Context, giveLegID, receiveLegID int64) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("link ng pair: begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE transactions SET type='fx_conversion', linked_transaction_id=? WHERE id=?`,
+		receiveLegID, giveLegID); err != nil {
+		return fmt.Errorf("link ng pair: give leg: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE transactions SET linked_transaction_id=? WHERE id=?`,
+		giveLegID, receiveLegID); err != nil {
+		return fmt.Errorf("link ng pair: receive leg: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("link ng pair: commit: %w", err)
+	}
+	return nil
+}
+
 func (r *TransactionStore) Delete(ctx context.Context, id int64) error {
 	_, err := r.db.ExecContext(ctx, `DELETE FROM transactions WHERE id=?`, id)
 	return err

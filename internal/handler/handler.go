@@ -35,6 +35,7 @@ type Handler struct {
 	acbSvc       *service.ACBService
 	gainsSvc     *service.GainsService
 	rocSvc       *service.ROCService
+	ngSvc        *service.NGService
 	encKey          []byte // AES-256 key for TOTP secret encryption; nil = TOTP disabled
 	secureCookie    bool
 	setupConfigured atomic.Bool // cached once CountConfigured > 0; avoids per-request DB query
@@ -56,6 +57,7 @@ type Config struct {
 	ACBSvc       *service.ACBService
 	GainsSvc     *service.GainsService
 	ROCSvc       *service.ROCService
+	NGSvc        *service.NGService
 	EncKey       []byte
 	SecureCookie bool
 	Logger       *slog.Logger
@@ -111,6 +113,7 @@ func New(cfg *Config) (*Handler, error) {
 		acbSvc:       cfg.ACBSvc,
 		gainsSvc:     cfg.GainsSvc,
 		rocSvc:       cfg.ROCSvc,
+		ngSvc:        cfg.NGSvc,
 		encKey:       cfg.EncKey,
 		secureCookie: cfg.SecureCookie,
 		logger:       cfg.Logger,
@@ -131,7 +134,7 @@ func (h *Handler) parseTemplates(fsys fs.FS) error {
 		"gains_detail",
 		"roc_preview",
 		"import", "import_preview",
-		"questrade", "questrade_preview",
+		"questrade", "questrade_preview", "ng_preview",
 		"login", "login_2fa", "setup",
 		"admin_users", "admin_audit",
 		"profile_password", "profile_2fa",
@@ -206,6 +209,8 @@ func (h *Handler) Routes(mux *http.ServeMux) {
 	mux.Handle("POST /questrade/sync", auth(http.HandlerFunc(h.questradeSync)))
 	mux.Handle("POST /questrade/preview", auth(http.HandlerFunc(h.questradePreview)))
 	mux.Handle("POST /questrade/commit", auth(http.HandlerFunc(h.questradeCommit)))
+	mux.Handle("GET /questrade/ng", auth(http.HandlerFunc(h.ngPreview)))
+	mux.Handle("POST /questrade/ng", auth(http.HandlerFunc(h.ngLink)))
 
 	mux.Handle("GET /admin/users", admin(http.HandlerFunc(h.adminListUsers)))
 	mux.Handle("POST /admin/users", admin(http.HandlerFunc(h.adminCreateUser)))
