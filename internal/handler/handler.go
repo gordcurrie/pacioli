@@ -209,8 +209,10 @@ func (h *Handler) Routes(mux *http.ServeMux) {
 	mux.Handle("POST /questrade/sync", auth(http.HandlerFunc(h.questradeSync)))
 	mux.Handle("POST /questrade/preview", auth(http.HandlerFunc(h.questradePreview)))
 	mux.Handle("POST /questrade/commit", auth(http.HandlerFunc(h.questradeCommit)))
-	mux.Handle("GET /questrade/ng", auth(http.HandlerFunc(h.ngPreview)))
-	mux.Handle("POST /questrade/ng", auth(http.HandlerFunc(h.ngLink)))
+	if h.ngSvc != nil {
+		mux.Handle("GET /questrade/ng", auth(http.HandlerFunc(h.ngPreview)))
+		mux.Handle("POST /questrade/ng", auth(http.HandlerFunc(h.ngLink)))
+	}
 
 	mux.Handle("GET /admin/users", admin(http.HandlerFunc(h.adminListUsers)))
 	mux.Handle("POST /admin/users", admin(http.HandlerFunc(h.adminCreateUser)))

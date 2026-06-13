@@ -207,7 +207,7 @@ func computeAdjDenied(securityID int64, nonRegTxs, allTxs []*transaction.Transac
 	replFloor := 0
 
 	for _, row := range history {
-		if !isDisposalType(row.Tx.Type) {
+		if !isTaxableDisposal(row.Tx.Type) {
 			continue
 		}
 		if row.PreTxShares.IsZero() {
