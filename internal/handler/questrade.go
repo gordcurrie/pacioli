@@ -352,14 +352,9 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 		if tx.Source != transaction.SourceQuestrade {
 			continue
 		}
-		key := fmt.Sprintf("%d|%s|%s|%s", tx.SecurityID, tx.TradeDate.Format(time.DateOnly), string(tx.Type), tx.Quantity.String())
-		alreadyImported[key] = true
-		// A linked NG give-leg is stored as fx_conversion but QT always classifies
-		// the same negative-FXT activity as transfer_out. Add an alias so re-importing
-		// after linking correctly detects the give-leg as already present.
+		alreadyImported[qtImportKey(tx.SecurityID, tx.TradeDate, tx.Type, tx.Quantity)] = true
 		if tx.Type == transaction.TypeFXConversion {
-			altKey := fmt.Sprintf("%d|%s|%s|%s", tx.SecurityID, tx.TradeDate.Format(time.DateOnly), string(transaction.TypeTransferOut), tx.Quantity.String())
-			alreadyImported[altKey] = true
+			alreadyImported[qtImportKey(tx.SecurityID, tx.TradeDate, transaction.TypeTransferOut, tx.Quantity)] = true
 		}
 	}
 
@@ -373,7 +368,6 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 		}
 		sec := &security.Security{
 			Ticker:   ticker,
-			Name:     ticker,
 			Type:     security.TypeEquity,
 			Currency: currency,
 			Source:   string(audit.SourceQuestrade),
@@ -389,6 +383,9 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 				sec.Currency = sr.Currency
 			}
 			break
+		}
+		if sec.Exchange == "" {
+			return secRef{}, false
 		}
 		if err := h.securities.Create(ctx, sec); err != nil {
 			return secRef{}, false
@@ -492,8 +489,7 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		dupKey := fmt.Sprintf("%d|%s|%s|%s", sec.ID, act.TradeDate.Format(time.DateOnly), string(txType), qty.String())
-		isDup := alreadyImported[dupKey]
+		isDup := alreadyImported[qtImportKey(sec.ID, act.TradeDate, txType, qty)]
 		if isDup {
 			totSkip++
 			baseRow.Status = qtStatusFlag
@@ -567,6 +563,14 @@ const (
 	qtSkip
 	qtFlag
 )
+
+// qtImportKey returns the dedup key used to identify an already-imported QT
+// activity. TypeFXConversion gets an alias key of TypeTransferOut because a
+// linked NG give-leg is re-typed in the DB but QT still reports it as a
+// negative FXT (transfer_out).
+func qtImportKey(secID int64, date time.Time, txType transaction.Type, qty decimal.Decimal) string {
+	return fmt.Sprintf("%d|%s|%s|%s", secID, date.Format(time.DateOnly), string(txType), qty.String())
+}
 
 func classifyQTActivity(a *questrade.Activity) (qtStatus, string, transaction.Type) {
 	switch strings.TrimSpace(a.Action) {

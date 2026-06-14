@@ -266,7 +266,7 @@ func (c *Client) Activities(ctx context.Context, accountNumber string, start, en
 		}
 		for i := range chunk {
 			act := &chunk[i]
-			key := act.TradeDate.Format(time.RFC3339Nano) + "|" + act.Action + "|" + act.Symbol + "|" + act.Quantity.String() + "|" + act.Price.String()
+			key := act.TradeDate.Format(time.RFC3339Nano) + "|" + act.Action + "|" + act.Symbol + "|" + act.Quantity.String() + "|" + act.Price.String() + "|" + act.Commission.String() + "|" + act.NetAmount.String()
 			if !seen[key] {
 				seen[key] = true
 				all = append(all, *act)

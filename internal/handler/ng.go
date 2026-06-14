@@ -82,6 +82,7 @@ func (h *Handler) ngLink(w http.ResponseWriter, r *http.Request) {
 	n, err := h.ngSvc.LinkPairs(r.Context(), toLink)
 	for _, p := range toLink[:n] {
 		h.logAudit(r, audit.ActionUpdate, audit.EntityTransaction, p.GiveLeg.ID, audit.SourceQuestrade, "")
+		h.logAudit(r, audit.ActionUpdate, audit.EntityTransaction, p.ReceiveLeg.ID, audit.SourceQuestrade, "")
 	}
 	if err != nil {
 		log.Error("ng link pairs", "err", err)

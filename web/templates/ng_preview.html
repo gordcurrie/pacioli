@@ -46,7 +46,7 @@ and sets <code>linked_transaction_id</code> on both legs.</p>
     <input type="hidden" name="give_id" value="{{.GiveLeg.ID}}">
     <input type="hidden" name="recv_id" value="{{.ReceiveLeg.ID}}">
     {{end}}
-    <button type="submit">Link {{len .Pairs}} Pair(s)</button>
+    <button type="submit">{{if eq (len .Pairs) 1}}Link 1 Pair{{else}}Link {{len .Pairs}} Pairs{{end}}</button>
   </form>
   <a href="/questrade">Cancel</a>
 </div>

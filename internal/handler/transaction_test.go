@@ -36,7 +36,7 @@ func seedCADTransaction(t *testing.T, env *testEnv) txFixture {
 	tx := &transaction.Transaction{
 		AccountID: acc.ID, SecurityID: sec.ID, Type: transaction.TypeBuy,
 		TradeDate: date, SettledDate: date,
-		Quantity: decimal.NewFromInt(50), PriceCAD: decimal.NewFromFloat(15),
+		Quantity: decimal.NewFromInt(50), PriceNative: decimal.NewFromFloat(15), PriceCAD: decimal.NewFromFloat(15),
 		Source: transaction.SourceManual,
 	}
 	if err := env.transactions.Create(ctx, tx); err != nil {
