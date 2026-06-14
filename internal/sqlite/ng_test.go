@@ -258,4 +258,75 @@ func TestTransactionStore_LinkNorbertGambitPairDirect(t *testing.T) {
 	}
 }
 
+func TestTransactionStore_LinkNorbertGambitPairDirect_NonCADReceive(t *testing.T) {
+	// CAD→USD direction: give=DLR.TO (CAD), receive=DLR.U.TO (USD).
+	// Synthetic journal on DLR.U.TO must carry the FX rate and derive price_native.
+	db := newTestDB(t)
+	accounts := sqlite.NewAccountStore(db)
+	securities := sqlite.NewSecurityStore(db)
+	txStore := sqlite.NewTransactionStore(db)
+	ctx := context.Background()
+
+	cashAcct := &account.Account{UserID: 1, Name: "Cash", Type: account.TypeCash, Broker: "QT", Currency: "CAD"}
+	if err := accounts.Create(ctx, cashAcct); err != nil {
+		t.Fatalf("create account: %v", err)
+	}
+	dlr := &security.Security{Ticker: "DLR.TO", Exchange: "TSX", Name: "DLR.TO", Type: security.TypeETF, Currency: "CAD"}
+	dlru := &security.Security{Ticker: "DLR.U.TO", Exchange: "TSX", Name: "DLR.U.TO", Type: security.TypeETF, Currency: "USD"}
+	for _, s := range []*security.Security{dlr, dlru} {
+		if err := securities.Create(ctx, s); err != nil {
+			t.Fatalf("create security: %v", err)
+		}
+	}
+
+	buyDate := time.Date(2025, 2, 10, 0, 0, 0, 0, time.UTC)
+	sellDate := time.Date(2025, 2, 14, 0, 0, 0, 0, time.UTC)
+	fxRate := decimal.NewFromFloat(1.42)
+	give := &transaction.Transaction{
+		AccountID: cashAcct.ID, SecurityID: dlr.ID, Type: transaction.TypeBuy,
+		TradeDate: buyDate, SettledDate: buyDate,
+		Quantity:    decimal.NewFromInt(5000),
+		PriceNative: decimal.NewFromFloat(14.10),
+		PriceCAD:    decimal.NewFromFloat(14.10),
+		Source:      transaction.SourceQuestrade,
+	}
+	recv := &transaction.Transaction{
+		AccountID: cashAcct.ID, SecurityID: dlru.ID, Type: transaction.TypeSell,
+		TradeDate: sellDate, SettledDate: sellDate,
+		Quantity:    decimal.NewFromInt(5000),
+		PriceNative: decimal.NewFromFloat(9.93),
+		PriceCAD:    decimal.NewFromFloat(14.10),
+		FXRate:      &fxRate,
+		Source:      transaction.SourceQuestrade,
+	}
+	for _, tx := range []*transaction.Transaction{give, recv} {
+		if err := txStore.Create(ctx, tx); err != nil {
+			t.Fatalf("create tx: %v", err)
+		}
+	}
+
+	if err := txStore.LinkNorbertGambitPairDirect(ctx, give, recv); err != nil {
+		t.Fatalf("LinkNorbertGambitPairDirect: %v", err)
+	}
+
+	journalID := *recv.LinkedTransactionID
+	journal, err := txStore.GetByID(ctx, journalID)
+	if err != nil {
+		t.Fatalf("GetByID journal: %v", err)
+	}
+	if journal.FXRate == nil {
+		t.Fatal("journal FXRate is nil for non-CAD receive security")
+	}
+	if !journal.FXRate.Equal(fxRate) {
+		t.Errorf("journal FXRate: got %s want %s", journal.FXRate, fxRate)
+	}
+	expectedNative := give.PriceCAD.Div(fxRate)
+	if !journal.PriceNative.Equal(expectedNative) {
+		t.Errorf("journal PriceNative: got %s want %s", journal.PriceNative, expectedNative)
+	}
+	if !journal.PriceCAD.Equal(give.PriceCAD) {
+		t.Errorf("journal PriceCAD: got %s want %s", journal.PriceCAD, give.PriceCAD)
+	}
+}
+
 func ptrInt64(n int64) *int64 { return &n }

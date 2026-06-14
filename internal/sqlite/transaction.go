@@ -220,9 +220,17 @@ func (r *TransactionStore) LinkNorbertGambitPairDirect(ctx context.Context, give
 	}
 
 	// Synthetic TypeJournal on receive security: establishes ACB basis before the sell.
-	// PriceNative = give.PriceCAD because the receive security is CAD-denominated; this
-	// transfers the cost basis from the give-leg buy into the receive-leg ACB pool.
+	// PriceCAD = give.PriceCAD transfers the cost basis from the give-leg into the receive-leg
+	// ACB pool. When the receive security is non-CAD (reverse NG: CAD→USD), we carry the
+	// receive sell's FX rate forward so price_native is in the receive security's currency.
 	// Dated at the give-leg date so it sorts before the TypeSell in the ACB engine.
+	journalPriceNative := give.PriceCAD
+	var journalFXRate *string
+	if receive.FXRate != nil {
+		journalPriceNative = give.PriceCAD.Div(*receive.FXRate)
+		s := receive.FXRate.String()
+		journalFXRate = &s
+	}
 	res, err = dbTx.ExecContext(ctx,
 		`INSERT INTO transactions
 		 (account_id, security_id, type, trade_date, settled_date,
@@ -231,8 +239,8 @@ func (r *TransactionStore) LinkNorbertGambitPairDirect(ctx context.Context, give
 		 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		receive.AccountID, receive.SecurityID, string(transaction.TypeJournal),
 		give.TradeDate.Format(time.DateOnly), give.TradeDate.Format(time.DateOnly),
-		give.Quantity.String(), give.PriceCAD.String(), "0",
-		nil, give.PriceCAD.String(), "0",
+		give.Quantity.String(), journalPriceNative.String(), "0",
+		journalFXRate, give.PriceCAD.String(), "0",
 		string(give.Source), "synthetic NG: journal not reported by broker",
 		fxConvID,
 	)

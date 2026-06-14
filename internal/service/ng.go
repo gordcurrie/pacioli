@@ -155,12 +155,15 @@ func (s *NGService) lookupNGSecurity(ctx context.Context, ticker, exchange strin
 }
 
 // matchReceive returns the closest-date unlinked receive-leg with the same quantity
-// within windowDays of the give-leg, or nil if none found.
+// and account within windowDays of the give-leg, or nil if none found.
 func matchReceive(give *transaction.Transaction, recvs []*transaction.Transaction, used map[int64]bool, windowDays int) *transaction.Transaction {
 	var best *transaction.Transaction
 	bestDiff := windowDays + 1
 	for _, r := range recvs {
 		if used[r.ID] {
+			continue
+		}
+		if r.AccountID != give.AccountID {
 			continue
 		}
 		if !r.Quantity.Equal(give.Quantity) {

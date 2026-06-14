@@ -453,6 +453,37 @@ func TestNGService_DetectPairs_DirectPath_NoMatchWhenTooFarApart(t *testing.T) {
 	}
 }
 
+func TestNGService_DetectPairs_NoMatchAcrossAccounts(t *testing.T) {
+	// Give in account 1, receive in account 2 — must not match.
+	dlrSec := &security.Security{ID: 1, Ticker: "DLR", Exchange: "TSX"}
+	dlruSec := &security.Security{ID: 2, Ticker: "DLR.U", Exchange: "TSX"}
+
+	give := &transaction.Transaction{ID: 10, AccountID: 1, SecurityID: 1, Type: transaction.TypeTransferOut,
+		TradeDate: ngDate("2024-06-15"), Quantity: ngQty("100")}
+	recv := &transaction.Transaction{ID: 20, AccountID: 2, SecurityID: 2, Type: transaction.TypeJournal,
+		TradeDate: ngDate("2024-06-15"), Quantity: ngQty("100")}
+
+	txStore := &ngMockTxStore{
+		bySecType: map[int64]map[transaction.Type][]*transaction.Transaction{
+			1: {transaction.TypeTransferOut: []*transaction.Transaction{give}},
+			2: {transaction.TypeJournal: []*transaction.Transaction{recv}},
+		},
+	}
+	secStore := &ngMockSecStore{byTickerExchange: map[string]*security.Security{
+		"DLR|TSX":   dlrSec,
+		"DLR.U|TSX": dlruSec,
+	}}
+
+	svc := service.NewNGService(txStore, secStore)
+	pairs, err := svc.DetectPairs(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("DetectPairs: %v", err)
+	}
+	if len(pairs) != 0 {
+		t.Errorf("expected 0 pairs when accounts differ, got %d", len(pairs))
+	}
+}
+
 func TestNGService_DetectPairs_DirectPath_SkippedWhenJournalCovered(t *testing.T) {
 	// Same qty+date covered by a TypeTransferOut → TypeBuy should not produce a second pair.
 	dlrSec := &security.Security{ID: 1, Ticker: "DLR", Exchange: "TSX"}
