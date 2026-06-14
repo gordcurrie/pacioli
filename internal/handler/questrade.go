@@ -347,8 +347,20 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 	}
 	alreadyImported := make(map[string]bool, len(existing))
 	for _, tx := range existing {
+		// Only deduplicate against Questrade-sourced rows. Manual entries sharing
+		// the same (secID, date, type, qty) should not block a QT import.
+		if tx.Source != transaction.SourceQuestrade {
+			continue
+		}
 		key := fmt.Sprintf("%d|%s|%s|%s", tx.SecurityID, tx.TradeDate.Format(time.DateOnly), string(tx.Type), tx.Quantity.String())
 		alreadyImported[key] = true
+		// A linked NG give-leg is stored as fx_conversion but QT always classifies
+		// the same negative-FXT activity as transfer_out. Add an alias so re-importing
+		// after linking correctly detects the give-leg as already present.
+		if tx.Type == transaction.TypeFXConversion {
+			altKey := fmt.Sprintf("%d|%s|%s|%s", tx.SecurityID, tx.TradeDate.Format(time.DateOnly), string(transaction.TypeTransferOut), tx.Quantity.String())
+			alreadyImported[altKey] = true
+		}
 	}
 
 	// tryAutoCreateSecurity calls Questrade symbol search and creates the security in the DB

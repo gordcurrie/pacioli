@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/gordcurrie/pacioli/internal/audit"
 	"github.com/gordcurrie/pacioli/internal/service"
 )
 
@@ -20,7 +21,7 @@ func (h *Handler) ngPreview(w http.ResponseWriter, r *http.Request) {
 	pairs, err := h.ngSvc.DetectPairs(r.Context(), userID)
 	if err != nil {
 		log.Error("ng detect pairs", "err", err)
-		h.render(w, r, "ng_preview", ngPreviewData{Error: "Failed to detect pairs: " + err.Error()})
+		h.render(w, r, "ng_preview", ngPreviewData{Error: "Failed to detect pairs"})
 		return
 	}
 	h.render(w, r, "ng_preview", ngPreviewData{Pairs: pairs})
@@ -79,6 +80,9 @@ func (h *Handler) ngLink(w http.ResponseWriter, r *http.Request) {
 	}
 
 	n, err := h.ngSvc.LinkPairs(r.Context(), toLink)
+	for _, p := range toLink[:n] {
+		h.logAudit(r, audit.ActionUpdate, audit.EntityTransaction, p.GiveLeg.ID, audit.SourceQuestrade, "")
+	}
 	if err != nil {
 		log.Error("ng link pairs", "err", err)
 		if n > 0 {

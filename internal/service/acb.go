@@ -23,6 +23,10 @@ type HistoryRow struct {
 	RunningShares      decimal.Decimal
 	RunningACB         decimal.Decimal
 	RunningACBPerShare decimal.Decimal
+	// DisplayACBPerShare is the ACB/share to show in history tables: pre-tx for
+	// disposals (so the rate used in gain calc is visible even when the pool hits
+	// zero), post-tx for acquisitions (so the updated cost basis is shown).
+	DisplayACBPerShare decimal.Decimal
 	// SuperficialLossAdj is the denied-loss carry-forward applied on this row.
 	// Buy rows: added to buy cost (post-sell replacement, or deferred pre-sell carry-forward
 	// when a prior sell-all emptied the pool and couldn't apply the adjustment in-place).
@@ -126,6 +130,10 @@ func CalculateACBWithHistory(securityID int64, txs []*transaction.Transaction, a
 		if r.Shares.IsPositive() {
 			perShare = r.TotalACB.Div(r.Shares)
 		}
+		displayACBPerShare := perShare
+		if isDisposalType(tx.Type) {
+			displayACBPerShare = preTxACBPerShare
+		}
 		rows = append(rows, HistoryRow{
 			Tx:                 tx,
 			PreTxShares:        preTxShares,
@@ -133,6 +141,7 @@ func CalculateACBWithHistory(securityID int64, txs []*transaction.Transaction, a
 			RunningShares:      r.Shares,
 			RunningACB:         r.TotalACB,
 			RunningACBPerShare: perShare,
+			DisplayACBPerShare: displayACBPerShare,
 			SuperficialLossAdj: superficialLossAdj,
 		})
 	}
