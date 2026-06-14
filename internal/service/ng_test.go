@@ -14,9 +14,10 @@ import (
 
 // ngMockTxStore tracks ListUnlinkedBySecurityAndType calls and LinkNorbertGambitPair calls.
 type ngMockTxStore struct {
-	bySecType map[int64]map[transaction.Type][]*transaction.Transaction
-	linked    [][2]int64 // pairs (giveLegID, receiveLegID) passed to LinkNorbertGambitPair
-	linkErr   error
+	bySecType     map[int64]map[transaction.Type][]*transaction.Transaction
+	linked        [][2]int64 // pairs (giveLegID, receiveLegID) passed to LinkNorbertGambitPair
+	directLinked  [][2]int64 // pairs passed to LinkNorbertGambitPairDirect
+	linkErr       error
 }
 
 func (m *ngMockTxStore) Create(_ context.Context, _ *transaction.Transaction) error { return nil }
@@ -56,6 +57,13 @@ func (m *ngMockTxStore) LinkNorbertGambitPair(_ context.Context, giveID, recvID 
 		return m.linkErr
 	}
 	m.linked = append(m.linked, [2]int64{giveID, recvID})
+	return nil
+}
+func (m *ngMockTxStore) LinkNorbertGambitPairDirect(_ context.Context, give, recv *transaction.Transaction) error {
+	if m.linkErr != nil {
+		return m.linkErr
+	}
+	m.directLinked = append(m.directLinked, [2]int64{give.ID, recv.ID})
 	return nil
 }
 
@@ -372,5 +380,160 @@ func TestNGService_DetectPairs_PicksClosestReceiveLeg(t *testing.T) {
 	}
 	if pairs[0].ReceiveLeg.ID != 20 {
 		t.Errorf("expected closest receive leg (ID=20), got ID=%d", pairs[0].ReceiveLeg.ID)
+	}
+}
+
+// --- Direct path tests (Cash accounts: no TypeTransferOut/TypeJournal reported) ---
+
+func TestNGService_DetectPairs_DirectPath_MatchesBuySell(t *testing.T) {
+	// Questrade Cash: TypeBuy on DLR.U.TO + TypeSell on DLR.TO, 5 days apart.
+	dlrSec := &security.Security{ID: 1, Ticker: "DLR.TO", Exchange: "TSX"}
+	dlruSec := &security.Security{ID: 2, Ticker: "DLR.U.TO", Exchange: "TSX"}
+
+	give := &transaction.Transaction{ID: 10, SecurityID: 2, Type: transaction.TypeBuy,
+		TradeDate: ngDate("2025-01-06"), Quantity: ngQty("13000")}
+	recv := &transaction.Transaction{ID: 20, SecurityID: 1, Type: transaction.TypeSell,
+		TradeDate: ngDate("2025-01-10"), Quantity: ngQty("13000")}
+
+	txStore := &ngMockTxStore{
+		bySecType: map[int64]map[transaction.Type][]*transaction.Transaction{
+			2: {transaction.TypeBuy: []*transaction.Transaction{give}},
+			1: {transaction.TypeSell: []*transaction.Transaction{recv}},
+		},
+	}
+	secStore := &ngMockSecStore{byTickerExchange: map[string]*security.Security{
+		"DLR.TO|TSX":   dlrSec,
+		"DLR.U.TO|TSX": dlruSec,
+	}}
+
+	svc := service.NewNGService(txStore, secStore)
+	pairs, err := svc.DetectPairs(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("DetectPairs direct: %v", err)
+	}
+	if len(pairs) != 1 {
+		t.Fatalf("expected 1 direct pair, got %d", len(pairs))
+	}
+	if !pairs[0].IsDirect {
+		t.Error("expected IsDirect=true")
+	}
+	if pairs[0].GiveLeg.ID != 10 || pairs[0].ReceiveLeg.ID != 20 {
+		t.Errorf("wrong pair: give=%d recv=%d", pairs[0].GiveLeg.ID, pairs[0].ReceiveLeg.ID)
+	}
+}
+
+func TestNGService_DetectPairs_DirectPath_NoMatchWhenTooFarApart(t *testing.T) {
+	// 11 days > ngDirectWindowDays (10) → no match.
+	dlrSec := &security.Security{ID: 1, Ticker: "DLR.TO", Exchange: "TSX"}
+	dlruSec := &security.Security{ID: 2, Ticker: "DLR.U.TO", Exchange: "TSX"}
+
+	give := &transaction.Transaction{ID: 10, SecurityID: 2, Type: transaction.TypeBuy,
+		TradeDate: ngDate("2025-01-01"), Quantity: ngQty("5000")}
+	recv := &transaction.Transaction{ID: 20, SecurityID: 1, Type: transaction.TypeSell,
+		TradeDate: ngDate("2025-01-12"), Quantity: ngQty("5000")}
+
+	txStore := &ngMockTxStore{
+		bySecType: map[int64]map[transaction.Type][]*transaction.Transaction{
+			2: {transaction.TypeBuy: []*transaction.Transaction{give}},
+			1: {transaction.TypeSell: []*transaction.Transaction{recv}},
+		},
+	}
+	secStore := &ngMockSecStore{byTickerExchange: map[string]*security.Security{
+		"DLR.TO|TSX":   dlrSec,
+		"DLR.U.TO|TSX": dlruSec,
+	}}
+
+	svc := service.NewNGService(txStore, secStore)
+	pairs, err := svc.DetectPairs(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("DetectPairs: %v", err)
+	}
+	if len(pairs) != 0 {
+		t.Errorf("expected 0 direct pairs when gap > 10 days, got %d", len(pairs))
+	}
+}
+
+func TestNGService_DetectPairs_DirectPath_SkippedWhenJournalCovered(t *testing.T) {
+	// Same qty+date covered by a TypeTransferOut → TypeBuy should not produce a second pair.
+	dlrSec := &security.Security{ID: 1, Ticker: "DLR", Exchange: "TSX"}
+	dlruSec := &security.Security{ID: 2, Ticker: "DLR.U", Exchange: "TSX"}
+
+	xferGive := &transaction.Transaction{ID: 10, SecurityID: 1, Type: transaction.TypeTransferOut,
+		TradeDate: ngDate("2024-06-15"), Quantity: ngQty("200")}
+	jRecv := &transaction.Transaction{ID: 20, SecurityID: 2, Type: transaction.TypeJournal,
+		TradeDate: ngDate("2024-06-15"), Quantity: ngQty("200")}
+	buyGive := &transaction.Transaction{ID: 11, SecurityID: 1, Type: transaction.TypeBuy,
+		TradeDate: ngDate("2024-06-15"), Quantity: ngQty("200")}
+	sellRecv := &transaction.Transaction{ID: 21, SecurityID: 2, Type: transaction.TypeSell,
+		TradeDate: ngDate("2024-06-17"), Quantity: ngQty("200")}
+
+	txStore := &ngMockTxStore{
+		bySecType: map[int64]map[transaction.Type][]*transaction.Transaction{
+			1: {
+				transaction.TypeTransferOut: []*transaction.Transaction{xferGive},
+				transaction.TypeBuy:         []*transaction.Transaction{buyGive},
+			},
+			2: {
+				transaction.TypeJournal: []*transaction.Transaction{jRecv},
+				transaction.TypeSell:    []*transaction.Transaction{sellRecv},
+			},
+		},
+	}
+	secStore := &ngMockSecStore{byTickerExchange: map[string]*security.Security{
+		"DLR|TSX":   dlrSec,
+		"DLR.U|TSX": dlruSec,
+	}}
+
+	svc := service.NewNGService(txStore, secStore)
+	pairs, err := svc.DetectPairs(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("DetectPairs: %v", err)
+	}
+	// Only the journal pair; direct path sees qty|date covered, skips TypeBuy.
+	if len(pairs) != 1 {
+		t.Fatalf("expected 1 pair (journal only), got %d", len(pairs))
+	}
+	if pairs[0].IsDirect {
+		t.Error("expected journal pair (IsDirect=false)")
+	}
+}
+
+func TestNGService_LinkPairs_DirectCallsDirectStore(t *testing.T) {
+	dlrSec := &security.Security{ID: 1, Ticker: "DLR.TO", Exchange: "TSX"}
+	dlruSec := &security.Security{ID: 2, Ticker: "DLR.U.TO", Exchange: "TSX"}
+
+	give := &transaction.Transaction{ID: 10, SecurityID: 2, Type: transaction.TypeBuy,
+		TradeDate: ngDate("2025-01-06"), Quantity: ngQty("13000")}
+	recv := &transaction.Transaction{ID: 20, SecurityID: 1, Type: transaction.TypeSell,
+		TradeDate: ngDate("2025-01-10"), Quantity: ngQty("13000")}
+
+	txStore := &ngMockTxStore{
+		bySecType: map[int64]map[transaction.Type][]*transaction.Transaction{
+			2: {transaction.TypeBuy: []*transaction.Transaction{give}},
+			1: {transaction.TypeSell: []*transaction.Transaction{recv}},
+		},
+	}
+	secStore := &ngMockSecStore{byTickerExchange: map[string]*security.Security{
+		"DLR.TO|TSX":   dlrSec,
+		"DLR.U.TO|TSX": dlruSec,
+	}}
+
+	svc := service.NewNGService(txStore, secStore)
+	pairs, _ := svc.DetectPairs(context.Background(), 1)
+	n, err := svc.LinkPairs(context.Background(), pairs)
+	if err != nil {
+		t.Fatalf("LinkPairs direct: %v", err)
+	}
+	if n != 1 {
+		t.Errorf("expected 1 linked, got %d", n)
+	}
+	if len(txStore.linked) != 0 {
+		t.Errorf("expected 0 journal links, got %d", len(txStore.linked))
+	}
+	if len(txStore.directLinked) != 1 {
+		t.Fatalf("expected 1 direct link, got %d", len(txStore.directLinked))
+	}
+	if txStore.directLinked[0][0] != 10 || txStore.directLinked[0][1] != 20 {
+		t.Errorf("wrong IDs: %v", txStore.directLinked[0])
 	}
 }

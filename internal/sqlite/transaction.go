@@ -184,6 +184,94 @@ func (r *TransactionStore) LinkNorbertGambitPair(ctx context.Context, giveLegID,
 	return nil
 }
 
+func (r *TransactionStore) LinkNorbertGambitPairDirect(ctx context.Context, give, receive *transaction.Transaction) error {
+	dbTx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("link ng pair direct: begin: %w", err)
+	}
+	defer func() { _ = dbTx.Rollback() }()
+
+	var giveFXRate *string
+	if give.FXRate != nil {
+		s := give.FXRate.String()
+		giveFXRate = &s
+	}
+
+	// Synthetic TypeFXConversion on give security: records disposal of give-leg shares,
+	// reducing its ACB pool. Dated at the original buy date so it sorts after the buy.
+	res, err := dbTx.ExecContext(ctx,
+		`INSERT INTO transactions
+		 (account_id, security_id, type, trade_date, settled_date,
+		  quantity, price_native, commission_native, fx_rate, price_cad, commission_cad,
+		  source, notes, linked_transaction_id)
+		 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,NULL)`,
+		give.AccountID, give.SecurityID, string(transaction.TypeFXConversion),
+		give.TradeDate.Format(time.DateOnly), give.TradeDate.Format(time.DateOnly),
+		give.Quantity.String(), give.PriceNative.String(), "0",
+		giveFXRate, give.PriceCAD.String(), "0",
+		string(give.Source), "synthetic NG: journal not reported by broker",
+	)
+	if err != nil {
+		return fmt.Errorf("link ng pair direct: create fx_conversion: %w", err)
+	}
+	fxConvID, err := res.LastInsertId()
+	if err != nil {
+		return fmt.Errorf("link ng pair direct: fx_conversion id: %w", err)
+	}
+
+	// Synthetic TypeJournal on receive security: establishes ACB basis before the sell.
+	// PriceNative = give.PriceCAD because the receive security is CAD-denominated; this
+	// transfers the cost basis from the give-leg buy into the receive-leg ACB pool.
+	// Dated at the give-leg date so it sorts before the TypeSell in the ACB engine.
+	res, err = dbTx.ExecContext(ctx,
+		`INSERT INTO transactions
+		 (account_id, security_id, type, trade_date, settled_date,
+		  quantity, price_native, commission_native, fx_rate, price_cad, commission_cad,
+		  source, notes, linked_transaction_id)
+		 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		receive.AccountID, receive.SecurityID, string(transaction.TypeJournal),
+		give.TradeDate.Format(time.DateOnly), give.TradeDate.Format(time.DateOnly),
+		give.Quantity.String(), give.PriceCAD.String(), "0",
+		nil, give.PriceCAD.String(), "0",
+		string(give.Source), "synthetic NG: journal not reported by broker",
+		fxConvID,
+	)
+	if err != nil {
+		return fmt.Errorf("link ng pair direct: create journal: %w", err)
+	}
+	journalID, err := res.LastInsertId()
+	if err != nil {
+		return fmt.Errorf("link ng pair direct: journal id: %w", err)
+	}
+
+	// Cross-link the two synthetic transactions.
+	if _, err = dbTx.ExecContext(ctx,
+		`UPDATE transactions SET linked_transaction_id=? WHERE id=?`, journalID, fxConvID); err != nil {
+		return fmt.Errorf("link ng pair direct: link synthetics: %w", err)
+	}
+
+	// Mark original give (TypeBuy) and receive (TypeSell) as linked so they are excluded
+	// from future NG detection (ListUnlinkedBySecurityAndType filters on IS NULL).
+	if _, err = dbTx.ExecContext(ctx,
+		`UPDATE transactions SET linked_transaction_id=? WHERE id=? AND linked_transaction_id IS NULL`,
+		fxConvID, give.ID); err != nil {
+		return fmt.Errorf("link ng pair direct: mark give: %w", err)
+	}
+	if _, err = dbTx.ExecContext(ctx,
+		`UPDATE transactions SET linked_transaction_id=? WHERE id=? AND linked_transaction_id IS NULL`,
+		journalID, receive.ID); err != nil {
+		return fmt.Errorf("link ng pair direct: mark receive: %w", err)
+	}
+
+	if err := dbTx.Commit(); err != nil {
+		return fmt.Errorf("link ng pair direct: commit: %w", err)
+	}
+
+	give.LinkedTransactionID = &fxConvID
+	receive.LinkedTransactionID = &journalID
+	return nil
+}
+
 func (r *TransactionStore) Delete(ctx context.Context, id int64) error {
 	_, err := r.db.ExecContext(ctx, `DELETE FROM transactions WHERE id=?`, id)
 	return err

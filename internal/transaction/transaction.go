@@ -74,4 +74,9 @@ type Store interface {
 	// LinkNorbertGambitPair atomically converts the give-leg to TypeFXConversion and sets
 	// linked_transaction_id on both legs.
 	LinkNorbertGambitPair(ctx context.Context, giveLegID, receiveLegID int64) error
+	// LinkNorbertGambitPairDirect handles NG pairs where the broker did not report the
+	// intermediate journal transactions (common for Cash accounts). It creates synthetic
+	// TypeFXConversion and TypeJournal records representing the journal step, then marks
+	// the original give/receive as linked so they are excluded from future detection.
+	LinkNorbertGambitPairDirect(ctx context.Context, give, receive *Transaction) error
 }

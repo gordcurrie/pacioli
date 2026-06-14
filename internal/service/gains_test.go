@@ -83,6 +83,9 @@ func (m *mockTxStore) UpdateFXRate(_ context.Context, _ int64, _ *decimal.Decima
 	return nil
 }
 func (m *mockTxStore) LinkNorbertGambitPair(_ context.Context, _, _ int64) error { return nil }
+func (m *mockTxStore) LinkNorbertGambitPairDirect(_ context.Context, _, _ *transaction.Transaction) error {
+	return nil
+}
 
 // mockSecStore is a minimal in-memory security.Store for testing.
 type mockSecStore struct {
