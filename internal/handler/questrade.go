@@ -76,16 +76,15 @@ type qtPreviewData struct {
 // CAD amounts and FX rates are NOT included — the commit handler derives them
 // server-side from the security's currency and the BoC cache.
 type qtCommitRow struct {
-	TradeDate    string `json:"td"`
-	SettledDate  string `json:"sd"`
-	AccountID    int64  `json:"aid"`
-	SecurityID   int64  `json:"sid"`
-	TxType       string `json:"t"`
-	Quantity     string `json:"q"`
-	PriceNative  string `json:"pn"`
-	CommNative   string `json:"cn"`
-	Notes        string `json:"n"`
-	QtActivityID int64  `json:"qid,omitempty"`
+	TradeDate   string `json:"td"`
+	SettledDate string `json:"sd"`
+	AccountID   int64  `json:"aid"`
+	SecurityID  int64  `json:"sid"`
+	TxType      string `json:"t"`
+	Quantity    string `json:"q"`
+	PriceNative string `json:"pn"`
+	CommNative  string `json:"cn"`
+	Notes       string `json:"n"`
 }
 
 // activeToken loads the stored token, refreshing and re-saving if near expiry.
@@ -346,15 +345,10 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, r, err)
 		return
 	}
-	alreadyImportedQtIDs := make(map[int64]bool, len(existing))
 	alreadyImported := make(map[string]bool, len(existing))
 	for _, tx := range existing {
-		if tx.QtActivityID != nil && *tx.QtActivityID != 0 {
-			alreadyImportedQtIDs[*tx.QtActivityID] = true
-		} else {
-			key := fmt.Sprintf("%d|%s|%s|%s", tx.SecurityID, tx.TradeDate.Format(time.DateOnly), string(tx.Type), tx.Quantity.String())
-			alreadyImported[key] = true
-		}
+		key := fmt.Sprintf("%d|%s|%s|%s", tx.SecurityID, tx.TradeDate.Format(time.DateOnly), string(tx.Type), tx.Quantity.String())
+		alreadyImported[key] = true
 	}
 
 	// tryAutoCreateSecurity calls Questrade symbol search and creates the security in the DB
@@ -486,13 +480,8 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		var isDup bool
-		if act.ID != 0 {
-			isDup = alreadyImportedQtIDs[act.ID]
-		} else {
-			dupKey := fmt.Sprintf("%d|%s|%s|%s", sec.ID, act.TradeDate.Format(time.DateOnly), string(txType), qty.String())
-			isDup = alreadyImported[dupKey]
-		}
+		dupKey := fmt.Sprintf("%d|%s|%s|%s", sec.ID, act.TradeDate.Format(time.DateOnly), string(txType), qty.String())
+		isDup := alreadyImported[dupKey]
 		if isDup {
 			totSkip++
 			baseRow.Status = qtStatusFlag
@@ -533,15 +522,14 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 		// CAD amounts are NOT stored in the commit payload — derived server-side
 		// at commit time from the security's currency + BoC cache.
 		commitRows = append(commitRows, qtCommitRow{
-			TradeDate:    act.TradeDate.Format(time.DateOnly),
-			SettledDate:  act.SettledDate.Format(time.DateOnly),
-			AccountID:    pAccountID,
-			SecurityID:   sec.ID,
-			TxType:       string(txType),
-			Quantity:     qty.String(),
-			PriceNative:  price.String(),
-			CommNative:   comm.String(),
-			QtActivityID: act.ID,
+			TradeDate:   act.TradeDate.Format(time.DateOnly),
+			SettledDate: act.SettledDate.Format(time.DateOnly),
+			AccountID:   pAccountID,
+			SecurityID:  sec.ID,
+			TxType:      string(txType),
+			Quantity:    qty.String(),
+			PriceNative: price.String(),
+			CommNative:  comm.String(),
 		})
 	}
 
@@ -734,10 +722,6 @@ func (h *Handler) questradeCommit(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		var qtActivityID *int64
-		if cr.QtActivityID != 0 {
-			qtActivityID = &cr.QtActivityID
-		}
 		tx := &transaction.Transaction{
 			AccountID:        cr.AccountID,
 			SecurityID:       cr.SecurityID,
@@ -752,7 +736,6 @@ func (h *Handler) questradeCommit(w http.ResponseWriter, r *http.Request) {
 			CommissionCAD:    commCAD,
 			Source:           transaction.SourceQuestrade,
 			Notes:            cr.Notes,
-			QtActivityID:     qtActivityID,
 		}
 
 		if err := h.transactions.Create(ctx, tx); err != nil {

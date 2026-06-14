@@ -212,7 +212,6 @@ func (c *Client) SymbolSearch(ctx context.Context, prefix string) ([]SymbolInfo,
 
 // Activity is one entry from the Questrade activities endpoint.
 type Activity struct {
-	ID          int64
 	TradeDate   time.Time
 	SettledDate time.Time
 	Action      string
@@ -231,7 +230,6 @@ type activitiesJSON struct {
 }
 
 type activityJSON struct {
-	ID          int64       `json:"id"`
 	TradeDate   string      `json:"tradeDate"`
 	SettledDate string      `json:"settlementDate"`
 	Action      string      `json:"action"`
@@ -247,8 +245,15 @@ type activityJSON struct {
 
 // Activities fetches all activities for accountNumber in the half-open interval
 // [start, end), automatically splitting into 30-day chunks per API limits.
+//
+// Questrade's API compares startTime/endTime against activity dates in Eastern
+// time, not UTC. Because chunk boundaries are midnight UTC (= ~8 pm ET the prior
+// day), the same date in ET falls within two adjacent chunk windows. We dedup
+// within each chunk boundary to drop any activity that appears in more than one
+// chunk.
 func (c *Client) Activities(ctx context.Context, accountNumber string, start, end time.Time) ([]Activity, error) {
 	var all []Activity
+	seen := make(map[string]bool)
 	cur := start
 	for cur.Before(end) {
 		next := cur.AddDate(0, 0, 30)
@@ -259,7 +264,14 @@ func (c *Client) Activities(ctx context.Context, accountNumber string, start, en
 		if err != nil {
 			return nil, err
 		}
-		all = append(all, chunk...)
+		for i := range chunk {
+			act := &chunk[i]
+			key := act.TradeDate.Format(time.RFC3339Nano) + "|" + act.Action + "|" + act.Symbol + "|" + act.Quantity.String() + "|" + act.Price.String()
+			if !seen[key] {
+				seen[key] = true
+				all = append(all, *act)
+			}
+		}
 		cur = next
 	}
 	return all, nil
@@ -318,7 +330,6 @@ func parseActivity(a *activityJSON) (Activity, error) {
 	}
 
 	return Activity{
-		ID:          a.ID,
 		TradeDate:   tradeDate,
 		SettledDate: settledDate,
 		Action:      a.Action,
