@@ -23,6 +23,10 @@ type HistoryRow struct {
 	RunningShares      decimal.Decimal
 	RunningACB         decimal.Decimal
 	RunningACBPerShare decimal.Decimal
+	// DisplayACBPerShare is the ACB/share to show in history tables: pre-tx for
+	// disposals (so the rate used in gain calc is visible even when the pool hits
+	// zero), post-tx for acquisitions (so the updated cost basis is shown).
+	DisplayACBPerShare decimal.Decimal
 	// SuperficialLossAdj is the denied-loss carry-forward applied on this row.
 	// Buy rows: added to buy cost (post-sell replacement, or deferred pre-sell carry-forward
 	// when a prior sell-all emptied the pool and couldn't apply the adjustment in-place).
@@ -126,6 +130,10 @@ func CalculateACBWithHistory(securityID int64, txs []*transaction.Transaction, a
 		if r.Shares.IsPositive() {
 			perShare = r.TotalACB.Div(r.Shares)
 		}
+		displayACBPerShare := perShare
+		if isDisposalType(tx.Type) {
+			displayACBPerShare = preTxACBPerShare
+		}
 		rows = append(rows, HistoryRow{
 			Tx:                 tx,
 			PreTxShares:        preTxShares,
@@ -133,6 +141,7 @@ func CalculateACBWithHistory(securityID int64, txs []*transaction.Transaction, a
 			RunningShares:      r.Shares,
 			RunningACB:         r.TotalACB,
 			RunningACBPerShare: perShare,
+			DisplayACBPerShare: displayACBPerShare,
 			SuperficialLossAdj: superficialLossAdj,
 		})
 	}
@@ -153,10 +162,6 @@ func CalculateACB(securityID int64, txs []*transaction.Transaction) *ACBResult {
 // there must be an acquisition within the ±30-day window AND a positive net position
 // across all accounts at the end of that window.
 // allTxs must be sorted by trade_date ascending and include transactions from all accounts.
-// TypeFXConversion (Norbert's Gambit give-leg) is treated as a disposal for net position purposes;
-// reverse Norbert's acquisitions will be under-counted as a result, but that is the less harmful
-// direction (may miss a superficial loss, not create a false one). A direction field on Transaction
-// would eliminate the ambiguity.
 // checkSuperficialLoss returns (isSuperf, netSharesAtWindowEnd).
 // isSuperf is true when the sell qualifies as a superficial loss: there is an acquisition
 // within the ±30-day window AND the net position at windowEnd is positive.
@@ -177,7 +182,7 @@ func checkSuperficialLoss(allTxs []*transaction.Transaction, sellDate time.Time)
 			if !tx.TradeDate.Before(windowStart) {
 				hasWindowBuy = true
 			}
-		case isDisposalType(tx.Type) || tx.Type == transaction.TypeFXConversion:
+		case isDisposalType(tx.Type):
 			shares = shares.Sub(tx.Quantity)
 		}
 	}
@@ -211,7 +216,7 @@ func computeAdjDenied(securityID int64, nonRegTxs, allTxs []*transaction.Transac
 	replFloor := 0
 
 	for _, row := range history {
-		if !isDisposalType(row.Tx.Type) {
+		if !isTaxableDisposal(row.Tx.Type) {
 			continue
 		}
 		if row.PreTxShares.IsZero() {

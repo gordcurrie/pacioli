@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 
 	"github.com/gordcurrie/pacioli/internal/errs"
@@ -102,6 +103,9 @@ func scanSecurity(s securityScanner) (*security.Security, error) {
 	var sec security.Security
 	var secType string
 	if err := s.Scan(&sec.ID, &sec.Ticker, &sec.Exchange, &sec.Name, &secType, &sec.Currency, &sec.Source); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, errs.ErrNotFound
+		}
 		return nil, fmt.Errorf("scan security: %w", err)
 	}
 	sec.Type = security.Type(secType)

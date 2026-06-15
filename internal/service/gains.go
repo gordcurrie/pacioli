@@ -45,6 +45,14 @@ func NewGainsService(txStore transaction.Store, secStore security.Store) *GainsS
 }
 
 func isDisposalType(t transaction.Type) bool {
+	// TypeFXConversion is the Norbert's Gambit give-leg: reduces share count in ACB
+	// but is NOT a taxable disposal (gains SQL filters on 'sell','transfer_out' only).
+	return t == transaction.TypeSell || t == transaction.TypeTransferOut || t == transaction.TypeFXConversion
+}
+
+// isTaxableDisposal reports whether a transaction type produces a reportable capital gain/loss.
+// TypeFXConversion (NG give-leg) is excluded: it reduces ACB share count but is not a taxable event.
+func isTaxableDisposal(t transaction.Type) bool {
 	return t == transaction.TypeSell || t == transaction.TypeTransferOut
 }
 
@@ -84,7 +92,7 @@ func (s *GainsService) Calculate(ctx context.Context, userID int64, year int) (*
 		_, history := CalculateACBWithHistory(secID, txs, adj)
 
 		for _, row := range history {
-			if !isDisposalType(row.Tx.Type) || row.Tx.TradeDate.Year() != year {
+			if !isTaxableDisposal(row.Tx.Type) || row.Tx.TradeDate.Year() != year {
 				continue
 			}
 
@@ -163,7 +171,7 @@ func (s *GainsService) HistoryForSecurity(ctx context.Context, securityID, userI
 	// Fast path: skip O(n) ACB computation when no disposals exist in the target year.
 	hasDisposal := false
 	for _, tx := range txs {
-		if isDisposalType(tx.Type) && tx.TradeDate.Year() == year {
+		if isTaxableDisposal(tx.Type) && tx.TradeDate.Year() == year {
 			hasDisposal = true
 			break
 		}
@@ -181,7 +189,7 @@ func (s *GainsService) HistoryForSecurity(ctx context.Context, securityID, userI
 
 	lastIdx := -1
 	for i, row := range history {
-		if isDisposalType(row.Tx.Type) && row.Tx.TradeDate.Year() == year {
+		if isTaxableDisposal(row.Tx.Type) && row.Tx.TradeDate.Year() == year {
 			lastIdx = i
 		}
 	}
@@ -189,7 +197,7 @@ func (s *GainsService) HistoryForSecurity(ctx context.Context, securityID, userI
 	trimmed := history[:lastIdx+1]
 	out := make([]GainsDetailRow, len(trimmed))
 	for i, row := range trimmed {
-		isDisposal := isDisposalType(row.Tx.Type)
+		isDisposal := isTaxableDisposal(row.Tx.Type)
 		needsReview := isDisposal && row.PreTxShares.IsZero()
 		var gainLoss decimal.Decimal
 		var isSuperficialLoss bool

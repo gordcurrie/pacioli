@@ -1,0 +1,58 @@
+{{define "content"}}
+<h2>Norbert's Gambit — Detect Pairs</h2>
+
+{{if .Error}}<p class="danger">{{.Error}}</p>{{end}}
+
+{{if .Pairs}}
+
+
+<p>Found <strong>{{len .Pairs}}</strong> unlinked pair(s). Review below, then confirm to link them.</p>
+<p>Linking converts each give-leg to <code>fx_conversion</code> (removed from capital gains, still reduces ACB)
+and sets <code>linked_transaction_id</code> on both legs.</p>
+
+<figure>
+  <table>
+    <thead>
+      <tr>
+        <th colspan="3">Give-leg (DLR → out)</th>
+        <th></th>
+        <th colspan="3">Receive-leg (DLR.U ← in)</th>
+      </tr>
+      <tr>
+        <th>Date</th><th>Qty</th><th>Type</th>
+        <th></th>
+        <th>Date</th><th>Qty</th><th>Type</th>
+      </tr>
+    </thead>
+    <tbody>
+    {{range .Pairs}}
+      <tr>
+        <td>{{.GiveLeg.TradeDate.Format "2006-01-02"}}</td>
+        <td>{{.GiveLeg.Quantity}}</td>
+        <td>{{.GiveLeg.Type}}</td>
+        <td>→</td>
+        <td>{{.ReceiveLeg.TradeDate.Format "2006-01-02"}}</td>
+        <td>{{.ReceiveLeg.Quantity}}</td>
+        <td>{{.ReceiveLeg.Type}}</td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+</figure>
+
+<div style="display:flex; gap:1rem; align-items:center">
+  <form method="post" action="/questrade/ng">
+    {{range .Pairs}}
+    <input type="hidden" name="give_id" value="{{.GiveLeg.ID}}">
+    <input type="hidden" name="recv_id" value="{{.ReceiveLeg.ID}}">
+    {{end}}
+    <button type="submit">{{if eq (len .Pairs) 1}}Link 1 Pair{{else}}Link {{len .Pairs}} Pairs{{end}}</button>
+  </form>
+  <a href="/questrade">Cancel</a>
+</div>
+
+{{else}}
+<p>No unlinked Norbert's Gambit pairs found for DLR / DLR.U.</p>
+<p><a href="/questrade">← Back to Questrade</a></p>
+{{end}}
+{{end}}

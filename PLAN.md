@@ -124,15 +124,15 @@
 - ✅ `h.userID` removed — user comes from request context set by `RequireAuth`
 - ✅ Audit log viewer — `GET /admin/audit`; filterable by entity type, action, user; paginated (50/page); colour-coded action badges; JSON snapshot expandable inline
 
-## Phase 7 — ACB Correctness & Completeness ⬜
+## Phase 7 — ACB Correctness & Completeness 🚧
 
 Close the gaps that can produce wrong ACB numbers before building reporting on top of them.
 
-- ⬜ Superficial loss ACB carry-forward — currently flagged only; adjust ACB of replacement shares per CRA rule (denied loss added to replacement position's ACB)
+- ✅ Superficial loss ACB carry-forward — denied loss added to replacement position's ACB; convergence loop handles cross-sell dependency; pre/post-sell and registered vs non-reg replacements handled correctly; `HasCarryForward` flag on detail rows
+- ✅ Norbert's Gambit auto-detection (PR #13) — detect unlinked DLR/DLR.U `transfer_out`+`journal` pairs; preview UI + confirm link; give-leg converted to `fx_conversion` type on link; both CAD→USD and USD→CAD directions supported; Questrade-synced securities (`.TO`-suffixed tickers) detected via fallback lookup
 - ⬜ Stock splits / consolidations — new-shares-for-old at zero cost; adjusts ACB/share and share count; needed for any position that has split
 - ⬜ Stock dividends — shares issued in lieu of cash dividend; FMV of shares received is income, same FMV becomes ACB of new shares
 - ⬜ Phantom distributions — reinvested distributions that increase ACB without a cash inflow (common in ETFs); T3 box 42 data
-- ⬜ Norbert's Gambit auto-detection — heuristic to auto-link paired DLR.TO / DLR.U.TO legs (deferred from Phase 4)
 - ⬜ Manual FX rate override for historical entries (deferred from Phase 4)
 
 ---

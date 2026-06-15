@@ -79,6 +79,7 @@ func run() error {
 	bocSvc := service.NewBOCFetcher(fxStore)
 	gainsSvc := service.NewGainsService(txStore, securityStore)
 	rocSvc := service.NewROCService(txStore, distStore, securityStore)
+	ngSvc := service.NewNGService(txStore, securityStore)
 
 	secureCookie := strings.ToLower(strings.TrimSpace(os.Getenv("SECURE_COOKIES"))) == "true"
 
@@ -94,6 +95,7 @@ func run() error {
 		ACBSvc:       acbSvc,
 		GainsSvc:     gainsSvc,
 		ROCSvc:       rocSvc,
+		NGSvc:        ngSvc,
 		EncKey:       tokenKey,
 		SecureCookie: secureCookie,
 		Logger:       logger,

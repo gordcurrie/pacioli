@@ -77,7 +77,8 @@ CREATE TABLE distributions (
 
 CREATE TABLE audit_log (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_id     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    actor_email TEXT    NOT NULL DEFAULT '',
     action      TEXT    NOT NULL CHECK(action IN ('create', 'update', 'delete')),
     entity_type TEXT    NOT NULL CHECK(entity_type IN ('account', 'security', 'transaction', 'user')),
     entity_id   INTEGER NOT NULL,

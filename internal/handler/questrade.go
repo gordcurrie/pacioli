@@ -2,7 +2,6 @@ package handler
 
 import (
 	"crypto/rand"
-	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -27,6 +26,7 @@ type qtPageData struct {
 	Accounts      []qtAccountOption  // Pacioli accounts for "import into" select
 	QTAccounts    []qtSourceAccount  // Questrade source accounts for "import from" select
 	SyncResult    string
+	NGResult      string
 	Error         string
 }
 
@@ -146,16 +146,29 @@ func (h *Handler) questradePage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	var syncResult string
-	if sa := r.URL.Query().Get("sync_accounts"); sa != "" {
-		ss := r.URL.Query().Get("sync_securities")
+	var syncResult, ngResult, errMsg string
+	q := r.URL.Query()
+	if sa := q.Get("sync_accounts"); sa != "" {
+		ss := q.Get("sync_securities")
 		syncResult = fmt.Sprintf("Sync complete — %s new account(s), %s new security(s) created.", sa, ss)
 	}
+	if n := q.Get("ng"); n != "" {
+		if n == "0" {
+			ngResult = "No unlinked Norbert's Gambit pairs found."
+		} else {
+			ngResult = fmt.Sprintf("Linked %s Norbert's Gambit pair(s).", n)
+		}
+	}
+	if e := q.Get("error"); e != "" {
+		errMsg = e
+	}
 
-	h.render(w, r,"questrade", qtPageData{
+	h.render(w, r, "questrade", qtPageData{
 		Configured: true, Connected: connected,
 		Accounts: opts, QTAccounts: qtAccounts,
 		SyncResult: syncResult,
+		NGResult:   ngResult,
+		Error:      errMsg,
 	})
 }
 
@@ -299,7 +312,11 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 	activities, err := client.Activities(ctx, qtAccountNo, start, end.AddDate(0, 0, 1))
 	if err != nil {
 		loggerFromCtx(ctx).Error("questrade fetch activities", "err", err)
-		renderErr("failed to fetch activities — check account number and date range")
+		if errors.Is(err, questrade.ErrUnauthorized) {
+			renderErr("Questrade token expired — reconnect via the button above")
+		} else {
+			renderErr("failed to fetch activities — check account number and date range")
+		}
 		return
 	}
 
@@ -323,6 +340,61 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	existing, err := h.transactions.ListByDateRange(ctx, pAccountID, start, end.AddDate(0, 0, 1))
+	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
+	alreadyImported := make(map[string]bool, len(existing))
+	for _, tx := range existing {
+		// Only deduplicate against Questrade-sourced rows. Manual entries sharing
+		// the same (secID, date, type, qty) should not block a QT import.
+		if tx.Source != transaction.SourceQuestrade {
+			continue
+		}
+		alreadyImported[qtImportKey(tx.SecurityID, tx.TradeDate, tx.Type, tx.Quantity)] = true
+		if tx.Type == transaction.TypeFXConversion {
+			alreadyImported[qtImportKey(tx.SecurityID, tx.TradeDate, transaction.TypeTransferOut, tx.Quantity)] = true
+		}
+	}
+
+	// tryAutoCreateSecurity calls Questrade symbol search and creates the security in the DB
+	// if an exact ticker match is found. Returns the new secRef on success, false on failure.
+	// Results are idempotent — a second call for the same ticker finds the security via secByTicker.
+	tryAutoCreateSecurity := func(ticker, currency string) (secRef, bool) {
+		results, err := client.SymbolSearch(ctx, ticker)
+		if err != nil {
+			return secRef{}, false
+		}
+		sec := &security.Security{
+			Ticker:   ticker,
+			Type:     security.TypeEquity,
+			Currency: currency,
+			Source:   string(audit.SourceQuestrade),
+		}
+		for _, sr := range results {
+			if sr.Symbol != ticker {
+				continue
+			}
+			sec.Exchange = sr.Exchange
+			sec.Name = sr.Description
+			sec.Type = mapQTSecurityType(sr.SecurityType)
+			if validCurrencies[sr.Currency] {
+				sec.Currency = sr.Currency
+			}
+			break
+		}
+		if sec.Exchange == "" {
+			return secRef{}, false
+		}
+		if err := h.securities.Create(ctx, sec); err != nil {
+			return secRef{}, false
+		}
+		h.logAudit(r, audit.ActionCreate, audit.EntitySecurity, sec.ID, audit.SourceQuestrade, "")
+		return secRef{sec.ID, sec.Currency}, true
+	}
+
+	notFoundTickers := make(map[string]bool)
 	var previewRows []qtPreviewRow
 	var commitRows []qtCommitRow
 	totOK, totSkip, totFlag := 0, 0, 0
@@ -378,6 +450,15 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 		}
 
 		sec, secOK := secByTicker[act.Symbol]
+		if !secOK && tickerCount[act.Symbol] <= 1 && !notFoundTickers[act.Symbol] {
+			if ref, ok := tryAutoCreateSecurity(act.Symbol, act.Currency); ok {
+				secByTicker[act.Symbol] = ref
+				sec = ref
+				secOK = true
+			} else {
+				notFoundTickers[act.Symbol] = true
+			}
+		}
 		if !secOK {
 			totFlag++
 			baseRow.Status = qtStatusFlag
@@ -404,6 +485,15 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 			totFlag++
 			baseRow.Status = qtStatusFlag
 			baseRow.StatusMsg = "unsupported currency (" + act.Currency + ") — only CAD and USD securities can be imported"
+			previewRows = append(previewRows, baseRow)
+			continue
+		}
+
+		isDup := alreadyImported[qtImportKey(sec.ID, act.TradeDate, txType, qty)]
+		if isDup {
+			totSkip++
+			baseRow.Status = qtStatusFlag
+			baseRow.StatusMsg = "already imported — skipped"
 			previewRows = append(previewRows, baseRow)
 			continue
 		}
@@ -473,6 +563,14 @@ const (
 	qtSkip
 	qtFlag
 )
+
+// qtImportKey returns the dedup key used to identify an already-imported QT
+// activity. TypeFXConversion gets an alias key of TypeTransferOut because a
+// linked NG give-leg is re-typed in the DB but QT still reports it as a
+// negative FXT (transfer_out).
+func qtImportKey(secID int64, date time.Time, txType transaction.Type, qty decimal.Decimal) string {
+	return fmt.Sprintf("%d|%s|%s|%s", secID, date.Format(time.DateOnly), string(txType), qty.String())
+}
 
 func classifyQTActivity(a *questrade.Activity) (qtStatus, string, transaction.Type) {
 	switch strings.TrimSpace(a.Action) {
@@ -557,7 +655,7 @@ func (h *Handler) questradeCommit(w http.ResponseWriter, r *http.Request) {
 		}
 		sec, err := h.securities.GetByID(ctx, id)
 		if err != nil {
-			if errors.Is(err, sql.ErrNoRows) {
+			if errors.Is(err, errs.ErrNotFound) {
 				secCache[id] = cachedSec{}
 				return cachedSec{}, nil
 			}
