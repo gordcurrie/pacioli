@@ -42,7 +42,7 @@ func (h *Handler) adminCreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(password) < minPasswordLen {
-		renderErr("Password must be at least 8 characters.")
+		renderErr(minPasswordMsg)
 		return
 	}
 
@@ -247,7 +247,7 @@ func (h *Handler) adminResetPassword(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(password) < minPasswordLen {
-		renderErr("Password must be at least 8 characters.")
+		renderErr(minPasswordMsg)
 		return
 	}
 

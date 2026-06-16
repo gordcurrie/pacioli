@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"fmt"
 
 	"github.com/gordcurrie/pacioli/internal/account"
 	"github.com/gordcurrie/pacioli/internal/errs"
@@ -34,12 +35,12 @@ type importSession struct {
 func (h *Handler) newImportSession(ctx context.Context, userID int64) (importSession, error) {
 	accounts, err := h.accounts.ListByUser(ctx, userID)
 	if err != nil {
-		return importSession{}, err
+		return importSession{}, fmt.Errorf("new import session: list accounts: %w", err)
 	}
 
 	var b [16]byte
 	if _, err := rand.Read(b[:]); err != nil {
-		return importSession{}, err
+		return importSession{}, fmt.Errorf("new import session: generate import id: %w", err)
 	}
 
 	return importSession{

@@ -23,6 +23,8 @@ const (
 	minPasswordLen  = 8
 )
 
+var minPasswordMsg = fmt.Sprintf("Password must be at least %d characters.", minPasswordLen)
+
 // sentinelHash is computed once at startup and used to equalize the timing of
 // failed login attempts where the email is not found. Without this, an attacker
 // can enumerate registered addresses by measuring response latency: not-found
@@ -84,7 +86,7 @@ func (h *Handler) setupSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(password) < minPasswordLen {
-		renderErr("Password must be at least 8 characters.")
+		renderErr(minPasswordMsg)
 		return
 	}
 

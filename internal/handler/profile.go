@@ -51,7 +51,7 @@ func (h *Handler) updatePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(newPw) < minPasswordLen {
-		renderErr("Password must be at least 8 characters.")
+		renderErr(minPasswordMsg)
 		return
 	}
 
