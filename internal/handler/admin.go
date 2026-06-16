@@ -41,7 +41,7 @@ func (h *Handler) adminCreateUser(w http.ResponseWriter, r *http.Request) {
 		renderErr("Email and password are required.")
 		return
 	}
-	if len(password) < 8 {
+	if len(password) < minPasswordLen {
 		renderErr("Password must be at least 8 characters.")
 		return
 	}
@@ -246,7 +246,7 @@ func (h *Handler) adminResetPassword(w http.ResponseWriter, r *http.Request) {
 		h.render(w, r, "admin_users", adminUsersPageData{Users: users, Error: msg})
 	}
 
-	if len(password) < 8 {
+	if len(password) < minPasswordLen {
 		renderErr("Password must be at least 8 characters.")
 		return
 	}

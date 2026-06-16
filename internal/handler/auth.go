@@ -20,6 +20,7 @@ const (
 	sessionDuration = 30 * 24 * time.Hour
 	bcryptCost      = 12
 	cookieName      = "pacioli_session"
+	minPasswordLen  = 8
 )
 
 // sentinelHash is computed once at startup and used to equalize the timing of
@@ -82,7 +83,7 @@ func (h *Handler) setupSubmit(w http.ResponseWriter, r *http.Request) {
 		renderErr("Passwords do not match.")
 		return
 	}
-	if len(password) < 8 {
+	if len(password) < minPasswordLen {
 		renderErr("Password must be at least 8 characters.")
 		return
 	}
