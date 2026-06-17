@@ -266,16 +266,16 @@ func (h *Handler) notFoundOrError(w http.ResponseWriter, r *http.Request, err er
 	h.serverError(w, r, err)
 }
 
-func (h *Handler) logAudit(r *http.Request, action audit.Action, entity audit.EntityType, id int64, source audit.Source, snapshot string) {
+func (h *Handler) logAudit(r *http.Request, action audit.Action, entity audit.EntityType, id int64, source audit.Source, beforeState string) {
 	u := userFromCtx(r.Context())
 	if err := h.audits.Log(r.Context(), &audit.Entry{
-		UserID:     u.ID,
-		UserEmail:  u.Email,
-		Action:     action,
-		EntityType: entity,
-		EntityID:   id,
-		Source:     source,
-		BeforeState: snapshot,
+		UserID:      u.ID,
+		UserEmail:   u.Email,
+		Action:      action,
+		EntityType:  entity,
+		EntityID:    id,
+		Source:      source,
+		BeforeState: beforeState,
 	}); err != nil {
 		loggerFromCtx(r.Context()).Error("audit log", "err", err)
 	}

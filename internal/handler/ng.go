@@ -85,8 +85,14 @@ func (h *Handler) ngLink(w http.ResponseWriter, r *http.Request) {
 	type snapEntry struct{ give, recv string }
 	snaps := make([]snapEntry, len(toLink))
 	for i, p := range toLink {
-		gb, _ := json.Marshal(p.GiveLeg)
-		rb, _ := json.Marshal(p.ReceiveLeg)
+		gb, err := json.Marshal(p.GiveLeg)
+		if err != nil {
+			log.Error("snapshot marshal", "entity", "transaction", "id", p.GiveLeg.ID, "err", err)
+		}
+		rb, err := json.Marshal(p.ReceiveLeg)
+		if err != nil {
+			log.Error("snapshot marshal", "entity", "transaction", "id", p.ReceiveLeg.ID, "err", err)
+		}
 		snaps[i] = snapEntry{string(gb), string(rb)}
 	}
 
@@ -94,6 +100,13 @@ func (h *Handler) ngLink(w http.ResponseWriter, r *http.Request) {
 	for i, p := range toLink[:n] {
 		h.logAudit(r, audit.ActionUpdate, audit.EntityTransaction, p.GiveLeg.ID, audit.SourceQuestrade, snaps[i].give)
 		h.logAudit(r, audit.ActionUpdate, audit.EntityTransaction, p.ReceiveLeg.ID, audit.SourceQuestrade, snaps[i].recv)
+		// Direct path inserts two synthetic rows (fx_conversion + journal); audit those creates.
+		if p.IsDirect && p.GiveLeg.LinkedTransactionID != nil {
+			h.logAudit(r, audit.ActionCreate, audit.EntityTransaction, *p.GiveLeg.LinkedTransactionID, audit.SourceQuestrade, "")
+		}
+		if p.IsDirect && p.ReceiveLeg.LinkedTransactionID != nil {
+			h.logAudit(r, audit.ActionCreate, audit.EntityTransaction, *p.ReceiveLeg.LinkedTransactionID, audit.SourceQuestrade, "")
+		}
 	}
 	if err != nil {
 		log.Error("ng link pairs", "err", err)
