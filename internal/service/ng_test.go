@@ -39,6 +39,9 @@ func (m *ngMockTxStore) ListNonRegisteredDisposalsByUser(_ context.Context, _ in
 func (m *ngMockTxStore) ListBySecurityAllAccounts(_ context.Context, _, _ int64) ([]*transaction.Transaction, error) {
 	return nil, nil
 }
+func (m *ngMockTxStore) DistinctAllSecurityIDsByUser(_ context.Context, _ int64) ([]int64, error) {
+	return nil, nil
+}
 func (m *ngMockTxStore) ListByDateRange(_ context.Context, _ int64, _, _ time.Time) ([]*transaction.Transaction, error) {
 	return nil, nil
 }

@@ -72,6 +72,17 @@ func (m *mockTxStore) ListBySecurityAllAccounts(_ context.Context, securityID, _
 	}
 	return m.allAccounts[securityID], nil
 }
+func (m *mockTxStore) DistinctAllSecurityIDsByUser(_ context.Context, _ int64) ([]int64, error) {
+	seen := make(map[int64]struct{})
+	var ids []int64
+	for id := range m.allAccounts {
+		if _, ok := seen[id]; !ok {
+			seen[id] = struct{}{}
+			ids = append(ids, id)
+		}
+	}
+	return ids, nil
+}
 func (m *mockTxStore) ListByDateRange(_ context.Context, _ int64, _, _ time.Time) ([]*transaction.Transaction, error) {
 	return nil, nil
 }

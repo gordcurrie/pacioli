@@ -104,6 +104,31 @@ func (r *TransactionStore) ListDistinctNonRegisteredSecurityIDsByUser(ctx contex
 	return ids, nil
 }
 
+func (r *TransactionStore) DistinctAllSecurityIDsByUser(ctx context.Context, userID int64) ([]int64, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT DISTINCT t.security_id FROM transactions t
+		 JOIN accounts a ON a.id = t.account_id
+		 WHERE a.user_id=?
+		 ORDER BY t.security_id`,
+		userID)
+	if err != nil {
+		return nil, fmt.Errorf("distinct security IDs by user: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan security ID: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("distinct security IDs by user: %w", err)
+	}
+	return ids, nil
+}
+
 func (r *TransactionStore) ListNonRegisteredDisposalsByUser(ctx context.Context, userID int64, from, to time.Time) ([]*transaction.Transaction, error) {
 	rows, err := r.db.QueryContext(ctx,
 		txSelectSQL+` WHERE a.user_id=? AND a.is_registered=0 AND t.type IN ('sell','transfer_out')

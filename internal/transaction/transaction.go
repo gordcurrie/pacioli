@@ -72,6 +72,10 @@ type Store interface {
 	// ListBySecurityAllAccounts returns all transactions for a security across all
 	// accounts (including registered) — used for superficial loss window checks.
 	ListBySecurityAllAccounts(ctx context.Context, securityID, userID int64) ([]*Transaction, error)
+	// DistinctAllSecurityIDsByUser returns the set of security IDs the user has any
+	// transaction for, across all accounts. Used by PortfolioService to enumerate
+	// held positions without scanning all securities.
+	DistinctAllSecurityIDsByUser(ctx context.Context, userID int64) ([]int64, error)
 	ListByDateRange(ctx context.Context, accountID int64, from, to time.Time) ([]*Transaction, error)
 	// ListUnlinkedBySecurityAndType returns all transactions for a security and user of the given
 	// type that have no linked_transaction_id set — used for Norbert's Gambit pair detection.

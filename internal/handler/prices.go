@@ -44,7 +44,7 @@ func (h *Handler) refreshPrices(w http.ResponseWriter, r *http.Request) {
 			failed++
 			continue
 		}
-		h.logAudit(r, audit.ActionUpdate, audit.EntitySecurity, res.SecurityID, audit.SourceManual, string(secByID[res.SecurityID]))
+		h.logAudit(r, audit.ActionUpdate, audit.EntitySecurity, res.SecurityID, audit.SourceYahoo, string(secByID[res.SecurityID]))
 		updated++
 	}
 

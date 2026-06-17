@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -16,16 +17,24 @@ import (
 // YahooFetcher retrieves market prices from the Yahoo Finance chart API.
 // Prices are converted to CAD using the BOC noon rate.
 type YahooFetcher struct {
-	bocSvc *BOCFetcher
-	hc     *http.Client
+	bocSvc  *BOCFetcher
+	hc      *http.Client
+	baseURL string // overridable for testing; defaults to https://query1.finance.yahoo.com
 }
 
 // NewYahooFetcher constructs a YahooFetcher.
 func NewYahooFetcher(bocSvc *BOCFetcher) *YahooFetcher {
 	return &YahooFetcher{
-		bocSvc: bocSvc,
-		hc:     &http.Client{Timeout: 10 * time.Second},
+		bocSvc:  bocSvc,
+		hc:      &http.Client{Timeout: 10 * time.Second},
+		baseURL: "https://query1.finance.yahoo.com",
 	}
+}
+
+// NewYahooFetcherWithClient constructs a YahooFetcher with a custom HTTP client and base URL.
+// Intended for testing only.
+func NewYahooFetcherWithClient(bocSvc *BOCFetcher, hc *http.Client, baseURL string) *YahooFetcher {
+	return &YahooFetcher{bocSvc: bocSvc, hc: hc, baseURL: baseURL}
 }
 
 // PriceFetchResult holds the result for one security fetch attempt.
@@ -68,7 +77,7 @@ func (f *YahooFetcher) FetchPrices(ctx context.Context, secs []*security.Securit
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			sym := yahooSymbol(s.Ticker, s.Exchange)
+			sym := YahooSymbol(s.Ticker, s.Exchange)
 			nativePrice, currency, err := f.fetchQuote(ctx, sym)
 			if err != nil {
 				out[idx] = PriceFetchResult{SecurityID: s.ID, Ticker: s.Ticker, Err: err}
@@ -98,11 +107,11 @@ func (f *YahooFetcher) FetchPrices(ctx context.Context, secs []*security.Securit
 	return out
 }
 
-// yahooSymbol converts a ticker and exchange name to a Yahoo Finance symbol.
+// YahooSymbol converts a ticker and exchange name to a Yahoo Finance symbol.
 // Tickers imported from Questrade already carry the exchange suffix (.TO, .V, etc.).
 // Yahoo uses hyphens instead of dots for share-class designators (TECK.B.TO → TECK-B.TO),
 // so dots in the base ticker are replaced with hyphens before the exchange suffix is appended.
-func yahooSymbol(ticker, exchange string) string {
+func YahooSymbol(ticker, exchange string) string {
 	switch exchange {
 	case "TSX":
 		base := strings.TrimSuffix(ticker, ".TO")
@@ -123,8 +132,8 @@ type yahooChartResponse struct {
 	Chart struct {
 		Result []struct {
 			Meta struct {
-				Currency           string  `json:"currency"`
-				RegularMarketPrice float64 `json:"regularMarketPrice"`
+				Currency           string      `json:"currency"`
+				RegularMarketPrice json.Number `json:"regularMarketPrice"`
 			} `json:"meta"`
 		} `json:"result"`
 		Error *struct {
@@ -135,9 +144,15 @@ type yahooChartResponse struct {
 }
 
 func (f *YahooFetcher) fetchQuote(ctx context.Context, symbol string) (decimal.Decimal, string, error) {
-	url := "https://query1.finance.yahoo.com/v8/finance/chart/" + symbol + "?range=1d&interval=1d&includePrePost=false"
+	base, err := url.Parse(f.baseURL)
+	if err != nil {
+		return decimal.Zero, "", fmt.Errorf("yahoo base URL: %w", err)
+	}
+	base.Path = "/v8/finance/chart/" + url.PathEscape(symbol)
+	base.RawQuery = "range=1d&interval=1d&includePrePost=false"
+	u := base
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), http.NoBody)
 	if err != nil {
 		return decimal.Zero, "", err
 	}
@@ -167,9 +182,10 @@ func (f *YahooFetcher) fetchQuote(ctx context.Context, symbol string) (decimal.D
 	}
 
 	meta := data.Chart.Result[0].Meta
-	if meta.RegularMarketPrice <= 0 {
-		return decimal.Zero, "", fmt.Errorf("yahoo %s: invalid price %f", symbol, meta.RegularMarketPrice)
+	price, err := decimal.NewFromString(meta.RegularMarketPrice.String())
+	if err != nil || !price.IsPositive() {
+		return decimal.Zero, "", fmt.Errorf("yahoo %s: invalid price %q", symbol, meta.RegularMarketPrice.String())
 	}
 
-	return decimal.NewFromFloat(meta.RegularMarketPrice), meta.Currency, nil
+	return price, meta.Currency, nil
 }
