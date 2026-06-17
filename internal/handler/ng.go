@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -79,10 +80,33 @@ func (h *Handler) ngLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Snapshot give/receive legs before linking mutates them in the DB.
+	// toLink holds the pre-link in-memory state from DetectPairs above.
+	type snapEntry struct{ give, recv string }
+	snaps := make([]snapEntry, len(toLink))
+	for i, p := range toLink {
+		gb, err := json.Marshal(p.GiveLeg)
+		if err != nil {
+			log.Error("snapshot marshal", "entity", "transaction", "id", p.GiveLeg.ID, "err", err)
+		}
+		rb, err := json.Marshal(p.ReceiveLeg)
+		if err != nil {
+			log.Error("snapshot marshal", "entity", "transaction", "id", p.ReceiveLeg.ID, "err", err)
+		}
+		snaps[i] = snapEntry{string(gb), string(rb)}
+	}
+
 	n, err := h.ngSvc.LinkPairs(r.Context(), toLink)
-	for _, p := range toLink[:n] {
-		h.logAudit(r, audit.ActionUpdate, audit.EntityTransaction, p.GiveLeg.ID, audit.SourceQuestrade, "")
-		h.logAudit(r, audit.ActionUpdate, audit.EntityTransaction, p.ReceiveLeg.ID, audit.SourceQuestrade, "")
+	for i, p := range toLink[:n] {
+		h.logAudit(r, audit.ActionUpdate, audit.EntityTransaction, p.GiveLeg.ID, audit.SourceQuestrade, snaps[i].give)
+		h.logAudit(r, audit.ActionUpdate, audit.EntityTransaction, p.ReceiveLeg.ID, audit.SourceQuestrade, snaps[i].recv)
+		// Direct path inserts two synthetic rows (fx_conversion + journal); audit those creates.
+		if p.IsDirect && p.GiveLeg.LinkedTransactionID != nil {
+			h.logAudit(r, audit.ActionCreate, audit.EntityTransaction, *p.GiveLeg.LinkedTransactionID, audit.SourceQuestrade, "")
+		}
+		if p.IsDirect && p.ReceiveLeg.LinkedTransactionID != nil {
+			h.logAudit(r, audit.ActionCreate, audit.EntityTransaction, *p.ReceiveLeg.LinkedTransactionID, audit.SourceQuestrade, "")
+		}
 	}
 	if err != nil {
 		log.Error("ng link pairs", "err", err)

@@ -45,7 +45,7 @@ type Entry struct {
 	EntityType EntityType
 	EntityID   int64
 	Source     Source
-	Snapshot   string    // JSON of entity state before delete; empty on create
+	BeforeState string // JSON of entity state before the operation; empty on create
 	ImportID   string    // batch tag for CSV/API imports (Phase 3/4); empty for manual entries
 	CreatedAt  time.Time
 }
