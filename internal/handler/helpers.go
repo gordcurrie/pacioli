@@ -69,7 +69,7 @@ func makeSecLookup(ctx context.Context, store security.Store) func(int64) (secCa
 				cache[id] = secCacheEntry{}
 				return secCacheEntry{}, nil
 			}
-			return secCacheEntry{}, err
+			return secCacheEntry{}, fmt.Errorf("lookup security %d: %w", id, err)
 		}
 		s := secCacheEntry{currency: sec.Currency, found: true}
 		cache[id] = s
