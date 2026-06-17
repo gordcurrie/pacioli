@@ -275,7 +275,7 @@ func (h *Handler) logAudit(r *http.Request, action audit.Action, entity audit.En
 		EntityType: entity,
 		EntityID:   id,
 		Source:     source,
-		Snapshot:   snapshot,
+		BeforeState: snapshot,
 	}); err != nil {
 		loggerFromCtx(r.Context()).Error("audit log", "err", err)
 	}

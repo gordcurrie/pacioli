@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -79,10 +80,20 @@ func (h *Handler) ngLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Snapshot give/receive legs before linking mutates them in the DB.
+	// toLink holds the pre-link in-memory state from DetectPairs above.
+	type snapEntry struct{ give, recv string }
+	snaps := make([]snapEntry, len(toLink))
+	for i, p := range toLink {
+		gb, _ := json.Marshal(p.GiveLeg)
+		rb, _ := json.Marshal(p.ReceiveLeg)
+		snaps[i] = snapEntry{string(gb), string(rb)}
+	}
+
 	n, err := h.ngSvc.LinkPairs(r.Context(), toLink)
-	for _, p := range toLink[:n] {
-		h.logAudit(r, audit.ActionUpdate, audit.EntityTransaction, p.GiveLeg.ID, audit.SourceQuestrade, "")
-		h.logAudit(r, audit.ActionUpdate, audit.EntityTransaction, p.ReceiveLeg.ID, audit.SourceQuestrade, "")
+	for i, p := range toLink[:n] {
+		h.logAudit(r, audit.ActionUpdate, audit.EntityTransaction, p.GiveLeg.ID, audit.SourceQuestrade, snaps[i].give)
+		h.logAudit(r, audit.ActionUpdate, audit.EntityTransaction, p.ReceiveLeg.ID, audit.SourceQuestrade, snaps[i].recv)
 	}
 	if err != nil {
 		log.Error("ng link pairs", "err", err)

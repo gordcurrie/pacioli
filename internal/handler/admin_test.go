@@ -22,7 +22,7 @@ func TestAdminAuditLog_Renders(t *testing.T) {
 	// Seed a few audit entries directly so the page has data to display.
 	for _, e := range []*audit.Entry{
 		{UserID: env.userID, UserEmail: "test@example.com", Action: audit.ActionCreate, EntityType: audit.EntityAccount, EntityID: 1, Source: audit.SourceManual},
-		{UserID: env.userID, UserEmail: "test@example.com", Action: audit.ActionUpdate, EntityType: audit.EntitySecurity, EntityID: 2, Source: audit.SourceManual, Snapshot: `{"id":2}`},
+		{UserID: env.userID, UserEmail: "test@example.com", Action: audit.ActionUpdate, EntityType: audit.EntitySecurity, EntityID: 2, Source: audit.SourceManual, BeforeState: `{"id":2}`},
 		{UserID: env.userID, UserEmail: "test@example.com", Action: audit.ActionDelete, EntityType: audit.EntityTransaction, EntityID: 3, Source: audit.SourceManual},
 	} {
 		if err := env.audits.Log(ctx, e); err != nil {
@@ -184,11 +184,11 @@ func TestAdminDeleteUser_WritesAuditEntryWithSnapshot(t *testing.T) {
 	if e.EntityID != targetID {
 		t.Errorf("audit entity_id = %d, want %d", e.EntityID, targetID)
 	}
-	if e.Snapshot == "" {
+	if e.BeforeState == "" {
 		t.Error("audit delete entry should have a before-state snapshot")
 	}
-	if !strings.Contains(e.Snapshot, "victim@example.com") {
-		t.Errorf("snapshot should contain deleted user email, got: %s", e.Snapshot)
+	if !strings.Contains(e.BeforeState, "victim@example.com") {
+		t.Errorf("snapshot should contain deleted user email, got: %s", e.BeforeState)
 	}
 }
 
@@ -227,7 +227,7 @@ func TestAdminResetPassword_WritesAuditEntry(t *testing.T) {
 	if entries[0].EntityID != targetID {
 		t.Errorf("audit entity_id = %d, want %d", entries[0].EntityID, targetID)
 	}
-	if entries[0].Snapshot == "" {
+	if entries[0].BeforeState == "" {
 		t.Error("reset password audit entry should have a before-state snapshot")
 	}
 }
@@ -260,7 +260,7 @@ func TestUpdatePassword_WritesAuditEntry(t *testing.T) {
 	if entries[0].EntityID != env.userID {
 		t.Errorf("audit entity_id = %d, want %d", entries[0].EntityID, env.userID)
 	}
-	if entries[0].Snapshot == "" {
+	if entries[0].BeforeState == "" {
 		t.Error("password change audit entry should have a before-state snapshot")
 	}
 }

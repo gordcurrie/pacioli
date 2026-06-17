@@ -19,18 +19,18 @@ func NewAuditStore(db *sql.DB) *AuditStore {
 }
 
 func (s *AuditStore) Log(ctx context.Context, e *audit.Entry) error {
-	var snapshot, importID *string
-	if e.Snapshot != "" {
-		snapshot = &e.Snapshot
+	var beforeState, importID *string
+	if e.BeforeState != "" {
+		beforeState = &e.BeforeState
 	}
 	if e.ImportID != "" {
 		importID = &e.ImportID
 	}
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO audit_log (user_id, actor_email, action, entity_type, entity_id, source, snapshot, import_id)
+		`INSERT INTO audit_log (user_id, actor_email, action, entity_type, entity_id, source, before_state, import_id)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 		e.UserID, e.UserEmail, string(e.Action), string(e.EntityType), e.EntityID,
-		string(e.Source), snapshot, importID,
+		string(e.Source), beforeState, importID,
 	)
 	if err != nil {
 		return fmt.Errorf("audit log: %w", err)
@@ -45,7 +45,7 @@ func (s *AuditStore) List(ctx context.Context, f audit.ListFilter) ([]*audit.Ent
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT al.id, al.user_id, al.actor_email,
 		       al.action, al.entity_type, al.entity_id,
-		       al.source, COALESCE(al.snapshot,''), COALESCE(al.import_id,''),
+		       al.source, COALESCE(al.before_state,''), COALESCE(al.import_id,''),
 		       al.created_at
 		FROM audit_log al
 		WHERE (? = '' OR al.entity_type = ?)
@@ -70,7 +70,7 @@ func (s *AuditStore) List(ctx context.Context, f audit.ListFilter) ([]*audit.Ent
 		if err := rows.Scan(
 			&e.ID, &e.UserID, &e.UserEmail,
 			&action, &entityType, &e.EntityID,
-			&source, &e.Snapshot, &e.ImportID,
+			&source, &e.BeforeState, &e.ImportID,
 			&e.CreatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("audit list scan: %w", err)
@@ -132,7 +132,7 @@ func (s *AuditStore) Page(ctx context.Context, f audit.ListFilter) ([]*audit.Ent
 	rows, err := tx.QueryContext(ctx, `
 		SELECT al.id, al.user_id, al.actor_email,
 		       al.action, al.entity_type, al.entity_id,
-		       al.source, COALESCE(al.snapshot,''), COALESCE(al.import_id,''),
+		       al.source, COALESCE(al.before_state,''), COALESCE(al.import_id,''),
 		       al.created_at
 		FROM audit_log al
 		WHERE (? = '' OR al.entity_type = ?)
@@ -157,7 +157,7 @@ func (s *AuditStore) Page(ctx context.Context, f audit.ListFilter) ([]*audit.Ent
 		if err := rows.Scan(
 			&e.ID, &e.UserID, &e.UserEmail,
 			&action, &entityType, &e.EntityID,
-			&source, &e.Snapshot, &e.ImportID,
+			&source, &e.BeforeState, &e.ImportID,
 			&e.CreatedAt,
 		); err != nil {
 			return nil, 0, fmt.Errorf("audit page scan: %w", err)

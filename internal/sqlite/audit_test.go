@@ -30,7 +30,7 @@ t.Run("log create entry", func(t *testing.T) {
 		var action, entityType, source string
 		var snapshot, importID *string
 		err := db.QueryRowContext(ctx,
-			`SELECT action, entity_type, source, snapshot, import_id FROM audit_log WHERE entity_id=42`).
+			`SELECT action, entity_type, source, before_state, import_id FROM audit_log WHERE entity_id=42`).
 			Scan(&action, &entityType, &source, &snapshot, &importID)
 		if err != nil {
 			t.Fatalf("query: %v", err)
@@ -83,7 +83,7 @@ t.Run("log create entry", func(t *testing.T) {
 			EntityType: audit.EntityTransaction,
 			EntityID:   99,
 			Source:     audit.SourceCanaccordCSV,
-			Snapshot:   snap,
+			BeforeState: snap,
 		}
 		if err := store.Log(ctx, e); err != nil {
 			t.Fatalf("Log: %v", err)
@@ -91,7 +91,7 @@ t.Run("log create entry", func(t *testing.T) {
 
 		var snapshot *string
 		err := db.QueryRowContext(ctx,
-			`SELECT snapshot FROM audit_log WHERE entity_id=99`).Scan(&snapshot)
+			`SELECT before_state FROM audit_log WHERE entity_id=99`).Scan(&snapshot)
 		if err != nil {
 			t.Fatalf("query: %v", err)
 		}

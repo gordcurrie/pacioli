@@ -59,6 +59,7 @@
         <th>Entity</th>
         <th>ID</th>
         <th>Source</th>
+        <th>Before State</th>
       </tr>
     </thead>
     <tbody>
@@ -73,15 +74,16 @@
           {{end}}
         </td>
         <td><small>{{.EntityType}}</small></td>
-        <td>
-          {{if .Snapshot}}
-          <details>
-            <summary style="cursor:pointer;list-style:none;font-size:0.85rem">{{.EntityID}}</summary>
-            <pre class="snapshot-pre">{{.Snapshot}}</pre>
-          </details>
-          {{else}}{{.EntityID}}{{end}}
-        </td>
+        <td>{{.EntityID}}</td>
         <td><small>{{.Source}}</small></td>
+        <td>
+          {{if .BeforeState}}
+          <details>
+            <summary style="cursor:pointer;list-style:none;font-size:0.85rem">view</summary>
+            <pre class="snapshot-pre">{{.BeforeState}}</pre>
+          </details>
+          {{end}}
+        </td>
       </tr>
       {{end}}
     </tbody>
