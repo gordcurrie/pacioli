@@ -1,0 +1,115 @@
+package service
+
+import (
+	"context"
+
+	"github.com/gordcurrie/pacioli/internal/security"
+	"github.com/gordcurrie/pacioli/internal/transaction"
+	"github.com/shopspring/decimal"
+)
+
+// PortfolioPosition is one open position in the portfolio dashboard.
+type PortfolioPosition struct {
+	Security          *security.Security
+	TotalShares       decimal.Decimal // across all accounts (reg + non-reg)
+	NonRegShares      decimal.Decimal // non-registered only (ACB-tracked)
+	NonRegACBTotal    decimal.Decimal
+	NonRegACBPerShare decimal.Decimal
+	HasPrice          bool
+	CurrentValueCAD   decimal.Decimal // TotalShares × last_price_cad; zero when no price
+	UnrealizedGainCAD decimal.Decimal // non-reg value - non-reg ACB; zero when no price or no non-reg shares
+}
+
+// PortfolioSummary aggregates totals across all positions.
+type PortfolioSummary struct {
+	TotalValueCAD      decimal.Decimal
+	TotalNonRegACB     decimal.Decimal
+	TotalUnrealizedCAD decimal.Decimal
+	ValueCADDenom      decimal.Decimal // value of CAD-denominated positions
+	ValueUSDDenom      decimal.Decimal // CAD-equivalent value of USD-denominated positions
+}
+
+// PortfolioService builds the portfolio dashboard view.
+type PortfolioService struct {
+	txStore  transaction.Store
+	secStore security.Store
+	acbSvc   *ACBService
+}
+
+// NewPortfolioService constructs a PortfolioService.
+func NewPortfolioService(txStore transaction.Store, secStore security.Store, acbSvc *ACBService) *PortfolioService {
+	return &PortfolioService{txStore: txStore, secStore: secStore, acbSvc: acbSvc}
+}
+
+// Build returns open positions and summary totals for the given user.
+func (s *PortfolioService) Build(ctx context.Context, userID int64) ([]PortfolioPosition, PortfolioSummary, error) {
+	secs, err := s.secStore.ListAll(ctx)
+	if err != nil {
+		return nil, PortfolioSummary{}, err
+	}
+
+	var positions []PortfolioPosition
+	var summary PortfolioSummary
+
+	for _, sec := range secs {
+		allTxs, err := s.txStore.ListBySecurityAllAccounts(ctx, sec.ID, userID)
+		if err != nil {
+			return nil, PortfolioSummary{}, err
+		}
+		totalShares := netShares(allTxs)
+		if !totalShares.IsPositive() {
+			continue
+		}
+
+		acb, err := s.acbSvc.Calculate(ctx, sec.ID, userID)
+		if err != nil {
+			return nil, PortfolioSummary{}, err
+		}
+
+		pos := PortfolioPosition{
+			Security:          sec,
+			TotalShares:       totalShares,
+			NonRegShares:      acb.Shares,
+			NonRegACBTotal:    acb.TotalACB,
+			NonRegACBPerShare: acb.ACBPerShare,
+		}
+
+		if sec.LastPriceCAD != nil {
+			pos.HasPrice = true
+			pos.CurrentValueCAD = totalShares.Mul(*sec.LastPriceCAD)
+			if acb.Shares.IsPositive() {
+				pos.UnrealizedGainCAD = acb.Shares.Mul(*sec.LastPriceCAD).Sub(acb.TotalACB)
+			}
+			summary.TotalValueCAD = summary.TotalValueCAD.Add(pos.CurrentValueCAD)
+			if sec.Currency == "USD" {
+				summary.ValueUSDDenom = summary.ValueUSDDenom.Add(pos.CurrentValueCAD)
+			} else {
+				summary.ValueCADDenom = summary.ValueCADDenom.Add(pos.CurrentValueCAD)
+			}
+		}
+		if acb.Shares.IsPositive() {
+			summary.TotalNonRegACB = summary.TotalNonRegACB.Add(acb.TotalACB)
+			if pos.HasPrice {
+				summary.TotalUnrealizedCAD = summary.TotalUnrealizedCAD.Add(pos.UnrealizedGainCAD)
+			}
+		}
+
+		positions = append(positions, pos)
+	}
+
+	return positions, summary, nil
+}
+
+// netShares computes net share count from a slice of transactions across any accounts.
+func netShares(txs []*transaction.Transaction) decimal.Decimal {
+	var shares decimal.Decimal
+	for _, tx := range txs {
+		switch {
+		case isAcquisitionType(tx.Type):
+			shares = shares.Add(tx.Quantity)
+		case isDisposalType(tx.Type):
+			shares = shares.Sub(tx.Quantity)
+		}
+	}
+	return shares
+}

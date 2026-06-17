@@ -1,17 +1,55 @@
 {{define "content"}}
-<h2>Positions</h2>
+<div style="display:flex;align-items:baseline;gap:1rem;margin-bottom:0.5rem">
+  <h2 style="margin:0">Portfolio Dashboard</h2>
+  <form method="POST" action="/prices/refresh" style="margin:0">
+    <button type="submit" class="outline" style="padding:0.25rem 0.75rem;font-size:0.875rem">↻ Refresh Prices</button>
+  </form>
+</div>
+
 {{if .Positions}}
+
+{{with .Summary}}
+<div style="display:flex;gap:1.5rem;flex-wrap:wrap;margin-bottom:1.5rem">
+  <article style="flex:1;min-width:12rem;margin:0;padding:1rem">
+    <small>Total Value (CAD)</small><br>
+    <strong style="font-size:1.25rem">{{if .TotalValueCAD.IsPositive}}${{.TotalValueCAD.StringFixed 2}}{{else}}—{{end}}</strong>
+  </article>
+  <article style="flex:1;min-width:12rem;margin:0;padding:1rem">
+    <small>Non-Reg ACB (CAD)</small><br>
+    <strong style="font-size:1.25rem">${{.TotalNonRegACB.StringFixed 2}}</strong>
+  </article>
+  <article style="flex:1;min-width:12rem;margin:0;padding:1rem">
+    <small>Unrealized Gain/Loss (Non-Reg)</small><br>
+    {{if .TotalValueCAD.IsPositive}}
+    <strong style="font-size:1.25rem;color:{{if .TotalUnrealizedCAD.IsNegative}}var(--pico-del-color){{else}}green{{end}}">
+      {{if .TotalUnrealizedCAD.IsNegative}}−${{.TotalUnrealizedCAD.Neg.StringFixed 2}}{{else}}+${{.TotalUnrealizedCAD.StringFixed 2}}{{end}}
+    </strong>
+    {{else}}<span style="color:var(--pico-muted-color)">— set prices below</span>{{end}}
+  </article>
+  <article style="flex:1;min-width:12rem;margin:0;padding:1rem">
+    <small>Allocation</small><br>
+    <span style="font-size:0.9rem">
+      CAD: {{if .ValueCADDenom.IsPositive}}${{.ValueCADDenom.StringFixed 0}}{{else}}—{{end}}<br>
+      USD: {{if .ValueUSDDenom.IsPositive}}${{.ValueUSDDenom.StringFixed 0}} (CAD){{else}}—{{end}}
+    </span>
+  </article>
+</div>
+{{end}}
+
 <figure>
   <table>
     <thead>
       <tr>
         <th>Ticker</th>
         <th>Exchange</th>
-        <th>Name</th>
         <th>Currency</th>
-        <th style="text-align:right">Shares</th>
+        <th style="text-align:right">Shares (Total)</th>
+        <th style="text-align:right">Non-Reg Shares</th>
         <th style="text-align:right">ACB/Share</th>
         <th style="text-align:right">Total ACB</th>
+        <th style="text-align:right">Last Price (CAD)</th>
+        <th style="text-align:right">Current Value</th>
+        <th style="text-align:right">Unrealized</th>
         <th></th>
       </tr>
     </thead>
@@ -20,19 +58,46 @@
       <tr>
         <td><strong>{{.Security.Ticker}}</strong></td>
         <td>{{.Security.Exchange}}</td>
-        <td>{{.Security.Name}}</td>
         <td>{{.Security.Currency}}</td>
-        <td style="text-align:right">{{.ACB.Shares.StringFixed 4}}</td>
-        <td style="text-align:right">{{.ACB.ACBPerShare.StringFixed 4}}</td>
-        <td style="text-align:right">{{.ACB.TotalACB.StringFixed 2}}</td>
+        <td style="text-align:right">{{.TotalShares.StringFixed 4}}</td>
+        <td style="text-align:right">{{if .NonRegShares.IsPositive}}{{.NonRegShares.StringFixed 4}}{{else}}<span style="color:var(--pico-muted-color)">—</span>{{end}}</td>
+        <td style="text-align:right">{{if .NonRegACBPerShare.IsPositive}}{{.NonRegACBPerShare.StringFixed 4}}{{else}}<span style="color:var(--pico-muted-color)">—</span>{{end}}</td>
+        <td style="text-align:right">{{if .NonRegACBTotal.IsPositive}}${{.NonRegACBTotal.StringFixed 2}}{{else}}<span style="color:var(--pico-muted-color)">—</span>{{end}}</td>
+        <td style="text-align:right">
+          <form method="POST" action="/securities/{{.Security.ID}}/price" style="display:flex;gap:0.25rem;justify-content:flex-end;margin:0">
+            <input type="number" name="last_price_cad" step="0.0001" min="0"
+                   value="{{if .Security.LastPriceCAD}}{{.Security.LastPriceCAD.StringFixed 4}}{{end}}"
+                   placeholder="0.0000"
+                   style="width:7rem;text-align:right;padding:0.15rem 0.3rem;font-size:0.85rem">
+            <button type="submit" class="outline" style="padding:0.15rem 0.4rem;font-size:0.8rem">Set</button>
+          </form>
+          {{if .Security.LastPriceDate}}<small style="color:var(--pico-muted-color);font-size:0.75rem">{{.Security.LastPriceDate.Format "Jan 2"}}</small>{{end}}
+        </td>
+        <td style="text-align:right">
+          {{if .HasPrice}}${{.CurrentValueCAD.StringFixed 2}}{{else}}<span style="color:var(--pico-muted-color)">—</span>{{end}}
+        </td>
+        <td style="text-align:right">
+          {{if and .HasPrice .NonRegShares.IsPositive}}
+          <span style="color:{{if .UnrealizedGainCAD.IsNegative}}var(--pico-del-color){{else}}green{{end}}">
+            {{if .UnrealizedGainCAD.IsNegative}}−${{.UnrealizedGainCAD.Neg.StringFixed 2}}{{else}}+${{.UnrealizedGainCAD.StringFixed 2}}{{end}}
+          </span>
+          {{else}}<span style="color:var(--pico-muted-color)">—</span>{{end}}
+        </td>
         <td class="actions">
-          <a href="/acb/{{.Security.ID}}" role="button" class="outline" style="padding: 0.25rem 0.5rem; font-size: 0.875rem">Detail</a>
+          <a href="/acb/{{.Security.ID}}" role="button" class="outline" style="padding:0.25rem 0.5rem;font-size:0.875rem">ACB</a>
         </td>
       </tr>
       {{end}}
     </tbody>
   </table>
 </figure>
+
+<small style="color:var(--pico-muted-color)">
+  Non-Reg ACB and unrealized gain/loss apply to non-registered accounts only (margin, cash).
+  Registered accounts (TFSA, RRSP, RESP, etc.) are included in total shares and current value but excluded from ACB.
+  Prices are entered manually in CAD; for USD securities enter the CAD-equivalent price.
+</small>
+
 {{else}}
 <article>
   <p>No positions yet. <a href="/transactions/new">Add a transaction</a> to get started.</p>

@@ -5,9 +5,11 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/gordcurrie/pacioli/internal/errs"
 	"github.com/gordcurrie/pacioli/internal/security"
+	"github.com/shopspring/decimal"
 )
 
 // SecurityStore is the SQLite implementation of security.Store.
@@ -41,13 +43,13 @@ func (r *SecurityStore) Create(ctx context.Context, s *security.Security) error 
 
 func (r *SecurityStore) GetByID(ctx context.Context, id int64) (*security.Security, error) {
 	row := r.db.QueryRowContext(ctx,
-		`SELECT id, ticker, exchange, name, type, currency, source FROM securities WHERE id = ?`, id)
+		`SELECT id, ticker, exchange, name, type, currency, source, last_price_cad, last_price_date FROM securities WHERE id = ?`, id)
 	return scanSecurity(row)
 }
 
 func (r *SecurityStore) GetByTickerExchange(ctx context.Context, ticker, exchange string) (*security.Security, error) {
 	row := r.db.QueryRowContext(ctx,
-		`SELECT id, ticker, exchange, name, type, currency, source FROM securities WHERE ticker=? AND exchange=?`,
+		`SELECT id, ticker, exchange, name, type, currency, source, last_price_cad, last_price_date FROM securities WHERE ticker=? AND exchange=?`,
 		ticker, exchange)
 	return scanSecurity(row)
 }
@@ -55,7 +57,7 @@ func (r *SecurityStore) GetByTickerExchange(ctx context.Context, ticker, exchang
 func (r *SecurityStore) Search(ctx context.Context, query string) ([]*security.Security, error) {
 	like := "%" + query + "%"
 	rows, err := r.db.QueryContext(ctx,
-		`SELECT id, ticker, exchange, name, type, currency, source FROM securities
+		`SELECT id, ticker, exchange, name, type, currency, source, last_price_cad, last_price_date FROM securities
 		 WHERE ticker LIKE ? OR name LIKE ? ORDER BY ticker LIMIT 50`,
 		like, like)
 	if err != nil {
@@ -87,9 +89,20 @@ func (r *SecurityStore) Delete(ctx context.Context, id int64) error {
 	return nil
 }
 
+func (r *SecurityStore) UpdatePrice(ctx context.Context, id int64, priceCAD decimal.Decimal, date time.Time) error {
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE securities SET last_price_cad=?, last_price_date=? WHERE id=?`,
+		priceCAD.String(), date.Format("2006-01-02"), id,
+	)
+	if err != nil {
+		return fmt.Errorf("update security price: %w", err)
+	}
+	return nil
+}
+
 func (r *SecurityStore) ListAll(ctx context.Context) ([]*security.Security, error) {
 	rows, err := r.db.QueryContext(ctx,
-		`SELECT id, ticker, exchange, name, type, currency, source FROM securities ORDER BY ticker`)
+		`SELECT id, ticker, exchange, name, type, currency, source, last_price_cad, last_price_date FROM securities ORDER BY ticker`)
 	if err != nil {
 		return nil, fmt.Errorf("list securities: %w", err)
 	}
@@ -104,13 +117,26 @@ type securityScanner interface {
 func scanSecurity(s securityScanner) (*security.Security, error) {
 	var sec security.Security
 	var secType string
-	if err := s.Scan(&sec.ID, &sec.Ticker, &sec.Exchange, &sec.Name, &secType, &sec.Currency, &sec.Source); err != nil {
+	var lastPriceStr, lastPriceDateStr sql.NullString
+	if err := s.Scan(&sec.ID, &sec.Ticker, &sec.Exchange, &sec.Name, &secType, &sec.Currency, &sec.Source, &lastPriceStr, &lastPriceDateStr); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, errs.ErrNotFound
 		}
 		return nil, fmt.Errorf("scan security: %w", err)
 	}
 	sec.Type = security.Type(secType)
+	if lastPriceStr.Valid && lastPriceStr.String != "" {
+		p, err := decimal.NewFromString(lastPriceStr.String)
+		if err == nil {
+			sec.LastPriceCAD = &p
+		}
+	}
+	if lastPriceDateStr.Valid && lastPriceDateStr.String != "" {
+		t, err := time.Parse("2006-01-02", lastPriceDateStr.String)
+		if err == nil {
+			sec.LastPriceDate = &t
+		}
+	}
 	return &sec, nil
 }
 

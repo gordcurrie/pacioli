@@ -86,8 +86,9 @@ func (m *ngMockSecStore) Search(_ context.Context, _ string) ([]*security.Securi
 	return nil, nil
 }
 func (m *ngMockSecStore) ListAll(_ context.Context) ([]*security.Security, error) { return nil, nil }
-func (m *ngMockSecStore) Update(_ context.Context, _ *security.Security) error    { return nil }
-func (m *ngMockSecStore) Delete(_ context.Context, _ int64) error                 { return nil }
+func (m *ngMockSecStore) Update(_ context.Context, _ *security.Security) error                          { return nil }
+func (m *ngMockSecStore) UpdatePrice(_ context.Context, _ int64, _ decimal.Decimal, _ time.Time) error { return nil }
+func (m *ngMockSecStore) Delete(_ context.Context, _ int64) error                                       { return nil }
 
 func ngDate(s string) time.Time {
 	t, _ := time.Parse(time.DateOnly, s)

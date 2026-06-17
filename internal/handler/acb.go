@@ -1,12 +1,16 @@
 package handler
 
 import (
+	"encoding/json"
 	"net/http"
 	"strconv"
+	"time"
 
+	"github.com/gordcurrie/pacioli/internal/audit"
 	"github.com/gordcurrie/pacioli/internal/security"
 	"github.com/gordcurrie/pacioli/internal/service"
 	"github.com/gordcurrie/pacioli/internal/transaction"
+	"github.com/shopspring/decimal"
 )
 
 type positionSummary struct {
@@ -25,13 +29,18 @@ type acbDetailPageData struct {
 	Rows         []service.HistoryRow
 }
 
+type dashboardPageData struct {
+	Positions []service.PortfolioPosition
+	Summary   service.PortfolioSummary
+}
+
 func (h *Handler) index(w http.ResponseWriter, r *http.Request) {
-	positions, err := h.loadPositions(r)
+	positions, summary, err := h.portfolioSvc.Build(r.Context(), userFromCtx(r.Context()).ID)
 	if err != nil {
 		h.serverError(w, r, err)
 		return
 	}
-	h.render(w, r,"index", acbListPageData{Positions: positions})
+	h.render(w, r, "index", dashboardPageData{Positions: positions, Summary: summary})
 }
 
 func (h *Handler) listACB(w http.ResponseWriter, r *http.Request) {
@@ -40,7 +49,7 @@ func (h *Handler) listACB(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, r, err)
 		return
 	}
-	h.render(w, r,"acb_list", acbListPageData{Positions: positions})
+	h.render(w, r, "acb_list", acbListPageData{Positions: positions})
 }
 
 func (h *Handler) loadPositions(r *http.Request) ([]positionSummary, error) {
@@ -89,10 +98,53 @@ func (h *Handler) showACB(w http.ResponseWriter, r *http.Request) {
 	adj, _, _ := service.ComputeSuperficialAdjustments(id, txs, allTxs)
 	result, rows := service.CalculateACBWithHistory(id, txs, adj)
 
-	h.render(w, r,"acb", acbDetailPageData{
+	h.render(w, r, "acb", acbDetailPageData{
 		Security:     sec,
 		Result:       result,
 		Transactions: txs,
 		Rows:         rows,
 	})
+}
+
+func (h *Handler) updateSecurityPrice(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+
+	priceStr := r.FormValue("last_price_cad")
+	if priceStr == "" {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+
+	price, err := decimal.NewFromString(priceStr)
+	if err != nil || price.IsNegative() {
+		http.Error(w, "invalid price", http.StatusBadRequest)
+		return
+	}
+
+	sec, err := h.securities.GetByID(r.Context(), id)
+	if err != nil {
+		h.notFoundOrError(w, r, err)
+		return
+	}
+	snapshot, err := json.Marshal(sec)
+	if err != nil {
+		loggerFromCtx(r.Context()).Error("snapshot marshal", "entity", "security", "id", id, "err", err)
+	}
+
+	if err := h.securities.UpdatePrice(r.Context(), id, price, time.Now().UTC()); err != nil {
+		h.serverError(w, r, err)
+		return
+	}
+	h.logAudit(r, audit.ActionUpdate, audit.EntitySecurity, id, audit.SourceManual, string(snapshot))
+
+	http.Redirect(w, r, "/", http.StatusSeeOther)
 }

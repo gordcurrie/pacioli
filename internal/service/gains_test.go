@@ -105,8 +105,9 @@ func (m *mockSecStore) GetByTickerExchange(_ context.Context, _, _ string) (*sec
 }
 func (m *mockSecStore) Search(_ context.Context, _ string) ([]*security.Security, error) { return nil, nil }
 func (m *mockSecStore) ListAll(_ context.Context) ([]*security.Security, error)           { return nil, nil }
-func (m *mockSecStore) Update(_ context.Context, _ *security.Security) error              { return nil }
-func (m *mockSecStore) Delete(_ context.Context, _ int64) error                           { return nil }
+func (m *mockSecStore) Update(_ context.Context, _ *security.Security) error                           { return nil }
+func (m *mockSecStore) UpdatePrice(_ context.Context, _ int64, _ decimal.Decimal, _ time.Time) error  { return nil }
+func (m *mockSecStore) Delete(_ context.Context, _ int64) error                                        { return nil }
 
 func date(s string) time.Time {
 	t, _ := time.Parse(time.DateOnly, s)

@@ -91,6 +91,10 @@ func newTestEnv(t *testing.T) *testEnv {
 	gainsSvc := service.NewGainsService(txStore, secStore)
 	rocSvc := service.NewROCService(txStore, distStore, secStore)
 	ngSvc := service.NewNGService(txStore, secStore)
+	portfolioSvc := service.NewPortfolioService(txStore, secStore, acbSvc)
+	fxStore := sqlite.NewFXStore(db)
+	bocSvc := service.NewBOCFetcher(fxStore)
+	yahooSvc := service.NewYahooFetcher(bocSvc)
 
 	h, err := handler.New(&handler.Config{
 		Accounts:     accountStore,
@@ -103,6 +107,8 @@ func newTestEnv(t *testing.T) *testEnv {
 		GainsSvc:     gainsSvc,
 		ROCSvc:       rocSvc,
 		NGSvc:        ngSvc,
+		PortfolioSvc: portfolioSvc,
+		YahooSvc:     yahooSvc,
 		Logger:       slog.Default(),
 		TemplateFS:   web.Templates,
 	})

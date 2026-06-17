@@ -42,6 +42,10 @@ func newBlankTestEnv(t *testing.T) (*handler.Handler, *sqlite.UserStore) {
 	acbSvc := service.NewACBService(txStore)
 	gainsSvc := service.NewGainsService(txStore, secStore)
 	rocSvc := service.NewROCService(txStore, distStore, secStore)
+	portfolioSvc := service.NewPortfolioService(txStore, secStore, acbSvc)
+	fxStore := sqlite.NewFXStore(db)
+	bocSvc := service.NewBOCFetcher(fxStore)
+	yahooSvc := service.NewYahooFetcher(bocSvc)
 
 	h, err := handler.New(&handler.Config{
 		Accounts:     accountStore,
@@ -53,6 +57,8 @@ func newBlankTestEnv(t *testing.T) (*handler.Handler, *sqlite.UserStore) {
 		ACBSvc:       acbSvc,
 		GainsSvc:     gainsSvc,
 		ROCSvc:       rocSvc,
+		PortfolioSvc: portfolioSvc,
+		YahooSvc:     yahooSvc,
 		Logger:       slog.Default(),
 		TemplateFS:   web.Templates,
 	})
@@ -399,6 +405,9 @@ func TestRequireAuth_TOTPPending_Redirects2FA(t *testing.T) {
 	acbSvc2 := service.NewACBService(txStore2)
 	gainsSvc2 := service.NewGainsService(txStore2, secStore2)
 	rocSvc2 := service.NewROCService(txStore2, distStore2, secStore2)
+	portfolioSvc2 := service.NewPortfolioService(txStore2, secStore2, acbSvc2)
+	fxStore2 := sqlite.NewFXStore(db2)
+	yahooSvc2 := service.NewYahooFetcher(service.NewBOCFetcher(fxStore2))
 
 	hash, _ := bcrypt.GenerateFromPassword([]byte("pw"), 4)
 	uid, _ := userStore2.Create(ctx, &user.User{Email: "totp@test.com", PasswordHash: string(hash)})
@@ -419,6 +428,7 @@ func TestRequireAuth_TOTPPending_Redirects2FA(t *testing.T) {
 		Accounts: accountStore2, Securities: secStore2, Transactions: txStore2,
 		Audits: auditStore2, Users: userStore2, Sessions: sessionStore2,
 		ACBSvc: acbSvc2, GainsSvc: gainsSvc2, ROCSvc: rocSvc2,
+		PortfolioSvc: portfolioSvc2, YahooSvc: yahooSvc2,
 		Logger: slog.Default(), TemplateFS: web.Templates,
 	})
 	if err != nil {
@@ -571,15 +581,20 @@ func TestTOTPSubmit_ValidCode(t *testing.T) {
 		ExpiresAt:    time.Now().Add(time.Hour),
 	})
 
+	acbSvcLocal := service.NewACBService(txStore)
+	fxStoreLocal := sqlite.NewFXStore(db)
+	bocSvcLocal := service.NewBOCFetcher(fxStoreLocal)
 	h, err := handler.New(&handler.Config{
 		Accounts: accountStore, Securities: secStore, Transactions: txStore,
 		Audits: auditStore, Users: userStore, Sessions: sessionStore,
-		ACBSvc:     service.NewACBService(txStore),
-		GainsSvc:   service.NewGainsService(txStore, secStore),
-		ROCSvc:     service.NewROCService(txStore, distStore, secStore),
-		EncKey:     key,
-		Logger:     slog.Default(),
-		TemplateFS: web.Templates,
+		ACBSvc:       acbSvcLocal,
+		GainsSvc:     service.NewGainsService(txStore, secStore),
+		ROCSvc:       service.NewROCService(txStore, distStore, secStore),
+		PortfolioSvc: service.NewPortfolioService(txStore, secStore, acbSvcLocal),
+		YahooSvc:     service.NewYahooFetcher(bocSvcLocal),
+		EncKey:       key,
+		Logger:       slog.Default(),
+		TemplateFS:   web.Templates,
 	})
 	if err != nil {
 		t.Fatalf("new handler: %v", err)
@@ -639,6 +654,8 @@ func TestTOTPSubmit_InvalidCode_RerendersError(t *testing.T) {
 		Audits: auditStore, Users: userStore, Sessions: sessionStore,
 		ACBSvc: service.NewACBService(txStore), GainsSvc: service.NewGainsService(txStore, secStore),
 		ROCSvc: service.NewROCService(txStore, distStore, secStore),
+		PortfolioSvc: service.NewPortfolioService(txStore, secStore, service.NewACBService(txStore)),
+		YahooSvc: service.NewYahooFetcher(service.NewBOCFetcher(sqlite.NewFXStore(db))),
 		EncKey: key, Logger: slog.Default(), TemplateFS: web.Templates,
 	})
 	if err != nil {
