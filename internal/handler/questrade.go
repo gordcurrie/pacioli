@@ -1,8 +1,6 @@
 package handler
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,6 +14,7 @@ import (
 	"github.com/gordcurrie/pacioli/internal/errs"
 	"github.com/gordcurrie/pacioli/internal/questrade"
 	"github.com/gordcurrie/pacioli/internal/security"
+	"github.com/gordcurrie/pacioli/internal/service"
 	"github.com/gordcurrie/pacioli/internal/transaction"
 	"github.com/shopspring/decimal"
 )
@@ -401,9 +400,9 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 
 	for i := range activities {
 		act := &activities[i]
-		status, msg, txType := classifyQTActivity(act)
+		status, msg, txType := service.ClassifyQTActivity(act)
 
-		if status == qtSkip {
+		if status == service.QTActivitySkip {
 			totSkip++
 			continue
 		}
@@ -417,7 +416,7 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 			AccountName: pAccountName,
 		}
 
-		if status == qtFlag {
+		if status == service.QTActivityFlag {
 			totFlag++
 			baseRow.Status = qtStatusFlag
 			baseRow.StatusMsg = msg
@@ -556,48 +555,12 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-type qtStatus int
-
-const (
-	qtImport qtStatus = iota
-	qtSkip
-	qtFlag
-)
-
 // qtImportKey returns the dedup key used to identify an already-imported QT
 // activity. TypeFXConversion gets an alias key of TypeTransferOut because a
 // linked NG give-leg is re-typed in the DB but QT still reports it as a
 // negative FXT (transfer_out).
 func qtImportKey(secID int64, date time.Time, txType transaction.Type, qty decimal.Decimal) string {
 	return fmt.Sprintf("%d|%s|%s|%s", secID, date.Format(time.DateOnly), string(txType), qty.String())
-}
-
-func classifyQTActivity(a *questrade.Activity) (qtStatus, string, transaction.Type) {
-	switch strings.TrimSpace(a.Action) {
-	case "Buy":
-		return qtImport, "", transaction.TypeBuy
-	case "Sell":
-		return qtImport, "", transaction.TypeSell
-	case "DIV", "INT":
-		return qtImport, "", transaction.TypeDividend
-	case "REI":
-		// Dividend reinvestment: treated as a buy (acquires shares, increases ACB)
-		return qtImport, "", transaction.TypeBuy
-	case "CON", "WDR", "DEP", "TFI", "TFO", "EXP", "BRW", "":
-		return qtSkip, "", ""
-	case "FXT":
-		// Norbert's Gambit journal: positive qty = receiving leg (e.g. DLR.TO acquired),
-		// negative qty = sending leg (e.g. DLR.U.TO disposed). Zero qty can't be processed.
-		if a.Quantity.IsPositive() {
-			return qtImport, "", transaction.TypeJournal
-		}
-		if a.Quantity.IsNegative() {
-			return qtImport, "", transaction.TypeTransferOut
-		}
-		return qtFlag, "FX conversion — zero quantity; enter manually", ""
-	default:
-		return qtFlag, "unknown action: " + a.Action, ""
-	}
 }
 
 // validQTTypes restricts commit to types the Questrade preview can actually produce.
@@ -627,49 +590,16 @@ func (h *Handler) questradeCommit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	accounts, err := h.accounts.ListByUser(ctx, userFromCtx(r.Context()).ID)
+	sess, err := h.newImportSession(ctx, userFromCtx(r.Context()).ID)
 	if err != nil {
 		h.serverError(w, r, err)
 		return
-	}
-	ownedAccounts := make(map[int64]bool, len(accounts))
-	for _, a := range accounts {
-		ownedAccounts[a.ID] = true
-	}
-
-	var b [16]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		h.serverError(w, r, err)
-		return
-	}
-	importID := hex.EncodeToString(b[:])
-
-	type cachedSec struct {
-		currency string
-		found    bool
-	}
-	secCache := make(map[int64]cachedSec)
-	lookupSec := func(id int64) (cachedSec, error) {
-		if s, ok := secCache[id]; ok {
-			return s, nil
-		}
-		sec, err := h.securities.GetByID(ctx, id)
-		if err != nil {
-			if errors.Is(err, errs.ErrNotFound) {
-				secCache[id] = cachedSec{}
-				return cachedSec{}, nil
-			}
-			return cachedSec{}, err
-		}
-		cs := cachedSec{currency: sec.Currency, found: true}
-		secCache[id] = cs
-		return cs, nil
 	}
 
 	for i := range commitRows {
 		cr := &commitRows[i]
 
-		if !ownedAccounts[cr.AccountID] {
+		if !sess.ownedAccounts[cr.AccountID] {
 			loggerFromCtx(ctx).Warn("qt commit: account not owned", "account_id", cr.AccountID)
 			continue
 		}
@@ -680,7 +610,7 @@ func (h *Handler) questradeCommit(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		sec, err := lookupSec(cr.SecurityID)
+		sec, err := sess.lookupSec(cr.SecurityID)
 		if err != nil {
 			h.serverError(w, r, err)
 			return
@@ -766,7 +696,7 @@ func (h *Handler) questradeCommit(w http.ResponseWriter, r *http.Request) {
 			EntityType: audit.EntityTransaction,
 			EntityID:   tx.ID,
 			Source:     audit.SourceQuestrade,
-			ImportID:   importID,
+			ImportID:   sess.importID,
 		}); err != nil {
 			loggerFromCtx(ctx).Error("qt commit: audit log", "err", err)
 		}

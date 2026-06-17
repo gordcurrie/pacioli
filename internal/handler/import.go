@@ -1,16 +1,12 @@
 package handler
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"time"
 
 	"github.com/gordcurrie/pacioli/internal/audit"
 	"github.com/gordcurrie/pacioli/internal/broker"
-	"github.com/gordcurrie/pacioli/internal/errs"
 	"github.com/gordcurrie/pacioli/internal/transaction"
 	"github.com/shopspring/decimal"
 )
@@ -281,51 +277,16 @@ func (h *Handler) importCommit(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
-	// load user's accounts for ownership validation
-	accounts, err := h.accounts.ListByUser(ctx, userFromCtx(r.Context()).ID)
+	sess, err := h.newImportSession(ctx, userFromCtx(r.Context()).ID)
 	if err != nil {
 		h.serverError(w, r, err)
 		return
-	}
-	ownedAccounts := make(map[int64]bool, len(accounts))
-	for _, a := range accounts {
-		ownedAccounts[a.ID] = true
-	}
-
-	var b [16]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		h.serverError(w, r, err)
-		return
-	}
-	importID := hex.EncodeToString(b[:])
-
-	// per-request security cache to avoid N+1 GetByID calls
-	type cachedSec struct {
-		currency string
-		found    bool
-	}
-	secCache := make(map[int64]cachedSec)
-	lookupSec := func(id int64) (cachedSec, error) {
-		if s, ok := secCache[id]; ok {
-			return s, nil
-		}
-		sec, err := h.securities.GetByID(ctx, id)
-		if err != nil {
-			if errors.Is(err, errs.ErrNotFound) {
-				secCache[id] = cachedSec{}
-				return cachedSec{}, nil
-			}
-			return cachedSec{}, err
-		}
-		s := cachedSec{currency: sec.Currency, found: true}
-		secCache[id] = s
-		return s, nil
 	}
 
 	for i := range commitRows {
 		cr := &commitRows[i]
 
-		if !ownedAccounts[cr.AccountID] {
+		if !sess.ownedAccounts[cr.AccountID] {
 			loggerFromCtx(ctx).Warn("import: account not owned", "account_id", cr.AccountID)
 			continue
 		}
@@ -337,7 +298,7 @@ func (h *Handler) importCommit(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// re-validate security: must exist and be CAD
-		sec, err := lookupSec(cr.SecurityID)
+		sec, err := sess.lookupSec(cr.SecurityID)
 		if err != nil {
 			h.serverError(w, r, err)
 			return
@@ -404,7 +365,7 @@ func (h *Handler) importCommit(w http.ResponseWriter, r *http.Request) {
 			EntityType: audit.EntityTransaction,
 			EntityID:   tx.ID,
 			Source:     src,
-			ImportID:   importID,
+			ImportID:   sess.importID,
 		}); err != nil {
 			loggerFromCtx(ctx).Error("import: audit log", "err", err)
 		}

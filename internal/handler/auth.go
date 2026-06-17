@@ -20,7 +20,10 @@ const (
 	sessionDuration = 30 * 24 * time.Hour
 	bcryptCost      = 12
 	cookieName      = "pacioli_session"
+	minPasswordLen  = 8
 )
+
+var minPasswordMsg = fmt.Sprintf("Password must be at least %d characters.", minPasswordLen)
 
 // sentinelHash is computed once at startup and used to equalize the timing of
 // failed login attempts where the email is not found. Without this, an attacker
@@ -82,8 +85,8 @@ func (h *Handler) setupSubmit(w http.ResponseWriter, r *http.Request) {
 		renderErr("Passwords do not match.")
 		return
 	}
-	if len(password) < 8 {
-		renderErr("Password must be at least 8 characters.")
+	if len(password) < minPasswordLen {
+		renderErr(minPasswordMsg)
 		return
 	}
 
