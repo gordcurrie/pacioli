@@ -8,10 +8,12 @@ import (
 	"github.com/gordcurrie/pacioli/internal/audit"
 )
 
+// AuditStore is the SQLite implementation of audit.Store.
 type AuditStore struct {
 	db *sql.DB
 }
 
+// NewAuditStore constructs an AuditStore backed by db.
 func NewAuditStore(db *sql.DB) *AuditStore {
 	return &AuditStore{db: db}
 }

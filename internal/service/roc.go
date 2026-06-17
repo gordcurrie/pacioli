@@ -12,6 +12,8 @@ import (
 	"github.com/shopspring/decimal"
 )
 
+// ROCPreviewRow summarises the Return of Capital adjustment that would be applied for
+// one security in a given tax year, before the user confirms the operation.
 type ROCPreviewRow struct {
 	Security       *security.Security
 	TaxYear        int
@@ -22,6 +24,7 @@ type ROCPreviewRow struct {
 	accountID      int64 // account used for auto-generated roc_adjustment transaction
 }
 
+// ROCService previews and applies Return of Capital ACB reductions from T3 distribution data.
 type ROCService struct {
 	txStore   transaction.Store
 	distStore distribution.Store
@@ -29,6 +32,7 @@ type ROCService struct {
 	mu        sync.Mutex // serialises ApplyROC to prevent duplicate transactions
 }
 
+// NewROCService constructs a ROCService backed by the given stores.
 func NewROCService(txStore transaction.Store, distStore distribution.Store, secStore security.Store) *ROCService {
 	return &ROCService{txStore: txStore, distStore: distStore, secStore: secStore}
 }

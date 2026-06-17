@@ -11,10 +11,12 @@ import (
 	"github.com/shopspring/decimal"
 )
 
+// FXStore is the SQLite implementation of fx.Store.
 type FXStore struct {
 	db *sql.DB
 }
 
+// NewFXStore constructs an FXStore backed by db.
 func NewFXStore(db *sql.DB) *FXStore {
 	return &FXStore{db: db}
 }

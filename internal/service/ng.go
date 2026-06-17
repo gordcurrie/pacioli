@@ -29,11 +29,13 @@ type NGPair struct {
 	IsDirect   bool                     // true when broker did not report intermediate journal transactions
 }
 
+// NGService detects and links unlinked Norbert's Gambit transaction pairs.
 type NGService struct {
 	txStore  transaction.Store
 	secStore security.Store
 }
 
+// NewNGService constructs an NGService backed by the given stores.
 func NewNGService(txStore transaction.Store, secStore security.Store) *NGService {
 	return &NGService{txStore: txStore, secStore: secStore}
 }

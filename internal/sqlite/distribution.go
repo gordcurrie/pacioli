@@ -9,10 +9,12 @@ import (
 	"github.com/shopspring/decimal"
 )
 
+// DistributionStore is the SQLite implementation of distribution.Store.
 type DistributionStore struct {
 	db *sql.DB
 }
 
+// NewDistributionStore constructs a DistributionStore backed by db.
 func NewDistributionStore(db *sql.DB) *DistributionStore {
 	return &DistributionStore{db: db}
 }

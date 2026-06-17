@@ -1,3 +1,6 @@
+// Package session defines the Session type for browser authentication and the Store
+// interface for persistence. Sessions are identified by a SHA-256 hash of the raw
+// token stored in the user's cookie; the raw token never touches the database.
 package session
 
 import (
@@ -5,6 +8,7 @@ import (
 	"time"
 )
 
+// Session represents an authenticated browser session identified by a hashed token.
 type Session struct {
 	ID           int64
 	UserID       int64
@@ -15,6 +19,7 @@ type Session struct {
 	LastSeenAt   time.Time
 }
 
+// Store defines persistence operations for user sessions.
 type Store interface {
 	Create(ctx context.Context, s *Session) error
 	GetByTokenHash(ctx context.Context, hash string) (*Session, error)

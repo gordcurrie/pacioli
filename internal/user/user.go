@@ -1,3 +1,6 @@
+// Package user defines the User type, TOTP recovery codes, and the Store interface.
+// Password hashes and TOTP secrets are stored encrypted; plaintext values are never
+// persisted directly.
 package user
 
 import (
@@ -5,6 +8,7 @@ import (
 	"time"
 )
 
+// User represents an authenticated application user.
 type User struct {
 	ID           int64
 	Email        string
@@ -15,6 +19,7 @@ type User struct {
 	CreatedAt    time.Time
 }
 
+// RecoveryCode is a single-use TOTP backup code stored as a bcrypt hash.
 type RecoveryCode struct {
 	ID     int64
 	UserID int64
@@ -22,6 +27,7 @@ type RecoveryCode struct {
 	UsedAt *time.Time // nil = not yet used
 }
 
+// Store defines persistence operations for users and their TOTP recovery codes.
 type Store interface {
 	Create(ctx context.Context, u *User) (int64, error)
 	GetByID(ctx context.Context, id int64) (*User, error)

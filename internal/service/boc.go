@@ -23,6 +23,7 @@ type BOCFetcher struct {
 	BaseURL string // overridable in tests; defaults to bocURL
 }
 
+// NewBOCFetcher constructs a BOCFetcher backed by the given FX rate store.
 func NewBOCFetcher(store fx.Store) *BOCFetcher {
 	return &BOCFetcher{
 		store:   store,

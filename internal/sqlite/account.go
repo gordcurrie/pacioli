@@ -10,10 +10,12 @@ import (
 	"github.com/gordcurrie/pacioli/internal/errs"
 )
 
+// AccountStore is the SQLite implementation of account.Store.
 type AccountStore struct {
 	db *sql.DB
 }
 
+// NewAccountStore constructs an AccountStore backed by db.
 func NewAccountStore(db *sql.DB) *AccountStore {
 	return &AccountStore{db: db}
 }

@@ -13,10 +13,12 @@ import (
 	"github.com/gordcurrie/pacioli/internal/session"
 )
 
+// SessionStore is the SQLite implementation of session.Store.
 type SessionStore struct {
 	db *sql.DB
 }
 
+// NewSessionStore constructs a SessionStore backed by db.
 func NewSessionStore(db *sql.DB) *SessionStore {
 	return &SessionStore{db: db}
 }

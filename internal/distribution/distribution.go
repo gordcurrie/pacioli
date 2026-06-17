@@ -1,3 +1,6 @@
+// Package distribution defines the Distribution type for annual T3 slip data and
+// the Store interface for persistence. Return of Capital (ROC) amounts from T3
+// distributions reduce a security's ACB; this data is entered manually per tax year.
 package distribution
 
 import (
@@ -18,6 +21,7 @@ type Distribution struct {
 	Notes                    string
 }
 
+// Store defines persistence operations for T3 distribution records.
 type Store interface {
 	Upsert(ctx context.Context, d *Distribution) error
 	GetBySecurityYear(ctx context.Context, securityID int64, taxYear int) (*Distribution, error)

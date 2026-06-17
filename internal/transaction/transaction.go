@@ -1,3 +1,6 @@
+// Package transaction defines the Transaction domain type and Store interface.
+// Transactions are the primary input to ACB calculation; their Type determines
+// how each row affects the running share count and cost pool.
 package transaction
 
 import (
@@ -7,6 +10,7 @@ import (
 	"github.com/shopspring/decimal"
 )
 
+// Type classifies a transaction for ACB and tax treatment.
 type Type string
 
 const (
@@ -20,6 +24,7 @@ const (
 	TypeJournal       Type = "journal"
 )
 
+// Source identifies the originating data source for a transaction.
 type Source string
 
 const (
@@ -28,6 +33,7 @@ const (
 	SourceCanaccordCSV Source = "canaccord_csv"
 )
 
+// Transaction records a single brokerage event affecting a security position.
 type Transaction struct {
 	ID                  int64
 	AccountID           int64
@@ -47,6 +53,7 @@ type Transaction struct {
 	CreatedAt           time.Time
 }
 
+// Store defines persistence operations for transactions.
 type Store interface {
 	Create(ctx context.Context, tx *Transaction) error
 	GetByID(ctx context.Context, id int64) (*Transaction, error)

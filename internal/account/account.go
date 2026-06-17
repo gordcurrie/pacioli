@@ -1,3 +1,6 @@
+// Package account defines the Account domain type, its type constants, and the Store interface
+// for persistence. Registered account types (TFSA, RRSP, RESP, LRSP, SRSP) are excluded from
+// ACB pool calculations; non-registered types (margin, cash) are included.
 package account
 
 import (
@@ -5,6 +8,7 @@ import (
 	"time"
 )
 
+// Type classifies a brokerage account for ACB pool eligibility and tax treatment.
 type Type string
 
 const (
@@ -27,6 +31,7 @@ func (t Type) IsRegistered() bool {
 	return false
 }
 
+// Account represents a brokerage account belonging to a user.
 type Account struct {
 	ID            int64
 	UserID        int64
@@ -40,6 +45,7 @@ type Account struct {
 	CreatedAt     time.Time
 }
 
+// Store defines persistence operations for accounts.
 type Store interface {
 	Create(ctx context.Context, a *Account) error
 	GetByID(ctx context.Context, id int64) (*Account, error)

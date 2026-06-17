@@ -1,3 +1,6 @@
+// Package audit defines the immutable audit log Entry type and the Store interface.
+// Every create, update, and delete in the application writes an Entry so admins
+// can review the full change history via the audit log viewer.
 package audit
 
 import (
@@ -5,6 +8,7 @@ import (
 	"time"
 )
 
+// Action describes what was done to an entity in an audit log entry.
 type Action string
 
 const (
@@ -13,6 +17,7 @@ const (
 	ActionDelete Action = "delete"
 )
 
+// EntityType identifies which domain entity an audit log entry refers to.
 type EntityType string
 
 const (
@@ -22,6 +27,7 @@ const (
 	EntityUser        EntityType = "user"
 )
 
+// Source identifies the originating data source for an audit log entry.
 type Source string
 
 const (
@@ -30,6 +36,7 @@ const (
 	SourceCanaccordCSV Source = "canaccord_csv"
 )
 
+// Entry is a single immutable record in the audit log.
 type Entry struct {
 	ID         int64
 	UserID     int64
@@ -53,6 +60,7 @@ type ListFilter struct {
 	Offset     int
 }
 
+// Store defines persistence operations for audit log entries.
 type Store interface {
 	Log(ctx context.Context, e *Entry) error
 	List(ctx context.Context, f ListFilter) ([]*Entry, error)

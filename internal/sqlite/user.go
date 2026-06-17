@@ -11,11 +11,13 @@ import (
 	"github.com/gordcurrie/pacioli/internal/user"
 )
 
+// UserStore is the SQLite implementation of user.Store; TOTP secrets are AES-256-GCM encrypted when key is set.
 type UserStore struct {
 	db  *sql.DB
 	key []byte // AES-256 key for TOTP secret encryption; nil = TOTP disabled
 }
 
+// NewUserStore constructs a UserStore backed by db, encrypting TOTP secrets with key (nil disables TOTP).
 func NewUserStore(db *sql.DB, key []byte) *UserStore {
 	return &UserStore{db: db, key: key}
 }

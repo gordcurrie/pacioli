@@ -10,6 +10,7 @@ import (
 	"github.com/shopspring/decimal"
 )
 
+// GainsLine is a single taxable disposition line in a capital gains report.
 type GainsLine struct {
 	Security          *security.Security
 	TradeDate         time.Time
@@ -25,6 +26,7 @@ type GainsLine struct {
 	NeedsReview bool
 }
 
+// GainsReport aggregates all taxable dispositions for a calendar year.
 type GainsReport struct {
 	Year                 int
 	Lines                []GainsLine
@@ -35,11 +37,13 @@ type GainsReport struct {
 	SuperficialLossTotal decimal.Decimal
 }
 
+// GainsService computes CRA-compliant capital gains reports for a given tax year.
 type GainsService struct {
 	txStore  transaction.Store
 	secStore security.Store
 }
 
+// NewGainsService constructs a GainsService backed by the given stores.
 func NewGainsService(txStore transaction.Store, secStore security.Store) *GainsService {
 	return &GainsService{txStore: txStore, secStore: secStore}
 }

@@ -20,6 +20,7 @@ var trdSuffix = regexp.MustCompile(` TRD #\d+$`)
 
 type canaccordProfile struct{}
 
+// NewCanaccordProfile returns a CSV import Profile for Canaccord Genuity activity exports.
 func NewCanaccordProfile() Profile { return &canaccordProfile{} }
 
 func (*canaccordProfile) Name() string         { return "Canaccord Genuity" }

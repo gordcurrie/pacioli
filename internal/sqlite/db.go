@@ -1,3 +1,7 @@
+// Package sqlite provides SQLite implementations of every domain Store interface.
+// Each store (AccountStore, TransactionStore, etc.) wraps a *sql.DB and satisfies
+// its matching interface from the corresponding domain package. Schema migrations are
+// embedded and run automatically on startup via Open.
 package sqlite
 
 import (

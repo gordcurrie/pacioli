@@ -10,10 +10,12 @@ import (
 	"github.com/shopspring/decimal"
 )
 
+// TransactionStore is the SQLite implementation of transaction.Store.
 type TransactionStore struct {
 	db *sql.DB
 }
 
+// NewTransactionStore constructs a TransactionStore backed by db.
 func NewTransactionStore(db *sql.DB) *TransactionStore {
 	return &TransactionStore{db: db}
 }

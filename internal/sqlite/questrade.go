@@ -11,11 +11,13 @@ import (
 	"github.com/gordcurrie/pacioli/internal/questrade"
 )
 
+// QTokenStore is the SQLite implementation of questrade.Store; tokens are AES-256-GCM encrypted at rest.
 type QTokenStore struct {
 	db  *sql.DB
 	key []byte // 32-byte AES-256 key
 }
 
+// NewQTokenStore constructs a QTokenStore backed by db, encrypting tokens with key.
 func NewQTokenStore(db *sql.DB, key []byte) *QTokenStore {
 	return &QTokenStore{db: db, key: key}
 }

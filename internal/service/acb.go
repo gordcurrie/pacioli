@@ -1,3 +1,13 @@
+// Package service implements the core business logic for Pacioli:
+//   - ACB pool calculation with superficial loss carry-forward (acb.go)
+//   - Capital gains reporting per CRA rules (gains.go)
+//   - Norbert's Gambit pair detection and linking (ng.go)
+//   - Return of Capital ACB reductions from T3 data (roc.go)
+//   - Bank of Canada USD/CAD rate fetching and caching (boc.go)
+//   - Questrade activity classification and mapping (qtclassify.go)
+//
+// Store and domain types come from sibling packages; service has no direct
+// dependency on internal/sqlite or internal/handler.
 package service
 
 import (
@@ -9,6 +19,7 @@ import (
 	"github.com/shopspring/decimal"
 )
 
+// ACBResult holds the current ACB pool state for a security after processing all transactions.
 type ACBResult struct {
 	SecurityID  int64
 	Shares      decimal.Decimal
@@ -16,6 +27,8 @@ type ACBResult struct {
 	ACBPerShare decimal.Decimal
 }
 
+// HistoryRow is one entry in the ACB history table, pairing a transaction with
+// running pool totals and any superficial-loss adjustment applied on that row.
 type HistoryRow struct {
 	Tx                 *transaction.Transaction
 	PreTxShares        decimal.Decimal // shares held before this transaction was applied
@@ -35,10 +48,12 @@ type HistoryRow struct {
 	SuperficialLossAdj decimal.Decimal
 }
 
+// ACBService computes Adjusted Cost Base pools for securities in non-registered accounts.
 type ACBService struct {
 	txStore transaction.Store
 }
 
+// NewACBService constructs an ACBService backed by the given transaction store.
 func NewACBService(txStore transaction.Store) *ACBService {
 	return &ACBService{txStore: txStore}
 }

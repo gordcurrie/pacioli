@@ -1,3 +1,6 @@
+// Package handler wires all HTTP routes and renders server-side HTML templates.
+// It depends on domain Store interfaces and service types from internal/service;
+// all business logic lives in those layers, not here.
 package handler
 
 import (
@@ -23,6 +26,7 @@ import (
 	"github.com/gordcurrie/pacioli/internal/user"
 )
 
+// Handler wires all HTTP routes and holds references to every domain store and service.
 type Handler struct {
 	accounts     account.Store
 	securities   security.Store
@@ -94,6 +98,7 @@ func (cfg *Config) validate() error {
 	return nil
 }
 
+// New validates cfg and returns a Handler with all templates parsed and routes ready to register.
 func New(cfg *Config) (*Handler, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("handler: nil config")

@@ -1,7 +1,10 @@
+// Package security defines the Security domain type (ticker, exchange, instrument type)
+// and the Store interface for persistence and search.
 package security
 
 import "context"
 
+// Type classifies a security instrument.
 type Type string
 
 const (
@@ -11,6 +14,7 @@ const (
 	TypeOption     Type = "option"
 )
 
+// Security represents a tradeable instrument identified by ticker and exchange.
 type Security struct {
 	ID       int64
 	Ticker   string
@@ -21,6 +25,7 @@ type Security struct {
 	Source   string
 }
 
+// Store defines persistence operations for securities.
 type Store interface {
 	Create(ctx context.Context, s *Security) error
 	GetByID(ctx context.Context, id int64) (*Security, error)

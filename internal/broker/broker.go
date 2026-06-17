@@ -1,3 +1,6 @@
+// Package broker defines the Profile interface for broker-specific CSV import logic
+// and the ParseCSV helper that drives it. Each broker (e.g. Canaccord Genuity) implements
+// Profile to classify and parse its own CSV activity export format.
 package broker
 
 import (

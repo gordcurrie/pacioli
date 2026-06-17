@@ -10,10 +10,12 @@ import (
 	"github.com/gordcurrie/pacioli/internal/security"
 )
 
+// SecurityStore is the SQLite implementation of security.Store.
 type SecurityStore struct {
 	db *sql.DB
 }
 
+// NewSecurityStore constructs a SecurityStore backed by db.
 func NewSecurityStore(db *sql.DB) *SecurityStore {
 	return &SecurityStore{db: db}
 }

@@ -1,3 +1,6 @@
+// Package questrade implements a Questrade REST API client and OAuth2 token exchange.
+// The Secret type prevents accidental token logging. The Store interface abstracts
+// per-user token persistence so callers can refresh and reuse credentials transparently.
 package questrade
 
 import (
