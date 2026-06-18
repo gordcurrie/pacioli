@@ -173,6 +173,14 @@ func CalculateACB(securityID int64, txs []*transaction.Transaction) *ACBResult {
 	return r
 }
 
+// CalculateFromTxs computes ACB given pre-fetched transaction slices, avoiding extra DB calls.
+// nonRegTxs must be the non-registered subset; allTxs must span all accounts (for superficial loss detection).
+func (s *ACBService) CalculateFromTxs(securityID int64, nonRegTxs, allTxs []*transaction.Transaction) *ACBResult {
+	adj, _, _ := ComputeSuperficialAdjustments(securityID, nonRegTxs, allTxs)
+	r, _ := CalculateACBWithHistory(securityID, nonRegTxs, adj)
+	return r
+}
+
 // checkSuperficialLoss returns true when a sell at sellDate is a superficial loss per CRA rules:
 // there must be an acquisition within the ±30-day window AND a positive net position
 // across all accounts at the end of that window.

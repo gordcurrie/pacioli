@@ -66,10 +66,11 @@ func (s *PortfolioService) Build(ctx context.Context, userID int64) ([]Portfolio
 			continue
 		}
 
-		acb, err := s.acbSvc.Calculate(ctx, secID, userID)
+		nonRegTxs, err := s.txStore.ListBySecurityNonRegistered(ctx, secID, userID)
 		if err != nil {
 			return nil, PortfolioSummary{}, err
 		}
+		acb := s.acbSvc.CalculateFromTxs(secID, nonRegTxs, allTxs)
 
 		pos := PortfolioPosition{
 			Security:          sec,

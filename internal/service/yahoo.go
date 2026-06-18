@@ -59,6 +59,9 @@ func (f *YahooFetcher) FetchPrices(ctx context.Context, secs []*security.Securit
 		fxErr     error
 		fxOnce    sync.Once
 		fetchRate = func() (decimal.Decimal, error) {
+			if f.bocSvc == nil {
+				return decimal.Zero, fmt.Errorf("yahoo: bocSvc not configured; cannot convert USD price")
+			}
 			fxOnce.Do(func() {
 				fxRate, fxErr = f.bocSvc.USDCADRate(ctx, time.Now().UTC())
 			})
@@ -148,7 +151,10 @@ func (f *YahooFetcher) fetchQuote(ctx context.Context, symbol string) (decimal.D
 	if err != nil {
 		return decimal.Zero, "", fmt.Errorf("yahoo base URL: %w", err)
 	}
-	base.Path = "/v8/finance/chart/" + url.PathEscape(symbol)
+	// Set both Path (for semantics) and RawPath (for wire encoding) to avoid
+	// double-escaping: url.URL.String() re-encodes Path if RawPath is empty.
+	base.Path = "/v8/finance/chart/" + symbol
+	base.RawPath = "/v8/finance/chart/" + url.PathEscape(symbol)
 	base.RawQuery = "range=1d&interval=1d&includePrePost=false"
 	u := base
 

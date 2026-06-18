@@ -130,6 +130,17 @@ func (h *Handler) updateSecurityPrice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Verify the requesting user has at least one transaction for this security.
+	txs, err := h.transactions.ListBySecurityAllAccounts(r.Context(), id, userFromCtx(r.Context()).ID)
+	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
+	if len(txs) == 0 {
+		http.NotFound(w, r)
+		return
+	}
+
 	sec, err := h.securities.GetByID(r.Context(), id)
 	if err != nil {
 		h.notFoundOrError(w, r, err)
