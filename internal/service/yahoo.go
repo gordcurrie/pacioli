@@ -34,6 +34,9 @@ func NewYahooFetcher(bocSvc *BOCFetcher) *YahooFetcher {
 // NewYahooFetcherWithClient constructs a YahooFetcher with a custom HTTP client and base URL.
 // Intended for testing only.
 func NewYahooFetcherWithClient(bocSvc *BOCFetcher, hc *http.Client, baseURL string) *YahooFetcher {
+	if hc == nil {
+		hc = http.DefaultClient
+	}
 	return &YahooFetcher{bocSvc: bocSvc, hc: hc, baseURL: baseURL}
 }
 
@@ -53,21 +56,20 @@ func (f *YahooFetcher) FetchPrices(ctx context.Context, secs []*security.Securit
 		return nil
 	}
 
-	// Fetch today's USD/CAD rate once for all USD securities.
-	var (
-		fxRate    decimal.Decimal
-		fxErr     error
-		fxOnce    sync.Once
-		fetchRate = func() (decimal.Decimal, error) {
+	// Pre-fetch the USD/CAD rate before spawning goroutines so a transient BOC error
+	// doesn't get permanently cached — each FetchPrices call gets a fresh attempt.
+	var fxRate decimal.Decimal
+	var fxErr error
+	for _, s := range secs {
+		if s.Currency == "USD" {
 			if f.bocSvc == nil {
-				return decimal.Zero, fmt.Errorf("yahoo: bocSvc not configured; cannot convert USD price")
-			}
-			fxOnce.Do(func() {
+				fxErr = fmt.Errorf("yahoo: bocSvc not configured; cannot convert USD price")
+			} else {
 				fxRate, fxErr = f.bocSvc.USDCADRate(ctx, time.Now().UTC())
-			})
-			return fxRate, fxErr
+			}
+			break
 		}
-	)
+	}
 
 	sem := make(chan struct{}, 5) // max 5 concurrent Yahoo requests
 	out := make([]PriceFetchResult, len(secs))
@@ -92,12 +94,11 @@ func (f *YahooFetcher) FetchPrices(ctx context.Context, secs []*security.Securit
 			case "CAD":
 				// already in CAD
 			case "USD":
-				rate, err := fetchRate()
-				if err != nil {
-					out[idx] = PriceFetchResult{SecurityID: s.ID, Ticker: s.Ticker, Err: fmt.Errorf("usd/cad rate: %w", err)}
+				if fxErr != nil {
+					out[idx] = PriceFetchResult{SecurityID: s.ID, Ticker: s.Ticker, Err: fmt.Errorf("usd/cad rate: %w", fxErr)}
 					return
 				}
-				priceCAD = nativePrice.Mul(rate)
+				priceCAD = nativePrice.Mul(fxRate)
 			default:
 				out[idx] = PriceFetchResult{SecurityID: s.ID, Ticker: s.Ticker, Err: fmt.Errorf("unsupported currency %q from Yahoo for %s", currency, sym)}
 				return

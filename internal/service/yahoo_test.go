@@ -42,32 +42,32 @@ func TestYahooSymbol(t *testing.T) {
 	}
 }
 
-func TestYahooFetcher_FetchPrices(t *testing.T) {
-	makeResponse := func(symbol, currency string, price float64) []byte {
-		resp := map[string]any{
-			"chart": map[string]any{
-				"result": []any{
-					map[string]any{
-						"meta": map[string]any{
-							"symbol":             symbol,
-							"currency":           currency,
-							"regularMarketPrice": price,
-						},
+func makeYahooResponse(symbol, currency string, price float64) []byte {
+	resp := map[string]any{
+		"chart": map[string]any{
+			"result": []any{
+				map[string]any{
+					"meta": map[string]any{
+						"symbol":             symbol,
+						"currency":           currency,
+						"regularMarketPrice": price,
 					},
 				},
-				"error": nil,
 			},
-		}
-		b, _ := json.Marshal(resp)
-		return b
+			"error": nil,
+		},
 	}
+	b, _ := json.Marshal(resp)
+	return b
+}
 
+func TestYahooFetcher_FetchPrices(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Serve different prices based on path.
 		switch r.URL.Path {
 		case "/v8/finance/chart/CCO.TO":
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write(makeResponse("CCO.TO", "CAD", 152.19))
+			_, _ = w.Write(makeYahooResponse("CCO.TO", "CAD", 152.19))
 		case "/v8/finance/chart/FAIL.TO":
 			http.Error(w, "not found", http.StatusNotFound)
 		default:
@@ -100,5 +100,27 @@ func TestYahooFetcher_FetchPrices(t *testing.T) {
 	// Second result: failure, no panic
 	if results[1].Err == nil {
 		t.Error("FAIL.TO: expected error, got nil")
+	}
+}
+
+func TestYahooFetcher_FetchPrices_USDNilBOC(t *testing.T) {
+	// USD security with nil bocSvc must return an error, not panic.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(makeYahooResponse("AAPL", "USD", 200.00))
+	}))
+	defer srv.Close()
+
+	fetcher := service.NewYahooFetcherWithClient(nil, &http.Client{}, srv.URL)
+	secs := []*security.Security{
+		{ID: 1, Ticker: "AAPL", Exchange: "NASDAQ", Currency: "USD"},
+	}
+
+	results := fetcher.FetchPrices(context.Background(), secs)
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].Err == nil {
+		t.Error("expected error for USD security with nil bocSvc, got nil")
 	}
 }

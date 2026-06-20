@@ -48,13 +48,22 @@ func (s *PortfolioService) Build(ctx context.Context, userID int64) ([]Portfolio
 		return nil, PortfolioSummary{}, err
 	}
 
+	allSecs, err := s.secStore.GetByIDs(ctx, secIDs)
+	if err != nil {
+		return nil, PortfolioSummary{}, err
+	}
+	secMap := make(map[int64]*security.Security, len(allSecs))
+	for _, sec := range allSecs {
+		secMap[sec.ID] = sec
+	}
+
 	var positions []PortfolioPosition
 	var summary PortfolioSummary
 
 	for _, secID := range secIDs {
-		sec, err := s.secStore.GetByID(ctx, secID)
-		if err != nil {
-			return nil, PortfolioSummary{}, err
+		sec, ok := secMap[secID]
+		if !ok {
+			continue
 		}
 
 		allTxs, err := s.txStore.ListBySecurityAllAccounts(ctx, secID, userID)

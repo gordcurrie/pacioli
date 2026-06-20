@@ -36,6 +36,7 @@ type Security struct {
 type Store interface {
 	Create(ctx context.Context, s *Security) error
 	GetByID(ctx context.Context, id int64) (*Security, error)
+	GetByIDs(ctx context.Context, ids []int64) ([]*Security, error)
 	GetByTickerExchange(ctx context.Context, ticker, exchange string) (*Security, error)
 	Search(ctx context.Context, query string) ([]*Security, error)
 	ListAll(ctx context.Context) ([]*Security, error)

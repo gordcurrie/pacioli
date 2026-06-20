@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/gordcurrie/pacioli/internal/audit"
-	"github.com/gordcurrie/pacioli/internal/security"
 )
 
 func (h *Handler) refreshPrices(w http.ResponseWriter, r *http.Request) {
@@ -20,14 +19,10 @@ func (h *Handler) refreshPrices(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	secs := make([]*security.Security, 0, len(secIDs))
-	for _, id := range secIDs {
-		s, err := h.securities.GetByID(ctx, id)
-		if err != nil {
-			h.serverError(w, r, err)
-			return
-		}
-		secs = append(secs, s)
+	secs, err := h.securities.GetByIDs(ctx, secIDs)
+	if err != nil {
+		h.serverError(w, r, err)
+		return
 	}
 
 	// Build a map so we can snapshot before-state per security.

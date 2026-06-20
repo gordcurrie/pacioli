@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
+	"slices"
 	"strconv"
 	"time"
 
@@ -77,6 +78,16 @@ func (h *Handler) showACB(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	secIDs, err := h.transactions.DistinctAllSecurityIDsByUser(r.Context(), userFromCtx(r.Context()).ID)
+	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
+	if !slices.Contains(secIDs, id) {
+		http.NotFound(w, r)
+		return
+	}
+
 	sec, err := h.securities.GetByID(r.Context(), id)
 	if err != nil {
 		h.notFoundOrError(w, r, err)
@@ -125,18 +136,17 @@ func (h *Handler) updateSecurityPrice(w http.ResponseWriter, r *http.Request) {
 	}
 
 	price, err := decimal.NewFromString(priceStr)
-	if err != nil || price.IsNegative() {
+	if err != nil || !price.IsPositive() {
 		http.Error(w, "invalid price", http.StatusBadRequest)
 		return
 	}
 
-	// Verify the requesting user has at least one transaction for this security.
-	txs, err := h.transactions.ListBySecurityAllAccounts(r.Context(), id, userFromCtx(r.Context()).ID)
+	secIDs, err := h.transactions.DistinctAllSecurityIDsByUser(r.Context(), userFromCtx(r.Context()).ID)
 	if err != nil {
 		h.serverError(w, r, err)
 		return
 	}
-	if len(txs) == 0 {
+	if !slices.Contains(secIDs, id) {
 		http.NotFound(w, r)
 		return
 	}
@@ -146,10 +156,7 @@ func (h *Handler) updateSecurityPrice(w http.ResponseWriter, r *http.Request) {
 		h.notFoundOrError(w, r, err)
 		return
 	}
-	snapshot, err := json.Marshal(sec)
-	if err != nil {
-		loggerFromCtx(r.Context()).Error("snapshot marshal", "entity", "security", "id", id, "err", err)
-	}
+	snapshot, _ := json.Marshal(sec)
 
 	if err := h.securities.UpdatePrice(r.Context(), id, price, time.Now().UTC()); err != nil {
 		h.serverError(w, r, err)

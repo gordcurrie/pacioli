@@ -3,6 +3,7 @@ package service_test
 import (
 	"context"
 	"fmt"
+	"slices"
 	"testing"
 	"time"
 
@@ -73,14 +74,11 @@ func (m *mockTxStore) ListBySecurityAllAccounts(_ context.Context, securityID, _
 	return m.allAccounts[securityID], nil
 }
 func (m *mockTxStore) DistinctAllSecurityIDsByUser(_ context.Context, _ int64) ([]int64, error) {
-	seen := make(map[int64]struct{})
-	var ids []int64
+	ids := make([]int64, 0, len(m.allAccounts))
 	for id := range m.allAccounts {
-		if _, ok := seen[id]; !ok {
-			seen[id] = struct{}{}
-			ids = append(ids, id)
-		}
+		ids = append(ids, id)
 	}
+	slices.Sort(ids)
 	return ids, nil
 }
 func (m *mockTxStore) ListByDateRange(_ context.Context, _ int64, _, _ time.Time) ([]*transaction.Transaction, error) {
@@ -111,11 +109,26 @@ func (m *mockSecStore) GetByID(_ context.Context, id int64) (*security.Security,
 	}
 	return m.secs[id], nil
 }
+func (m *mockSecStore) GetByIDs(_ context.Context, ids []int64) ([]*security.Security, error) {
+	out := make([]*security.Security, 0, len(ids))
+	for _, id := range ids {
+		if s, ok := m.secs[id]; ok {
+			out = append(out, s)
+		}
+	}
+	return out, nil
+}
 func (m *mockSecStore) GetByTickerExchange(_ context.Context, _, _ string) (*security.Security, error) {
 	return nil, nil
 }
 func (m *mockSecStore) Search(_ context.Context, _ string) ([]*security.Security, error) { return nil, nil }
-func (m *mockSecStore) ListAll(_ context.Context) ([]*security.Security, error)           { return nil, nil }
+func (m *mockSecStore) ListAll(_ context.Context) ([]*security.Security, error) {
+	out := make([]*security.Security, 0, len(m.secs))
+	for _, s := range m.secs {
+		out = append(out, s)
+	}
+	return out, nil
+}
 func (m *mockSecStore) Update(_ context.Context, _ *security.Security) error                           { return nil }
 func (m *mockSecStore) UpdatePrice(_ context.Context, _ int64, _ decimal.Decimal, _ time.Time) error  { return nil }
 func (m *mockSecStore) Delete(_ context.Context, _ int64) error                                        { return nil }

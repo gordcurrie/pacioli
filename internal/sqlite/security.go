@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/gordcurrie/pacioli/internal/errs"
@@ -45,6 +46,26 @@ func (r *SecurityStore) GetByID(ctx context.Context, id int64) (*security.Securi
 	row := r.db.QueryRowContext(ctx,
 		`SELECT id, ticker, exchange, name, type, currency, source, last_price_cad, last_price_date FROM securities WHERE id = ?`, id)
 	return scanSecurity(row)
+}
+
+func (r *SecurityStore) GetByIDs(ctx context.Context, ids []int64) ([]*security.Security, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	placeholders := make([]string, len(ids))
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT id, ticker, exchange, name, type, currency, source, last_price_cad, last_price_date FROM securities WHERE id IN (`+strings.Join(placeholders, ",")+`) ORDER BY ticker`, // #nosec G202 -- only "?" placeholders concatenated, not user input
+		args...)
+	if err != nil {
+		return nil, fmt.Errorf("get securities by ids: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	return scanSecurities(rows)
 }
 
 func (r *SecurityStore) GetByTickerExchange(ctx context.Context, ticker, exchange string) (*security.Security, error) {
@@ -126,18 +147,14 @@ func scanSecurity(s securityScanner) (*security.Security, error) {
 	}
 	sec.Type = security.Type(secType)
 	if lastPriceStr.Valid && lastPriceStr.String != "" {
-		p, err := decimal.NewFromString(lastPriceStr.String)
-		if err != nil {
-			return nil, fmt.Errorf("parse last_price_cad %q: %w", lastPriceStr.String, err)
+		if p, err := decimal.NewFromString(lastPriceStr.String); err == nil {
+			sec.LastPriceCAD = &p
 		}
-		sec.LastPriceCAD = &p
 	}
 	if lastPriceDateStr.Valid && lastPriceDateStr.String != "" {
-		t, err := time.Parse("2006-01-02", lastPriceDateStr.String)
-		if err != nil {
-			return nil, fmt.Errorf("parse last_price_date %q: %w", lastPriceDateStr.String, err)
+		if t, err := time.Parse("2006-01-02", lastPriceDateStr.String); err == nil {
+			sec.LastPriceDate = &t
 		}
-		sec.LastPriceDate = &t
 	}
 	return &sec, nil
 }

@@ -59,7 +59,7 @@ func NewACBService(txStore transaction.Store) *ACBService {
 }
 
 func (s *ACBService) Calculate(ctx context.Context, securityID, userID int64) (*ACBResult, error) {
-	txs, err := s.txStore.ListBySecurityNonRegistered(ctx, securityID, userID)
+	nonRegTxs, err := s.txStore.ListBySecurityNonRegistered(ctx, securityID, userID)
 	if err != nil {
 		return nil, fmt.Errorf("acb calculate: %w", err)
 	}
@@ -67,9 +67,7 @@ func (s *ACBService) Calculate(ctx context.Context, securityID, userID int64) (*
 	if err != nil {
 		return nil, fmt.Errorf("acb calculate: all accounts: %w", err)
 	}
-	adj, _, _ := ComputeSuperficialAdjustments(securityID, txs, allTxs)
-	r, _ := CalculateACBWithHistory(securityID, txs, adj)
-	return r, nil
+	return s.CalculateFromTxs(securityID, nonRegTxs, allTxs), nil
 }
 
 // isAcquisitionType reports whether t acquires shares (buy, transfer-in, or journal).
