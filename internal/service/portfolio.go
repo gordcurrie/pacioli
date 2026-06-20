@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"slices"
+	"strings"
 
 	"github.com/gordcurrie/pacioli/internal/security"
 	"github.com/gordcurrie/pacioli/internal/transaction"
@@ -79,7 +81,7 @@ func (s *PortfolioService) Build(ctx context.Context, userID int64) ([]Portfolio
 		if err != nil {
 			return nil, PortfolioSummary{}, err
 		}
-		acb := s.acbSvc.CalculateFromTxs(secID, nonRegTxs, allTxs)
+		acb := s.acbSvc.calculateFromTxs(secID, nonRegTxs, allTxs)
 
 		pos := PortfolioPosition{
 			Security:          sec,
@@ -112,6 +114,9 @@ func (s *PortfolioService) Build(ctx context.Context, userID int64) ([]Portfolio
 		positions = append(positions, pos)
 	}
 
+	slices.SortFunc(positions, func(a, b PortfolioPosition) int {
+		return strings.Compare(a.Security.Ticker, b.Security.Ticker)
+	})
 	return positions, summary, nil
 }
 

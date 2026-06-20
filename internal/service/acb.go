@@ -67,7 +67,7 @@ func (s *ACBService) Calculate(ctx context.Context, securityID, userID int64) (*
 	if err != nil {
 		return nil, fmt.Errorf("acb calculate: all accounts: %w", err)
 	}
-	return s.CalculateFromTxs(securityID, nonRegTxs, allTxs), nil
+	return s.calculateFromTxs(securityID, nonRegTxs, allTxs), nil
 }
 
 // isAcquisitionType reports whether t acquires shares (buy, transfer-in, or journal).
@@ -171,9 +171,9 @@ func CalculateACB(securityID int64, txs []*transaction.Transaction) *ACBResult {
 	return r
 }
 
-// CalculateFromTxs computes ACB given pre-fetched transaction slices, avoiding extra DB calls.
+// calculateFromTxs computes ACB given pre-fetched transaction slices, avoiding extra DB calls.
 // nonRegTxs must be the non-registered subset; allTxs must span all accounts (for superficial loss detection).
-func (s *ACBService) CalculateFromTxs(securityID int64, nonRegTxs, allTxs []*transaction.Transaction) *ACBResult {
+func (s *ACBService) calculateFromTxs(securityID int64, nonRegTxs, allTxs []*transaction.Transaction) *ACBResult {
 	adj, _, _ := ComputeSuperficialAdjustments(securityID, nonRegTxs, allTxs)
 	r, _ := CalculateACBWithHistory(securityID, nonRegTxs, adj)
 	return r

@@ -51,7 +51,9 @@ func (h *Handler) refreshPrices(w http.ResponseWriter, r *http.Request) {
 			failed++
 			continue
 		}
-		h.logAudit(r, audit.ActionUpdate, audit.EntitySecurity, res.SecurityID, audit.SourceYahoo, string(secByID[res.SecurityID]))
+		if snap := secByID[res.SecurityID]; len(snap) > 0 {
+			h.logAudit(r, audit.ActionUpdate, audit.EntitySecurity, res.SecurityID, audit.SourceYahoo, string(snap))
+		}
 		updated++
 	}
 

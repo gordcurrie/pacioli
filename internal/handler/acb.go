@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"slices"
@@ -54,13 +55,18 @@ func (h *Handler) listACB(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) loadPositions(r *http.Request) ([]positionSummary, error) {
-	securities, err := h.securities.ListAll(r.Context())
+	userID := userFromCtx(r.Context()).ID
+	secIDs, err := h.transactions.DistinctAllSecurityIDsByUser(r.Context(), userID)
+	if err != nil {
+		return nil, err
+	}
+	securities, err := h.securities.GetByIDs(r.Context(), secIDs)
 	if err != nil {
 		return nil, err
 	}
 	var positions []positionSummary
 	for _, s := range securities {
-		result, err := h.acbSvc.Calculate(r.Context(), s.ID, userFromCtx(r.Context()).ID)
+		result, err := h.acbSvc.Calculate(r.Context(), s.ID, userID)
 		if err != nil {
 			return nil, err
 		}
@@ -71,6 +77,14 @@ func (h *Handler) loadPositions(r *http.Request) ([]positionSummary, error) {
 	return positions, nil
 }
 
+func (h *Handler) userOwnsSecurityID(ctx context.Context, userID, securityID int64) (bool, error) {
+	secIDs, err := h.transactions.DistinctAllSecurityIDsByUser(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+	return slices.Contains(secIDs, securityID), nil
+}
+
 func (h *Handler) showACB(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
@@ -78,12 +92,12 @@ func (h *Handler) showACB(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	secIDs, err := h.transactions.DistinctAllSecurityIDsByUser(r.Context(), userFromCtx(r.Context()).ID)
+	owned, err := h.userOwnsSecurityID(r.Context(), userFromCtx(r.Context()).ID, id)
 	if err != nil {
 		h.serverError(w, r, err)
 		return
 	}
-	if !slices.Contains(secIDs, id) {
+	if !owned {
 		http.NotFound(w, r)
 		return
 	}
@@ -141,12 +155,12 @@ func (h *Handler) updateSecurityPrice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	secIDs, err := h.transactions.DistinctAllSecurityIDsByUser(r.Context(), userFromCtx(r.Context()).ID)
+	owned, err := h.userOwnsSecurityID(r.Context(), userFromCtx(r.Context()).ID, id)
 	if err != nil {
 		h.serverError(w, r, err)
 		return
 	}
-	if !slices.Contains(secIDs, id) {
+	if !owned {
 		http.NotFound(w, r)
 		return
 	}
