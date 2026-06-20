@@ -147,14 +147,18 @@ func scanSecurity(s securityScanner) (*security.Security, error) {
 	}
 	sec.Type = security.Type(secType)
 	if lastPriceStr.Valid && lastPriceStr.String != "" {
-		if p, err := decimal.NewFromString(lastPriceStr.String); err == nil {
-			sec.LastPriceCAD = &p
+		p, err := decimal.NewFromString(lastPriceStr.String)
+		if err != nil {
+			return nil, fmt.Errorf("parse last_price_cad %q: %w", lastPriceStr.String, err)
 		}
+		sec.LastPriceCAD = &p
 	}
 	if lastPriceDateStr.Valid && lastPriceDateStr.String != "" {
-		if t, err := time.Parse("2006-01-02", lastPriceDateStr.String); err == nil {
-			sec.LastPriceDate = &t
+		t, err := time.Parse("2006-01-02", lastPriceDateStr.String)
+		if err != nil {
+			return nil, fmt.Errorf("parse last_price_date %q: %w", lastPriceDateStr.String, err)
 		}
+		sec.LastPriceDate = &t
 	}
 	return &sec, nil
 }

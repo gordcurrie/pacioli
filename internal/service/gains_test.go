@@ -73,7 +73,7 @@ func (m *mockTxStore) ListBySecurityAllAccounts(_ context.Context, securityID, _
 	}
 	return m.allAccounts[securityID], nil
 }
-func (m *mockTxStore) DistinctAllSecurityIDsByUser(_ context.Context, _ int64) ([]int64, error) {
+func (m *mockTxStore) ListDistinctAllSecurityIDsByUser(_ context.Context, _ int64) ([]int64, error) {
 	ids := make([]int64, 0, len(m.allAccounts))
 	for id := range m.allAccounts {
 		ids = append(ids, id)

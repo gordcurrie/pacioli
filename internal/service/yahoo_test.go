@@ -124,3 +124,30 @@ func TestYahooFetcher_FetchPrices_USDNilBOC(t *testing.T) {
 		t.Error("expected error for USD security with nil bocSvc, got nil")
 	}
 }
+
+func TestYahooFetcher_FetchPrices_CurrencyMismatch(t *testing.T) {
+	// Yahoo returns USD for a security stored with Currency="CAD" in a CAD-only batch.
+	// fxAttempted is false (no USD security in batch), so the goroutine must emit an
+	// explicit error instead of silently producing a zero price.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(makeYahooResponse("DLR-U.TO", "USD", 14.05))
+	}))
+	defer srv.Close()
+
+	fetcher := service.NewYahooFetcherWithClient(nil, &http.Client{}, srv.URL)
+	secs := []*security.Security{
+		{ID: 1, Ticker: "DLR.U.TO", Exchange: "TSX", Currency: "CAD"},
+	}
+
+	results := fetcher.FetchPrices(context.Background(), secs)
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].Err == nil {
+		t.Error("expected error for currency mismatch (DB=CAD, Yahoo=USD), got nil")
+	}
+	if results[0].PriceCAD.IsPositive() {
+		t.Errorf("price should be zero on mismatch error, got %s", results[0].PriceCAD)
+	}
+}

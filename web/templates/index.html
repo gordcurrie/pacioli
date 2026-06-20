@@ -65,7 +65,8 @@
         <td style="text-align:right">{{if .NonRegACBTotal.IsPositive}}${{.NonRegACBTotal.StringFixed 2}}{{else}}<span style="color:var(--pico-muted-color)">—</span>{{end}}</td>
         <td style="text-align:right">
           <form method="POST" action="/securities/{{.Security.ID}}/price" style="display:flex;gap:0.25rem;justify-content:flex-end;margin:0">
-            <input type="number" name="last_price_cad" step="0.0001" min="0"
+            <input type="number" name="last_price_cad" step="0.0001" min="0.0001"
+                   aria-label="Price in CAD for {{.Security.Ticker}}"
                    value="{{if .Security.LastPriceCAD}}{{.Security.LastPriceCAD.StringFixed 4}}{{end}}"
                    placeholder="0.0000"
                    style="width:7rem;text-align:right;padding:0.15rem 0.3rem;font-size:0.85rem">
@@ -95,7 +96,8 @@
 <small style="color:var(--pico-muted-color)">
   Non-Reg ACB and unrealized gain/loss apply to non-registered accounts only (margin, cash).
   Registered accounts (TFSA, RRSP, RESP, etc.) are included in total shares and current value but excluded from ACB.
-  Prices are entered manually in CAD; for USD securities enter the CAD-equivalent price.
+  Prices are fetched automatically from Yahoo Finance (Refresh Prices) and converted to CAD via the Bank of Canada noon rate.
+  Manual price entry overrides the last fetched value; useful for securities Yahoo doesn't carry or to correct a stale price.
 </small>
 
 {{else}}

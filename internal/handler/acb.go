@@ -56,7 +56,7 @@ func (h *Handler) listACB(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) loadPositions(r *http.Request) ([]positionSummary, error) {
 	userID := userFromCtx(r.Context()).ID
-	secIDs, err := h.transactions.DistinctAllSecurityIDsByUser(r.Context(), userID)
+	secIDs, err := h.transactions.ListDistinctAllSecurityIDsByUser(r.Context(), userID)
 	if err != nil {
 		return nil, err
 	}
@@ -78,7 +78,7 @@ func (h *Handler) loadPositions(r *http.Request) ([]positionSummary, error) {
 }
 
 func (h *Handler) userOwnsSecurityID(ctx context.Context, userID, securityID int64) (bool, error) {
-	secIDs, err := h.transactions.DistinctAllSecurityIDsByUser(ctx, userID)
+	secIDs, err := h.transactions.ListDistinctAllSecurityIDsByUser(ctx, userID)
 	if err != nil {
 		return false, err
 	}

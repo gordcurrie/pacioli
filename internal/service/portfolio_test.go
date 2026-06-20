@@ -16,14 +16,14 @@ func pricePtr(s string) *decimal.Decimal {
 	return &p
 }
 
-// portfolioTxStore extends mockTxStore with DistinctAllSecurityIDsByUser control.
+// portfolioTxStore extends mockTxStore with ListDistinctAllSecurityIDsByUser control.
 type portfolioTxStore struct {
 	*mockTxStore
 	distinctIDs    []int64
 	errDistinctIDs error
 }
 
-func (m *portfolioTxStore) DistinctAllSecurityIDsByUser(_ context.Context, _ int64) ([]int64, error) {
+func (m *portfolioTxStore) ListDistinctAllSecurityIDsByUser(_ context.Context, _ int64) ([]int64, error) {
 	if m.errDistinctIDs != nil {
 		return nil, m.errDistinctIDs
 	}

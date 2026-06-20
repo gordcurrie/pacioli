@@ -45,7 +45,7 @@ func NewPortfolioService(txStore transaction.Store, secStore security.Store, acb
 
 // Build returns open positions and summary totals for the given user.
 func (s *PortfolioService) Build(ctx context.Context, userID int64) ([]PortfolioPosition, PortfolioSummary, error) {
-	secIDs, err := s.txStore.DistinctAllSecurityIDsByUser(ctx, userID)
+	secIDs, err := s.txStore.ListDistinctAllSecurityIDsByUser(ctx, userID)
 	if err != nil {
 		return nil, PortfolioSummary{}, err
 	}

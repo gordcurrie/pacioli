@@ -104,7 +104,7 @@ func (r *TransactionStore) ListDistinctNonRegisteredSecurityIDsByUser(ctx contex
 	return ids, nil
 }
 
-func (r *TransactionStore) DistinctAllSecurityIDsByUser(ctx context.Context, userID int64) ([]int64, error) {
+func (r *TransactionStore) ListDistinctAllSecurityIDsByUser(ctx context.Context, userID int64) ([]int64, error) {
 	rows, err := r.db.QueryContext(ctx,
 		`SELECT DISTINCT t.security_id FROM transactions t
 		 JOIN accounts a ON a.id = t.account_id

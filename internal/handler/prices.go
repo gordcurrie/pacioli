@@ -13,7 +13,7 @@ func (h *Handler) refreshPrices(w http.ResponseWriter, r *http.Request) {
 	log := loggerFromCtx(ctx)
 
 	userID := userFromCtx(ctx).ID
-	secIDs, err := h.transactions.DistinctAllSecurityIDsByUser(ctx, userID)
+	secIDs, err := h.transactions.ListDistinctAllSecurityIDsByUser(ctx, userID)
 	if err != nil {
 		h.serverError(w, r, err)
 		return
