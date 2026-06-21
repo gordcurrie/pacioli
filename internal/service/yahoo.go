@@ -58,15 +58,10 @@ func (f *YahooFetcher) FetchPrices(ctx context.Context, secs []*security.Securit
 
 	// Pre-fetch the USD/CAD rate before spawning goroutines so a transient BOC error
 	// doesn't get permanently cached — each FetchPrices call gets a fresh attempt.
-	// fxAttempted tracks whether we tried to fetch the rate; if Yahoo returns "USD"
-	// for a security whose DB Currency is "CAD", the goroutine needs to know the rate
-	// was never fetched (vs. fetched and returned zero) to emit an explicit error.
 	var fxRate decimal.Decimal
 	var fxErr error
-	var fxAttempted bool
 	for _, s := range secs {
 		if s.Currency == "USD" {
-			fxAttempted = true
 			if f.bocSvc == nil {
 				fxErr = fmt.Errorf("yahoo: bocSvc not configured; cannot convert USD price")
 			} else {
@@ -99,9 +94,8 @@ func (f *YahooFetcher) FetchPrices(ctx context.Context, secs []*security.Securit
 			case "CAD":
 				// already in CAD
 			case "USD":
-				if !fxAttempted {
-					// DB Currency != "USD" but Yahoo returned USD — rate was never pre-fetched.
-					// Produce an explicit error rather than multiplying by zero.
+				if fxErr == nil && fxRate.IsZero() {
+					// No USD security in batch → rate never pre-fetched; DB currency mismatch.
 					out[idx] = PriceFetchResult{SecurityID: s.ID, Ticker: s.Ticker, Err: fmt.Errorf("yahoo %s: returned USD price but security currency in DB is %q; update security currency to USD", sym, s.Currency)}
 					return
 				}

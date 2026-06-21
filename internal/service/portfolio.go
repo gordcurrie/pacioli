@@ -1,9 +1,9 @@
 package service
 
 import (
+	"cmp"
 	"context"
 	"slices"
-	"strings"
 
 	"github.com/gordcurrie/pacioli/internal/security"
 	"github.com/gordcurrie/pacioli/internal/transaction"
@@ -115,7 +115,7 @@ func (s *PortfolioService) Build(ctx context.Context, userID int64) ([]Portfolio
 	}
 
 	slices.SortFunc(positions, func(a, b PortfolioPosition) int {
-		return strings.Compare(a.Security.Ticker, b.Security.Ticker)
+		return cmp.Compare(a.Security.Ticker, b.Security.Ticker)
 	})
 	return positions, summary, nil
 }
