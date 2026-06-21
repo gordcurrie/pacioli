@@ -40,6 +40,8 @@ type Handler struct {
 	gainsSvc     *service.GainsService
 	rocSvc       *service.ROCService
 	ngSvc        *service.NGService
+	portfolioSvc *service.PortfolioService
+	yahooSvc     *service.YahooFetcher
 	encKey          []byte // AES-256 key for TOTP secret encryption; nil = TOTP disabled
 	secureCookie    bool
 	setupConfigured atomic.Bool // cached once CountConfigured > 0; avoids per-request DB query
@@ -57,11 +59,13 @@ type Config struct {
 	QTTokens     questrade.Store
 	Users        user.Store
 	Sessions     session.Store
-	BOCSvc       *service.BOCFetcher
-	ACBSvc       *service.ACBService
-	GainsSvc     *service.GainsService
-	ROCSvc       *service.ROCService
-	NGSvc        *service.NGService
+	BOCSvc        *service.BOCFetcher
+	ACBSvc        *service.ACBService
+	GainsSvc      *service.GainsService
+	ROCSvc        *service.ROCService
+	NGSvc         *service.NGService
+	PortfolioSvc  *service.PortfolioService
+	YahooSvc      *service.YahooFetcher
 	EncKey       []byte
 	SecureCookie bool
 	Logger       *slog.Logger
@@ -88,6 +92,10 @@ func (cfg *Config) validate() error {
 		return fmt.Errorf("handler: GainsSvc is required")
 	case cfg.ROCSvc == nil:
 		return fmt.Errorf("handler: ROCSvc is required")
+	case cfg.PortfolioSvc == nil:
+		return fmt.Errorf("handler: PortfolioSvc is required")
+	case cfg.YahooSvc == nil:
+		return fmt.Errorf("handler: YahooSvc is required")
 	case cfg.Logger == nil:
 		return fmt.Errorf("handler: Logger is required")
 	case cfg.TemplateFS == nil:
@@ -119,6 +127,8 @@ func New(cfg *Config) (*Handler, error) {
 		gainsSvc:     cfg.GainsSvc,
 		rocSvc:       cfg.ROCSvc,
 		ngSvc:        cfg.NGSvc,
+		portfolioSvc: cfg.PortfolioSvc,
+		yahooSvc:     cfg.YahooSvc,
 		encKey:       cfg.EncKey,
 		secureCookie: cfg.SecureCookie,
 		logger:       cfg.Logger,
@@ -169,6 +179,7 @@ func (h *Handler) Routes(mux *http.ServeMux) {
 	admin := h.RequireAdmin
 
 	mux.Handle("GET /{$}", auth(http.HandlerFunc(h.index)))
+	mux.Handle("POST /prices/refresh", auth(http.HandlerFunc(h.refreshPrices)))
 
 	mux.Handle("GET /accounts", auth(http.HandlerFunc(h.listAccounts)))
 	mux.Handle("GET /accounts/new", auth(http.HandlerFunc(h.newAccount)))
@@ -184,6 +195,7 @@ func (h *Handler) Routes(mux *http.ServeMux) {
 	mux.Handle("POST /securities", auth(http.HandlerFunc(h.createSecurity)))
 	mux.Handle("GET /securities/{id}/edit", auth(http.HandlerFunc(h.editSecurity)))
 	mux.Handle("POST /securities/{id}", auth(http.HandlerFunc(h.updateSecurity)))
+	mux.Handle("POST /securities/{id}/price", auth(http.HandlerFunc(h.updateSecurityPrice)))
 	mux.Handle("DELETE /securities/{id}", auth(http.HandlerFunc(h.deleteSecurity)))
 
 	mux.Handle("GET /transactions", auth(http.HandlerFunc(h.listTransactions)))

@@ -39,6 +39,9 @@ func (m *ngMockTxStore) ListNonRegisteredDisposalsByUser(_ context.Context, _ in
 func (m *ngMockTxStore) ListBySecurityAllAccounts(_ context.Context, _, _ int64) ([]*transaction.Transaction, error) {
 	return nil, nil
 }
+func (m *ngMockTxStore) ListDistinctAllSecurityIDsByUser(_ context.Context, _ int64) ([]int64, error) {
+	return nil, nil
+}
 func (m *ngMockTxStore) ListByDateRange(_ context.Context, _ int64, _, _ time.Time) ([]*transaction.Transaction, error) {
 	return nil, nil
 }
@@ -85,9 +88,13 @@ func (m *ngMockSecStore) GetByTickerExchange(_ context.Context, ticker, exchange
 func (m *ngMockSecStore) Search(_ context.Context, _ string) ([]*security.Security, error) {
 	return nil, nil
 }
+func (m *ngMockSecStore) GetByIDs(_ context.Context, _ []int64) ([]*security.Security, error) {
+	return nil, nil
+}
 func (m *ngMockSecStore) ListAll(_ context.Context) ([]*security.Security, error) { return nil, nil }
-func (m *ngMockSecStore) Update(_ context.Context, _ *security.Security) error    { return nil }
-func (m *ngMockSecStore) Delete(_ context.Context, _ int64) error                 { return nil }
+func (m *ngMockSecStore) Update(_ context.Context, _ *security.Security) error                          { return nil }
+func (m *ngMockSecStore) UpdatePrice(_ context.Context, _ int64, _ decimal.Decimal, _ time.Time) error { return nil }
+func (m *ngMockSecStore) Delete(_ context.Context, _ int64) error                                       { return nil }
 
 func ngDate(s string) time.Time {
 	t, _ := time.Parse(time.DateOnly, s)

@@ -59,7 +59,7 @@ func NewACBService(txStore transaction.Store) *ACBService {
 }
 
 func (s *ACBService) Calculate(ctx context.Context, securityID, userID int64) (*ACBResult, error) {
-	txs, err := s.txStore.ListBySecurityNonRegistered(ctx, securityID, userID)
+	nonRegTxs, err := s.txStore.ListBySecurityNonRegistered(ctx, securityID, userID)
 	if err != nil {
 		return nil, fmt.Errorf("acb calculate: %w", err)
 	}
@@ -67,9 +67,7 @@ func (s *ACBService) Calculate(ctx context.Context, securityID, userID int64) (*
 	if err != nil {
 		return nil, fmt.Errorf("acb calculate: all accounts: %w", err)
 	}
-	adj, _, _ := ComputeSuperficialAdjustments(securityID, txs, allTxs)
-	r, _ := CalculateACBWithHistory(securityID, txs, adj)
-	return r, nil
+	return s.calculateFromTxs(securityID, nonRegTxs, allTxs), nil
 }
 
 // isAcquisitionType reports whether t acquires shares (buy, transfer-in, or journal).
@@ -170,6 +168,14 @@ func CalculateACBWithHistory(securityID int64, txs []*transaction.Transaction, a
 // Exported so it can be tested without a store.
 func CalculateACB(securityID int64, txs []*transaction.Transaction) *ACBResult {
 	r, _ := CalculateACBWithHistory(securityID, txs, nil)
+	return r
+}
+
+// calculateFromTxs computes ACB given pre-fetched transaction slices, avoiding extra DB calls.
+// nonRegTxs must be the non-registered subset; allTxs must span all accounts (for superficial loss detection).
+func (s *ACBService) calculateFromTxs(securityID int64, nonRegTxs, allTxs []*transaction.Transaction) *ACBResult {
+	adj, _, _ := ComputeSuperficialAdjustments(securityID, nonRegTxs, allTxs)
+	r, _ := CalculateACBWithHistory(securityID, nonRegTxs, adj)
 	return r
 }
 

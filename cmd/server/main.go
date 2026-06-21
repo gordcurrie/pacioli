@@ -80,6 +80,8 @@ func run() error {
 	gainsSvc := service.NewGainsService(txStore, securityStore)
 	rocSvc := service.NewROCService(txStore, distStore, securityStore)
 	ngSvc := service.NewNGService(txStore, securityStore)
+	portfolioSvc := service.NewPortfolioService(txStore, securityStore, acbSvc)
+	yahooSvc := service.NewYahooFetcher(bocSvc)
 
 	secureCookie := strings.ToLower(strings.TrimSpace(os.Getenv("SECURE_COOKIES"))) == "true"
 
@@ -94,8 +96,10 @@ func run() error {
 		BOCSvc:       bocSvc,
 		ACBSvc:       acbSvc,
 		GainsSvc:     gainsSvc,
-		ROCSvc:       rocSvc,
-		NGSvc:        ngSvc,
+		ROCSvc:        rocSvc,
+		NGSvc:         ngSvc,
+		PortfolioSvc:  portfolioSvc,
+		YahooSvc:      yahooSvc,
 		EncKey:       tokenKey,
 		SecureCookie: secureCookie,
 		Logger:       logger,

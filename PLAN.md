@@ -160,14 +160,14 @@ Produce outputs that are directly useful at tax time.
 
 ---
 
-## Phase 10 — Portfolio Dashboard ⬜
+## Phase 10 — Portfolio Dashboard ✅
 
 Day-to-day visibility into positions and unrealized P&L.
 
-- ⬜ Current positions view — shares held per security per account, aggregated across accounts; sourced from transaction history not broker API
-- ⬜ Unrealized gains estimate — current position × last known price vs ACB; gain/loss in CAD; requires price feed or manual price entry
-- ⬜ Multi-currency P&L breakdown — USD vs CAD unrealized gain; FX gain/loss component separated from position gain/loss
-- ⬜ Portfolio allocation summary — by account type (registered vs non-registered), by currency, by asset class
+- ✅ Current positions view — all open positions (reg + non-reg) aggregated from transaction history; `PortfolioService.Build` computes net shares via `ListBySecurityAllAccounts`
+- ✅ Unrealized gains estimate — manual price entry per security (`last_price_cad`, `last_price_date` on securities table); current value = total shares × price; unrealized = non-reg shares × price − total ACB
+- ✅ Multi-currency P&L breakdown — allocation summary shows CAD-denominated vs USD-denominated position values; separate unrealized column for non-reg ACB positions
+- ✅ Portfolio allocation summary — summary cards: total value, total non-reg ACB, total unrealized gain/loss, CAD vs USD allocation
 
 ---
 

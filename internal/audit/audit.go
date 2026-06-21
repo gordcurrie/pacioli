@@ -34,6 +34,7 @@ const (
 	SourceManual       Source = "manual"
 	SourceQuestrade    Source = "questrade"
 	SourceCanaccordCSV Source = "canaccord_csv"
+	SourceYahoo        Source = "yahoo"
 )
 
 // Entry is a single immutable record in the audit log.
