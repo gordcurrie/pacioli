@@ -48,18 +48,20 @@ func TestClassifyActivity_Dividend(t *testing.T) {
 }
 
 func TestClassifyActivity_REI_IsBuy(t *testing.T) {
-	a := &questrade.Activity{Action: "REI", Quantity: decimal.NewFromInt(3)}
-	status, _, txType := service.ClassifyQTActivity(a)
-	if status != service.QTActivityImport {
-		t.Errorf("status: got %v want Import", status)
-	}
-	if txType != transaction.TypeBuy {
-		t.Errorf("txType: got %v want Buy (dividend reinvestment)", txType)
+	for _, action := range []string{"REI", "DRI"} {
+		a := &questrade.Activity{Action: action, Quantity: decimal.NewFromInt(3)}
+		status, _, txType := service.ClassifyQTActivity(a)
+		if status != service.QTActivityImport {
+			t.Errorf("action=%s: status got %v want Import", action, status)
+		}
+		if txType != transaction.TypeBuy {
+			t.Errorf("action=%s: txType got %v want Buy (reinvestment)", action, txType)
+		}
 	}
 }
 
 func TestClassifyActivity_Skip(t *testing.T) {
-	for _, action := range []string{"CON", "WDR", "DEP", "TFI", "TFO", "EXP", "BRW", ""} {
+	for _, action := range []string{"CON", "WDR", "DEP", "TFI", "TFO", "EXP", "BRW", "LFJ", ""} {
 		a := &questrade.Activity{Action: action}
 		status, _, _ := service.ClassifyQTActivity(a)
 		if status != service.QTActivitySkip {
