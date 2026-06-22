@@ -2,7 +2,7 @@
 <div style="max-width:400px;margin:4rem auto">
   <h2>Two-factor authentication</h2>
   <p><small>Enter the 6-digit code from your authenticator app, or one of your recovery codes.</small></p>
-  {{if .Error}}<p style="color:var(--pico-del-color)">{{.Error}}</p>{{end}}
+  {{if .Error}}<p class="danger">{{.Error}}</p>{{end}}
   <form method="POST" action="/login/2fa">
     <label>
       Code

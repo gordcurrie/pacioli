@@ -2,7 +2,7 @@
 <div style="max-width:480px;margin:4rem auto">
   <h2>Welcome to Pacioli</h2>
   <p>Create your admin account to get started.</p>
-  {{if .Error}}<p style="color:var(--pico-del-color)">{{.Error}}</p>{{end}}
+  {{if .Error}}<p class="danger">{{.Error}}</p>{{end}}
   <form method="POST" action="/setup">
     <label>
       Email

@@ -27,10 +27,10 @@
     <tbody>
       {{range .Rows}}
       <tr>
-        <td><strong>{{.Security.Ticker}}</strong> <small>{{.Security.Exchange}}</small></td>
-        <td style="text-align:right">{{.ROCPerUnit.StringFixed 4}}</td>
-        <td style="text-align:right">{{.UnitsHeld.StringFixed 4}}</td>
-        <td style="text-align:right">{{.TotalROC.StringFixed 2}}</td>
+        <td><strong class="mono">{{.Security.Ticker}}</strong> <small>{{.Security.Exchange}}</small></td>
+        <td class="mono" style="text-align:right">{{.ROCPerUnit.StringFixed 4}}</td>
+        <td class="mono" style="text-align:right">{{.UnitsHeld.StringFixed 4}}</td>
+        <td class="mono" style="text-align:right">{{.TotalROC.StringFixed 2}}</td>
         <td>
           {{if .AlreadyApplied}}
           <ins>Applied</ins>

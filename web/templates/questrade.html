@@ -2,15 +2,15 @@
 <h2>Questrade Integration</h2>
 
 {{if .Error}}<p class="danger">{{.Error}}</p>{{end}}
-{{if .SyncResult}}<p style="color:var(--pico-color-green-550)">{{.SyncResult}}</p>{{end}}
-{{if .NGResult}}<p style="color:var(--pico-color-green-550)">{{.NGResult}}</p>{{end}}
+{{if .SyncResult}}<p class="success">{{.SyncResult}}</p>{{end}}
+{{if .NGResult}}<p class="success">{{.NGResult}}</p>{{end}}
 
 {{if .Configured}}
 
 {{if .Connected}}
 
 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem">
-  <p style="margin:0">Status: <strong style="color:var(--pico-color-green-550)">Connected ✓</strong></p>
+  <p style="margin:0">Status: <strong class="success">Connected ✓</strong></p>
   <form method="post" action="/questrade/disconnect">
     <button class="outline danger" type="submit" style="margin:0">Disconnect</button>
   </form>

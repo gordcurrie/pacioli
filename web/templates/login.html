@@ -1,7 +1,7 @@
 {{define "content"}}
 <div style="max-width:400px;margin:4rem auto">
   <h2>Sign in to Pacioli</h2>
-  {{if .Error}}<p style="color:var(--pico-del-color)">{{.Error}}</p>{{end}}
+  {{if .Error}}<p class="danger">{{.Error}}</p>{{end}}
   <form method="POST" action="/login">
     <label>
       Email

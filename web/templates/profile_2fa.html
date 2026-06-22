@@ -15,12 +15,12 @@
     <p><a href="/profile/2fa" role="button" class="outline">Done</a></p>
   </article>
   {{else if .TOTPDisabled}}
-  <p style="color:var(--pico-ins-color)">Two-factor authentication has been disabled.</p>
+  <p class="success">Two-factor authentication has been disabled.</p>
   <p><a href="/profile/password">← Back to profile</a></p>
   {{else if .TOTPEnabled}}
   <p>Two-factor authentication is <strong>enabled</strong>.</p>
   {{if .RecoveryCount}}<p><small>{{.RecoveryCount}} recovery codes remaining.</small></p>{{end}}
-  {{if .Error}}<p style="color:var(--pico-del-color)">{{.Error}}</p>{{end}}
+  {{if .Error}}<p class="danger">{{.Error}}</p>{{end}}
   <details>
     <summary>Disable 2FA</summary>
     <form method="POST" action="/profile/2fa/disable" style="margin-top:1rem;max-width:320px">
@@ -35,7 +35,7 @@
   {{else}}
   <p>Two-factor authentication is <strong>not enabled</strong>.</p>
   <p>Scan the QR code with your authenticator app (Google Authenticator, Authy, 1Password, etc.), then enter the 6-digit code to confirm.</p>
-  {{if .Error}}<p style="color:var(--pico-del-color)">{{.Error}}</p>{{end}}
+  {{if .Error}}<p class="danger">{{.Error}}</p>{{end}}
   {{if .QRDataURI}}
   <img src="{{.QRDataURI}}" alt="TOTP QR code" style="display:block;margin:1rem 0;image-rendering:pixelated">
   <form method="POST" action="/profile/2fa/enable">

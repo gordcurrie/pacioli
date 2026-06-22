@@ -12,10 +12,50 @@
           integrity="sha384-H5SrcfygHmAuTDZphMHqBJLc3FhssKjG7w/CeCpFReSfwBWDTKpkzPP8c+cLsK+V"
           crossorigin="anonymous"></script>
   <style>
-    nav a { text-decoration: none; }
-    .danger { --pico-color: var(--pico-del-color); }
+    /* Semantic tokens inlined to avoid a static file handler — use these, not raw --pico-* internals */
+    :root {
+      --state-gain:    var(--pico-ins-color);
+      --state-loss:    var(--pico-del-color);
+      --state-flag-bg: var(--pico-mark-background-color);
+      --state-flag-fg: var(--pico-mark-color);
+
+      --text-body:    var(--pico-color);
+      --text-muted:   var(--pico-muted-color);
+      --text-heading: var(--pico-h2-color);
+
+      --color-surface:        var(--pico-card-background-color);
+      --color-surface-sunken: var(--pico-card-sectioning-background-color);
+      --color-border:         var(--pico-muted-border-color);
+
+      --accent:       var(--pico-primary);
+      --accent-hover: var(--pico-primary-hover);
+
+      --font-mono:  var(--pico-font-family-monospace);
+      --btn-sm-pad: 0.25rem 0.5rem;
+      --text-sm:    0.875rem;
+      --text-xs:    0.75rem;
+    }
+
+    nav a              { text-decoration: none; }
     table td, table th { vertical-align: middle; }
-    .actions { white-space: nowrap; }
+    .actions           { white-space: nowrap; }
+
+    .gain    { color: var(--state-gain); }
+    .loss    { color: var(--state-loss); }
+    .danger  { color: var(--state-loss); }
+    .success { color: var(--state-gain); }
+    .muted   { color: var(--text-muted); }
+    .mono    { font-family: var(--font-mono); }
+    .btn-sm  { padding: var(--btn-sm-pad); font-size: var(--text-sm); }
+
+    /* color-mix for disposal row — no simpler expression available */
+    .disposal-row { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+
+    /* badge styles live here so admin_audit.html stays classless */
+    .badge         { display:inline-block; padding:0.1rem 0.4rem; border-radius:4px; font-size:0.75rem; font-weight:600; text-transform:uppercase; }
+    .badge-create  { background:var(--state-gain); color:#fff; }
+    .badge-update  { background:var(--accent); color:#fff; }
+    .badge-delete  { background:var(--state-loss); color:#fff; }
   </style>
 </head>
 <body hx-boost="true">
@@ -39,7 +79,7 @@
     <li><a href="/profile/password">Profile</a></li>
     <li>
       <form method="POST" action="/logout" style="margin:0">
-        <button type="submit" class="outline secondary" style="padding:0.2rem 0.6rem;font-size:0.85rem">Logout</button>
+        <button type="submit" class="outline secondary btn-sm">Logout</button>
       </form>
     </li>
   </ul>

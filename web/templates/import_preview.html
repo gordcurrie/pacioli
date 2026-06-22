@@ -7,7 +7,7 @@
 {{if .Error}}<p class="danger">{{.Error}}</p>{{end}}
 
 <p>
-  <strong style="color:var(--pico-color-green-550)">{{.TotalOK}} ready</strong> &middot;
+  <strong class="success">{{.TotalOK}} ready</strong> &middot;
   {{.TotalSkip}} skipped &middot;
   {{if gt .TotalFlag 0}}<strong class="danger">{{.TotalFlag}} flagged</strong>{{else}}0 flagged{{end}}
 </p>
@@ -48,7 +48,7 @@
     <td>{{.Line}}</td>
     <td>
       {{if eq .Status "ok"}}
-        <span style="color:var(--pico-color-green-550)">&#10003;</span>
+        <span class="success">&#10003;</span>
       {{else}}
         <span class="danger" title="{{.StatusMsg}}">&#9888; {{.StatusMsg}}</span>
       {{end}}
@@ -57,9 +57,9 @@
     <td>{{.TxType}}</td>
     <td>{{if .Ticker}}{{.Ticker}}{{else}}{{.SecurityName}}{{end}}</td>
     <td>{{if .AccountName}}{{.AccountName}}{{else}}{{.AccountNo}}{{end}}</td>
-    <td style="text-align:right">{{.Quantity}}</td>
-    <td style="text-align:right">{{.Price}}</td>
-    <td style="text-align:right">{{.Commission}}</td>
+    <td class="mono" style="text-align:right">{{.Quantity}}</td>
+    <td class="mono" style="text-align:right">{{.Price}}</td>
+    <td class="mono" style="text-align:right">{{.Commission}}</td>
   </tr>
   {{end}}
   </tbody>

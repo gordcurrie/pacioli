@@ -1,19 +1,19 @@
 {{define "content"}}
-<h2>ACB — {{.Security.Ticker}} <small>{{.Security.Exchange}}</small></h2>
+<h2>ACB — <span class="mono">{{.Security.Ticker}}</span> <small>{{.Security.Exchange}}</small></h2>
 <p>{{.Security.Name}} · {{.Security.Currency}}</p>
 
 <div class="grid">
   <article>
     <header>Shares Held</header>
-    <h3>{{.Result.Shares.StringFixed 4}}</h3>
+    <h3 class="mono">{{.Result.Shares.StringFixed 4}}</h3>
   </article>
   <article>
     <header>ACB / Share</header>
-    <h3>{{.Result.ACBPerShare.StringFixed 4}} CAD</h3>
+    <h3 class="mono">{{.Result.ACBPerShare.StringFixed 4}} CAD</h3>
   </article>
   <article>
     <header>Total ACB</header>
-    <h3>{{.Result.TotalACB.StringFixed 2}} CAD</h3>
+    <h3 class="mono">{{.Result.TotalACB.StringFixed 2}} CAD</h3>
   </article>
 </div>
 
@@ -38,12 +38,12 @@
       <tr>
         <td>{{.Tx.TradeDate.Format "2006-01-02"}}</td>
         <td>{{.Tx.Type}}</td>
-        <td style="text-align:right">{{.Tx.Quantity.StringFixed 4}}</td>
-        <td style="text-align:right">{{.Tx.PriceCAD.StringFixed 4}}</td>
-        <td style="text-align:right">{{.Tx.CommissionCAD.StringFixed 2}}</td>
-        <td style="text-align:right">{{.RunningShares.StringFixed 4}}</td>
-        <td style="text-align:right">{{.RunningACB.StringFixed 2}}</td>
-        <td style="text-align:right">{{.DisplayACBPerShare.StringFixed 4}}</td>
+        <td class="mono" style="text-align:right">{{.Tx.Quantity.StringFixed 4}}</td>
+        <td class="mono" style="text-align:right">{{.Tx.PriceCAD.StringFixed 4}}</td>
+        <td class="mono" style="text-align:right">{{.Tx.CommissionCAD.StringFixed 2}}</td>
+        <td class="mono" style="text-align:right">{{.RunningShares.StringFixed 4}}</td>
+        <td class="mono" style="text-align:right">{{.RunningACB.StringFixed 2}}</td>
+        <td class="mono" style="text-align:right">{{.DisplayACBPerShare.StringFixed 4}}</td>
       </tr>
       {{end}}
     </tbody>
