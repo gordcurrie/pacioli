@@ -42,8 +42,8 @@
 
     .gain    { color: var(--state-gain); }
     .loss    { color: var(--state-loss); }
-    .danger  { color: var(--state-loss); }
-    .success { color: var(--state-gain); }
+    .danger  { color: var(--state-loss); --pico-color: var(--state-loss); }
+    .success { color: var(--state-gain); --pico-color: var(--state-gain); }
     .muted   { color: var(--text-muted); }
     .mono    { font-family: var(--font-mono); }
     .btn-sm  { padding: var(--btn-sm-pad); font-size: var(--text-sm); }
@@ -51,7 +51,7 @@
     /* color-mix for disposal row — no simpler expression available */
     .disposal-row { background: color-mix(in srgb, var(--accent) 10%, transparent); }
 
-    /* badge styles live here so admin_audit.html stays classless */
+    /* badge CSS lives here, not in admin_audit.html's per-page <style> */
     .badge         { display:inline-block; padding:0.1rem 0.4rem; border-radius:4px; font-size:0.75rem; font-weight:600; text-transform:uppercase; }
     .badge-create  { background:var(--state-gain); color:#fff; }
     .badge-update  { background:var(--accent); color:#fff; }
