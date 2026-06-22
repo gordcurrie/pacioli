@@ -25,31 +25,31 @@
     <tbody>
       {{range .History}}
       {{if .IsDisposal}}
-      <tr style="background:color-mix(in srgb, var(--pico-primary) 10%, transparent)">
+      <tr class="disposal-row">
       {{else}}
       <tr>
       {{end}}
         <td>{{.Tx.TradeDate.Format "2006-01-02"}}</td>
         <td><small>{{.Tx.Type}}</small></td>
-        <td style="text-align:right">{{.Tx.Quantity.StringFixed 4}}</td>
-        <td style="text-align:right">{{.Tx.PriceCAD.StringFixed 4}}</td>
-        <td style="text-align:right">{{.Tx.CommissionCAD.StringFixed 2}}</td>
-        <td style="text-align:right">{{.RunningShares.StringFixed 4}}</td>
-        <td style="text-align:right">{{.RunningACB.StringFixed 2}}</td>
-        <td style="text-align:right">{{.DisplayACBPerShare.StringFixed 4}}</td>
-        <td style="text-align:right">
+        <td class="mono" style="text-align:right">{{.Tx.Quantity.StringFixed 4}}</td>
+        <td class="mono" style="text-align:right">{{.Tx.PriceCAD.StringFixed 4}}</td>
+        <td class="mono" style="text-align:right">{{.Tx.CommissionCAD.StringFixed 2}}</td>
+        <td class="mono" style="text-align:right">{{.RunningShares.StringFixed 4}}</td>
+        <td class="mono" style="text-align:right">{{.RunningACB.StringFixed 2}}</td>
+        <td class="mono" style="text-align:right">{{.DisplayACBPerShare.StringFixed 4}}</td>
+        <td class="mono" style="text-align:right">
           {{if .NeedsReview}}
           <small><abbr title="No prior share position — ACB unknown. Add the corresponding buy transaction.">⚠ Needs review</abbr></small>
           {{else if .IsDisposal}}
             {{if .GainLoss.IsNegative}}
-            <strong style="color:var(--pico-del-color)">{{.GainLoss.StringFixed 2}}</strong>
+            <strong class="loss">{{.GainLoss.StringFixed 2}}</strong>
             {{else if .GainLoss.IsPositive}}
-            <strong style="color:var(--pico-ins-color)">+{{.GainLoss.StringFixed 2}}</strong>
+            <strong class="gain">+{{.GainLoss.StringFixed 2}}</strong>
             {{else}}
             <strong>0.00</strong>
             {{end}}
             {{if .IsSuperficialLoss}}
-            <br><small style="color:var(--pico-secondary)">{{if .HasCarryForward}}<abbr title="Superficial loss: {{.DeniedAmt.StringFixed 2}} denied — carry-forward added to replacement shares ACB.">superficial: {{.DeniedAmt.StringFixed 2}} denied</abbr>{{else}}<abbr title="Superficial loss: {{.DeniedAmt.StringFixed 2}} denied — replacement was in a registered account; no carry-forward.">superficial: {{.DeniedAmt.StringFixed 2}} denied</abbr>{{end}}</small>
+            <br><small class="muted">{{if .HasCarryForward}}<abbr title="Superficial loss: {{.DeniedAmt.StringFixed 2}} denied — carry-forward added to replacement shares ACB.">superficial: {{.DeniedAmt.StringFixed 2}} denied</abbr>{{else}}<abbr title="Superficial loss: {{.DeniedAmt.StringFixed 2}} denied — replacement was in a registered account; no carry-forward.">superficial: {{.DeniedAmt.StringFixed 2}} denied</abbr>{{end}}</small>
             {{end}}
           {{end}}
         </td>

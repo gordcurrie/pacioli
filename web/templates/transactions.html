@@ -26,21 +26,20 @@
       <tr id="tx-row-{{.ID}}">
         <td>{{.TradeDate.Format "2006-01-02"}}</td>
         <td>{{.Type}}</td>
-        <td>{{.Ticker}}</td>
+        <td class="mono">{{.Ticker}}</td>
         <td>{{.AccountName}}</td>
-        <td style="text-align:right">{{.Quantity.StringFixed 4}}</td>
-        <td style="text-align:right">{{.PriceNative.StringFixed 4}}</td>
-        <td style="text-align:right">{{.CommissionNative.StringFixed 2}}</td>
-        <td style="text-align:right">{{.PriceCAD.StringFixed 4}}</td>
-        <td id="fx-cell-{{.ID}}" style="white-space:nowrap">
+        <td class="mono" style="text-align:right">{{.Quantity.StringFixed 4}}</td>
+        <td class="mono" style="text-align:right">{{.PriceNative.StringFixed 4}}</td>
+        <td class="mono" style="text-align:right">{{.CommissionNative.StringFixed 2}}</td>
+        <td class="mono" style="text-align:right">{{.PriceCAD.StringFixed 4}}</td>
+        <td id="fx-cell-{{.ID}}" class="mono" style="white-space:nowrap">
           {{if .FXRate}}
             {{.FXRate.StringFixed 4}}
             <button
               hx-get="/transactions/{{.ID}}/fx/edit"
               hx-target="#fx-cell-{{.ID}}"
               hx-swap="innerHTML"
-              class="outline secondary"
-              style="padding:0.1rem 0.4rem;font-size:0.75rem;margin:0">edit</button>
+              class="outline secondary btn-sm">edit</button>
           {{else}}—{{end}}
         </td>
         <td class="actions">
@@ -49,8 +48,7 @@
             hx-target="#tx-row-{{.ID}}"
             hx-swap="outerHTML"
             hx-confirm="Delete this transaction? This will affect ACB calculations."
-            class="outline danger"
-            style="padding: 0.25rem 0.5rem; font-size: 0.875rem">Delete</button>
+            class="outline danger btn-sm">Delete</button>
         </td>
       </tr>
       {{end}}

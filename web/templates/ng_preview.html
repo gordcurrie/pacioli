@@ -28,11 +28,11 @@ and sets <code>linked_transaction_id</code> on both legs.</p>
     {{range .Pairs}}
       <tr>
         <td>{{.GiveLeg.TradeDate.Format "2006-01-02"}}</td>
-        <td>{{.GiveLeg.Quantity}}</td>
+        <td class="mono">{{.GiveLeg.Quantity}}</td>
         <td>{{.GiveLeg.Type}}</td>
         <td>→</td>
         <td>{{.ReceiveLeg.TradeDate.Format "2006-01-02"}}</td>
-        <td>{{.ReceiveLeg.Quantity}}</td>
+        <td class="mono">{{.ReceiveLeg.Quantity}}</td>
         <td>{{.ReceiveLeg.Type}}</td>
       </tr>
     {{end}}

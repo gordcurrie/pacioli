@@ -19,15 +19,15 @@
       {{range .Positions}}
       {{if .ACB.Shares.IsPositive}}
       <tr>
-        <td><strong>{{.Security.Ticker}}</strong></td>
+        <td><strong class="mono">{{.Security.Ticker}}</strong></td>
         <td>{{.Security.Exchange}}</td>
         <td>{{.Security.Name}}</td>
         <td>{{.Security.Currency}}</td>
-        <td style="text-align:right">{{.ACB.Shares.StringFixed 4}}</td>
-        <td style="text-align:right">{{.ACB.ACBPerShare.StringFixed 4}}</td>
-        <td style="text-align:right">{{.ACB.TotalACB.StringFixed 2}}</td>
+        <td class="mono" style="text-align:right">{{.ACB.Shares.StringFixed 4}}</td>
+        <td class="mono" style="text-align:right">{{.ACB.ACBPerShare.StringFixed 4}}</td>
+        <td class="mono" style="text-align:right">{{.ACB.TotalACB.StringFixed 2}}</td>
         <td class="actions">
-          <a href="/acb/{{.Security.ID}}" role="button" class="outline" style="padding: 0.25rem 0.5rem; font-size: 0.875rem">Detail</a>
+          <a href="/acb/{{.Security.ID}}" role="button" class="outline btn-sm">Detail</a>
         </td>
       </tr>
       {{end}}

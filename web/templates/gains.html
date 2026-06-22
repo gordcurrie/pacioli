@@ -2,8 +2,8 @@
 <div style="display:flex; align-items:baseline; gap:1rem; flex-wrap:wrap; margin-bottom:1rem">
   <h2 style="margin:0">Capital Gains — {{.Year}}</h2>
   <nav style="display:flex; gap:0.5rem; align-items:center">
-    <a href="/gains/{{.PrevYear}}" role="button" class="outline" style="padding:0.25rem 0.5rem; font-size:0.875rem">← {{.PrevYear}}</a>
-    <a href="/gains/{{.NextYear}}" role="button" class="outline" style="padding:0.25rem 0.5rem; font-size:0.875rem">{{.NextYear}} →</a>
+    <a href="/gains/{{.PrevYear}}" role="button" class="outline btn-sm">← {{.PrevYear}}</a>
+    <a href="/gains/{{.NextYear}}" role="button" class="outline btn-sm">{{.NextYear}} →</a>
   </nav>
 </div>
 
@@ -13,24 +13,20 @@
 <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:1rem; margin-bottom:1.5rem">
   <article style="margin:0; padding:1rem; text-align:center">
     <small>Total Gains</small><br>
-    <strong style="font-size:1.25rem; color:var(--pico-ins-color)">${{.Report.TotalGains.StringFixed 2}}</strong>
+    <strong class="mono gain" style="font-size:1.25rem">${{.Report.TotalGains.StringFixed 2}}</strong>
   </article>
   <article style="margin:0; padding:1rem; text-align:center">
     <small>Total Losses</small><br>
-    <strong style="font-size:1.25rem; color:var(--pico-del-color)">${{.Report.TotalLosses.StringFixed 2}}</strong>
+    <strong class="mono loss" style="font-size:1.25rem">${{.Report.TotalLosses.StringFixed 2}}</strong>
   </article>
   <article style="margin:0; padding:1rem; text-align:center">
     <small>Net Gain / Loss</small><br>
-    {{if .Report.NetGain.IsNegative}}
-    <strong style="font-size:1.25rem; color:var(--pico-del-color)">${{.Report.NetGain.StringFixed 2}}</strong>
-    {{else}}
-    <strong style="font-size:1.25rem; color:var(--pico-ins-color)">${{.Report.NetGain.StringFixed 2}}</strong>
-    {{end}}
+    <strong class="mono {{if .Report.NetGain.IsNegative}}loss{{else}}gain{{end}}" style="font-size:1.25rem">${{.Report.NetGain.StringFixed 2}}</strong>
   </article>
   {{if .Report.SuperficialLossTotal.IsPositive}}
   <article style="margin:0; padding:1rem; text-align:center">
     <small>Superficial Losses ⚠️</small><br>
-    <strong style="font-size:1.25rem" class="danger">${{.Report.SuperficialLossTotal.StringFixed 2}}</strong>
+    <strong class="mono danger" style="font-size:1.25rem">${{.Report.SuperficialLossTotal.StringFixed 2}}</strong>
   </article>
   {{end}}
 </div>
@@ -40,8 +36,8 @@
 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem">
   <span><small>{{len .Report.Lines}} disposition(s)</small></span>
   <div style="display:flex; gap:0.5rem">
-    <a href="/roc/{{$year}}" role="button" class="outline" style="padding:0.25rem 0.5rem; font-size:0.875rem">ROC Adjustments</a>
-    <a href="/gains/{{$year}}/export" role="button" class="outline" style="padding:0.25rem 0.5rem; font-size:0.875rem">Export CSV</a>
+    <a href="/roc/{{$year}}" role="button" class="outline btn-sm">ROC Adjustments</a>
+    <a href="/gains/{{$year}}/export" role="button" class="outline btn-sm">Export CSV</a>
   </div>
 </div>
 <figure>
@@ -61,15 +57,15 @@
       {{range .Report.Lines}}
       <tr {{if .IsSuperficialLoss}}class="danger"{{end}}>
         <td>{{.TradeDate.Format "2006-01-02"}}</td>
-        <td><a href="/gains/{{$year}}/{{.Security.ID}}"><strong>{{.Security.Ticker}}</strong></a> <small>{{.Security.Exchange}}</small></td>
-        <td style="text-align:right">{{.Shares.StringFixed 4}}</td>
-        <td style="text-align:right">{{.ProceedsCAD.StringFixed 2}}</td>
-        <td style="text-align:right">{{.ACBAtSell.StringFixed 2}}</td>
-        <td style="text-align:right">
+        <td><a href="/gains/{{$year}}/{{.Security.ID}}"><strong class="mono">{{.Security.Ticker}}</strong></a> <small>{{.Security.Exchange}}</small></td>
+        <td class="mono" style="text-align:right">{{.Shares.StringFixed 4}}</td>
+        <td class="mono" style="text-align:right">{{.ProceedsCAD.StringFixed 2}}</td>
+        <td class="mono" style="text-align:right">{{.ACBAtSell.StringFixed 2}}</td>
+        <td class="mono" style="text-align:right">
           {{if .GainLoss.IsNegative}}
-          <span class="danger">{{.GainLoss.StringFixed 2}}</span>
+          <span class="loss">{{.GainLoss.StringFixed 2}}</span>
           {{else}}
-          {{.GainLoss.StringFixed 2}}
+          <span class="gain">+{{.GainLoss.StringFixed 2}}</span>
           {{end}}
         </td>
         <td>{{if .IsSuperficialLoss}}<abbr title="Superficial loss — repurchase within 30 days. This loss may be denied by CRA.">⚠️</abbr>{{end}}</td>

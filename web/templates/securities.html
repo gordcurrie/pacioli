@@ -27,22 +27,20 @@
       {{range .Securities}}
       <tr id="sec-row-{{.ID}}">
         <td><strong>{{.Ticker}}</strong></td>
-        <td>{{if .Exchange}}{{.Exchange}}{{else}}<span style="color:var(--pico-muted-color);font-size:0.85rem">unlisted</span>{{end}}</td>
+        <td>{{if .Exchange}}{{.Exchange}}{{else}}<span class="muted" style="font-size:0.85rem">unlisted</span>{{end}}</td>
         <td>{{.Name}}</td>
         <td>{{.Type}}</td>
         <td>{{.Currency}}</td>
         <td class="actions" style="white-space:nowrap">
           <a href="/securities/{{.ID}}/edit"
-             role="button" class="outline secondary"
-             style="padding:0.25rem 0.5rem;font-size:0.875rem">Edit</a>
+             role="button" class="outline secondary btn-sm">Edit</a>
           <button
             hx-delete="/securities/{{.ID}}"
             hx-target="#sec-row-{{.ID}}"
             hx-swap="outerHTML"
             hx-confirm="Delete {{.Ticker}}? This cannot be undone."
             hx-on:htmx:after-request="if(!event.detail.successful) alert(event.detail.xhr.responseText || 'Delete failed. Please try again.')"
-            class="outline danger"
-            style="padding:0.25rem 0.5rem;font-size:0.875rem">Delete</button>
+            class="outline danger btn-sm">Delete</button>
         </td>
       </tr>
       {{end}}
