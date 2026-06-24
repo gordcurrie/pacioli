@@ -570,6 +570,7 @@ var validQTTypes = map[transaction.Type]bool{
 	transaction.TypeDividend:    true,
 	transaction.TypeJournal:     true,
 	transaction.TypeTransferOut: true,
+	transaction.TypeTransferIn:  true,
 }
 
 func (h *Handler) questradeCommit(w http.ResponseWriter, r *http.Request) {

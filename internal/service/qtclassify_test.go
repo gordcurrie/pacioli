@@ -60,8 +60,27 @@ func TestClassifyActivity_REI_IsBuy(t *testing.T) {
 	}
 }
 
+func TestClassifyActivity_TFI_InKind_IsTransferIn(t *testing.T) {
+	a := &questrade.Activity{Action: "TFI", Quantity: decimal.NewFromInt(100)}
+	status, _, txType := service.ClassifyQTActivity(a)
+	if status != service.QTActivityImport {
+		t.Errorf("status: got %v want Import", status)
+	}
+	if txType != transaction.TypeTransferIn {
+		t.Errorf("txType: got %v want TransferIn", txType)
+	}
+}
+
+func TestClassifyActivity_TFI_ZeroQty_IsSkip(t *testing.T) {
+	a := &questrade.Activity{Action: "TFI", Quantity: decimal.Zero}
+	status, _, _ := service.ClassifyQTActivity(a)
+	if status != service.QTActivitySkip {
+		t.Errorf("status: got %v want Skip", status)
+	}
+}
+
 func TestClassifyActivity_Skip(t *testing.T) {
-	for _, action := range []string{"CON", "WDR", "DEP", "TFI", "TFO", "EXP", "BRW", "LFJ", ""} {
+	for _, action := range []string{"CON", "WDR", "DEP", "TFO", "EXP", "BRW", "LFJ", ""} {
 		a := &questrade.Activity{Action: action}
 		status, _, _ := service.ClassifyQTActivity(a)
 		if status != service.QTActivitySkip {
