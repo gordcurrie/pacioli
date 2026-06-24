@@ -440,15 +440,6 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 			price = act.NetAmount.Abs()
 		}
 
-		// Transfer-in with no book value cannot seed ACB — flag for manual entry.
-		if txType == transaction.TypeTransferIn && price.IsZero() {
-			totFlag++
-			baseRow.Status = qtStatusFlag
-			baseRow.StatusMsg = "transfer in — no book value; enter ACB manually"
-			previewRows = append(previewRows, baseRow)
-			continue
-		}
-
 		if !qty.IsPositive() {
 			totFlag++
 			baseRow.Status = qtStatusFlag

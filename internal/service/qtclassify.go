@@ -34,12 +34,14 @@ func ClassifyQTActivity(a *questrade.Activity) (QTActivityStatus, string, transa
 	case "CON", "WDR", "DEP", "TFO", "EXP", "BRW", "LFJ", "":
 		return QTActivitySkip, "", ""
 	case "TFI":
-		// In-kind transfer in: positive qty carries book value as ACB cost basis.
-		// Zero qty = cash sweep — skip.
-		if a.Quantity.IsPositive() {
-			return QTActivityImport, "", transaction.TypeTransferIn
+		if !a.Quantity.IsPositive() {
+			return QTActivitySkip, "", ""
 		}
-		return QTActivitySkip, "", ""
+		if a.Price.IsZero() {
+			// Questrade didn't receive book value from the sending broker — ACB unknown.
+			return QTActivityFlag, "transfer in — no book value; enter ACB manually", ""
+		}
+		return QTActivityImport, "", transaction.TypeTransferIn
 	case "FXT":
 		// Norbert's Gambit journal: positive qty = receive leg, negative = give leg.
 		if a.Quantity.IsPositive() {

@@ -61,7 +61,7 @@ func TestClassifyActivity_REI_IsBuy(t *testing.T) {
 }
 
 func TestClassifyActivity_TFI_InKind_IsTransferIn(t *testing.T) {
-	a := &questrade.Activity{Action: "TFI", Quantity: decimal.NewFromInt(100)}
+	a := &questrade.Activity{Action: "TFI", Quantity: decimal.NewFromInt(100), Price: decimal.NewFromFloat(48.50)}
 	status, _, txType := service.ClassifyQTActivity(a)
 	if status != service.QTActivityImport {
 		t.Errorf("status: got %v want Import", status)
@@ -76,6 +76,17 @@ func TestClassifyActivity_TFI_ZeroQty_IsSkip(t *testing.T) {
 	status, _, _ := service.ClassifyQTActivity(a)
 	if status != service.QTActivitySkip {
 		t.Errorf("status: got %v want Skip", status)
+	}
+}
+
+func TestClassifyActivity_TFI_NoBookValue_IsFlag(t *testing.T) {
+	a := &questrade.Activity{Action: "TFI", Quantity: decimal.NewFromInt(100), Price: decimal.Zero}
+	status, msg, _ := service.ClassifyQTActivity(a)
+	if status != service.QTActivityFlag {
+		t.Errorf("status: got %v want Flag", status)
+	}
+	if msg == "" {
+		t.Error("expected non-empty flag message for zero-price TFI")
 	}
 }
 
