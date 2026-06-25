@@ -474,6 +474,8 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 		// Exception: Questrade reports TFI activities for USD securities with currency="CAD"
 		// because the book value in the description is the CAD equivalent of the USD cost.
 		// Convert the extracted CAD price to USD using the BoC rate so ACB is stored correctly.
+		// fxRateStr is set here for converted TFIs to avoid a redundant fetch below.
+		var fxRateStr string
 		if act.Currency != sec.Currency {
 			if txType == transaction.TypeTransferIn && act.Currency == "CAD" && sec.Currency == "USD" && price.IsPositive() {
 				fxRate, err := h.bocSvc.USDCADRate(ctx, act.TradeDate)
@@ -485,6 +487,7 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 					continue
 				}
 				price = price.Div(fxRate)
+				fxRateStr = fxRate.String()
 				act.Currency = "USD"
 				baseRow.Currency = "USD"
 			} else {
@@ -515,8 +518,8 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Fetch BoC rate for display and to verify it's available before committing.
-		var fxRateStr string
-		if act.Currency == "USD" {
+		// Skip if already fetched above (CAD-reported USD TFI conversion).
+		if act.Currency == "USD" && fxRateStr == "" {
 			fxRate, err := h.bocSvc.USDCADRate(ctx, act.TradeDate)
 			if err != nil {
 				totFlag++
