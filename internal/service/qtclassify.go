@@ -14,7 +14,7 @@ var (
 	reBookValue = regexp.MustCompile(`BOOK VALUE\s+([\d,]*\d+(?:\.\d+)?)`)
 	// "EXTERNAL TRANSFER-IN AS OF date @ 14.76000" — per-unit price directly
 	// Anchored to "AS OF" to avoid false matches on other uses of @ in descriptions.
-	reAtPrice = regexp.MustCompile(`AS OF\s+[\d/]+\s*@\s*(\d+(?:\.\d+)?)`)
+	reAtPrice = regexp.MustCompile(`AS OF\s+\S+\s*@\s*(\d+(?:\.\d+)?)`)
 )
 
 // priceFromDescription extracts the per-share ACB from a Questrade TFI description.
