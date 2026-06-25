@@ -96,6 +96,27 @@ func TestClassifyActivity_TFI_AtPriceInDescription_IsTransferIn(t *testing.T) {
 	if a.Price.IsZero() {
 		t.Error("price should have been set from @ price in description")
 	}
+	want, _ := decimal.NewFromString("14.76000")
+	if !a.Price.Equal(want) {
+		t.Errorf("price: got %s want 14.76000", a.Price)
+	}
+}
+
+func TestClassifyActivity_TFI_AtPriceNotFalseMatchOnAccountRef(t *testing.T) {
+	// "@" in an account number should NOT be parsed as a price
+	a := &questrade.Activity{
+		Action:      "TFI",
+		Quantity:    decimal.NewFromInt(100),
+		Price:       decimal.Zero,
+		Description: "SOME STOCK CANACCORD GENUITY CORP. ACCOUNT TRANSFER ACCOUNT(S): 374Y0PE1 NO PRICE HERE",
+	}
+	status, msg, _ := service.ClassifyQTActivity(a)
+	if status != service.QTActivityFlag {
+		t.Errorf("status: got %v want Flag — no valid price in description", status)
+	}
+	if msg == "" {
+		t.Error("expected flag message when description has no extractable price")
+	}
 }
 
 func TestClassifyActivity_TFI_BookValueInDescription_IsTransferIn(t *testing.T) {

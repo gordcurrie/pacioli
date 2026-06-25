@@ -32,6 +32,81 @@ func TestNumToDecimal(t *testing.T) {
 	}
 }
 
+func TestParseActivity(t *testing.T) {
+	a := &activityJSON{
+		TradeDate:   "2026-05-28T00:00:00.000000-04:00",
+		SettledDate: "2026-05-28T00:00:00.000000-04:00",
+		Action:      "TFI",
+		Symbol:      "AEM.TO",
+		Description: "AGNICO EAGLE MINES LIMITED CANACCORD GENUITY CORP. ACCOUNT TRANSFER BOOK VALUE 9841.94",
+		Currency:    "CAD",
+		Quantity:    json.Number("37"),
+		Price:       json.Number("0"),
+		GrossAmount: json.Number("0"),
+		Commission:  json.Number("0"),
+		NetAmount:   json.Number("0"),
+		Type:        "Transfers",
+	}
+	act, err := parseActivity(a)
+	if err != nil {
+		t.Fatalf("parseActivity: %v", err)
+	}
+	if act.Action != "TFI" {
+		t.Errorf("Action: got %q want TFI", act.Action)
+	}
+	if act.Symbol != "AEM.TO" {
+		t.Errorf("Symbol: got %q want AEM.TO", act.Symbol)
+	}
+	if act.Description != a.Description {
+		t.Errorf("Description not propagated")
+	}
+	if !act.Quantity.Equal(decimal.NewFromInt(37)) {
+		t.Errorf("Quantity: got %s want 37", act.Quantity)
+	}
+	if !act.Price.IsZero() {
+		t.Errorf("Price: got %s want 0", act.Price)
+	}
+	if act.TradeDate.IsZero() {
+		t.Error("TradeDate not parsed")
+	}
+}
+
+func TestParseActivity_BadDate(t *testing.T) {
+	a := &activityJSON{
+		TradeDate:   "not-a-date",
+		SettledDate: "2026-05-28T00:00:00.000000-04:00",
+		Quantity:    json.Number("1"),
+		Price:       json.Number("0"),
+		GrossAmount: json.Number("0"),
+		Commission:  json.Number("0"),
+		NetAmount:   json.Number("0"),
+	}
+	_, err := parseActivity(a)
+	if err == nil {
+		t.Error("expected error for bad trade date")
+	}
+}
+
+func TestParseActivity_SettledDateFallback(t *testing.T) {
+	// bad settled date falls back to trade date
+	a := &activityJSON{
+		TradeDate:   "2026-05-28T00:00:00.000000-04:00",
+		SettledDate: "bad",
+		Quantity:    json.Number("10"),
+		Price:       json.Number("5.50"),
+		GrossAmount: json.Number("55"),
+		Commission:  json.Number("0"),
+		NetAmount:   json.Number("55"),
+	}
+	act, err := parseActivity(a)
+	if err != nil {
+		t.Fatalf("parseActivity: %v", err)
+	}
+	if !act.SettledDate.Equal(act.TradeDate) {
+		t.Error("SettledDate should fall back to TradeDate on parse error")
+	}
+}
+
 func TestTokenIsExpired(t *testing.T) {
 	expired := Token{ExpiresAt: time.Now().Add(-time.Minute)}
 	if !expired.IsExpired() {
