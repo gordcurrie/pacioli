@@ -107,6 +107,41 @@ func TestParseActivity_SettledDateFallback(t *testing.T) {
 	}
 }
 
+func TestParseActivity_BadNumericFields(t *testing.T) {
+	validDate := "2026-05-28T00:00:00.000000-04:00"
+	cases := []struct {
+		name        string
+		quantity    json.Number
+		price       json.Number
+		grossAmount json.Number
+		commission  json.Number
+		netAmount   json.Number
+	}{
+		{"bad quantity", "N/A", "0", "0", "0", "0"},
+		{"bad price", "10", "N/A", "0", "0", "0"},
+		{"bad gross", "10", "5", "N/A", "0", "0"},
+		{"bad commission", "10", "5", "50", "N/A", "0"},
+		{"bad net", "10", "5", "50", "0", "N/A"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			a := &activityJSON{
+				TradeDate:   validDate,
+				SettledDate: validDate,
+				Quantity:    tc.quantity,
+				Price:       tc.price,
+				GrossAmount: tc.grossAmount,
+				Commission:  tc.commission,
+				NetAmount:   tc.netAmount,
+			}
+			_, err := parseActivity(a)
+			if err == nil {
+				t.Errorf("expected error for %s", tc.name)
+			}
+		})
+	}
+}
+
 func TestTokenIsExpired(t *testing.T) {
 	expired := Token{ExpiresAt: time.Now().Add(-time.Minute)}
 	if !expired.IsExpired() {
