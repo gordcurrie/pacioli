@@ -79,8 +79,47 @@ func TestClassifyActivity_TFI_ZeroQty_IsSkip(t *testing.T) {
 	}
 }
 
+func TestClassifyActivity_TFI_AtPriceInDescription_IsTransferIn(t *testing.T) {
+	a := &questrade.Activity{
+		Action:      "TFI",
+		Quantity:    decimal.NewFromFloat(1428.5714),
+		Price:       decimal.Zero,
+		Description: "AVENUE LIVING REAL ESTATE CORE TRUST CLASS W (400W) EXTERNAL TRANSFER-IN AS OF 05/28/26 @  14.76000",
+	}
+	status, _, txType := service.ClassifyQTActivity(a)
+	if status != service.QTActivityImport {
+		t.Errorf("status: got %v want Import", status)
+	}
+	if txType != transaction.TypeTransferIn {
+		t.Errorf("txType: got %v want TransferIn", txType)
+	}
+	if a.Price.IsZero() {
+		t.Error("price should have been set from @ price in description")
+	}
+}
+
+func TestClassifyActivity_TFI_BookValueInDescription_IsTransferIn(t *testing.T) {
+	a := &questrade.Activity{
+		Action:      "TFI",
+		Quantity:    decimal.NewFromInt(100),
+		Price:       decimal.Zero,
+		Description: "SOME STOCK CANACCORD GENUITY CORP. ACCOUNT TRANSFER BOOK VALUE            9841.94",
+	}
+	status, _, txType := service.ClassifyQTActivity(a)
+	if status != service.QTActivityImport {
+		t.Errorf("status: got %v want Import", status)
+	}
+	if txType != transaction.TypeTransferIn {
+		t.Errorf("txType: got %v want TransferIn", txType)
+	}
+	// price should now be 9841.94 / 100 = 98.4194
+	if a.Price.IsZero() {
+		t.Error("price should have been set from description book value")
+	}
+}
+
 func TestClassifyActivity_TFI_NoBookValue_IsFlag(t *testing.T) {
-	a := &questrade.Activity{Action: "TFI", Quantity: decimal.NewFromInt(100), Price: decimal.Zero}
+	a := &questrade.Activity{Action: "TFI", Quantity: decimal.NewFromInt(100), Price: decimal.Zero, Description: "SOME STOCK CANACCORD CAPITAL CORP. TRANSFER IN"}
 	status, msg, _ := service.ClassifyQTActivity(a)
 	if status != service.QTActivityFlag {
 		t.Errorf("status: got %v want Flag", status)
