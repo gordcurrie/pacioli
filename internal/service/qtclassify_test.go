@@ -133,9 +133,10 @@ func TestClassifyActivity_TFI_BookValueInDescription_IsTransferIn(t *testing.T) 
 	if txType != transaction.TypeTransferIn {
 		t.Errorf("txType: got %v want TransferIn", txType)
 	}
-	// price should now be 9841.94 / 100 = 98.4194
-	if a.Price.IsZero() {
-		t.Error("price should have been set from description book value")
+	// price = 9841.94 / 100 = 98.4194
+	want, _ := decimal.NewFromString("98.4194")
+	if !a.Price.Equal(want) {
+		t.Errorf("price: got %s want %s (book value ÷ qty)", a.Price, want)
 	}
 }
 
