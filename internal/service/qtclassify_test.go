@@ -79,8 +79,69 @@ func TestClassifyActivity_TFI_ZeroQty_IsSkip(t *testing.T) {
 	}
 }
 
+func TestClassifyActivity_TFI_AtPriceInDescription_IsTransferIn(t *testing.T) {
+	a := &questrade.Activity{
+		Action:      "TFI",
+		Quantity:    decimal.NewFromFloat(1428.5714),
+		Price:       decimal.Zero,
+		Description: "AVENUE LIVING REAL ESTATE CORE TRUST CLASS W (400W) EXTERNAL TRANSFER-IN AS OF 05/28/26 @  14.76000",
+	}
+	status, _, txType := service.ClassifyQTActivity(a)
+	if status != service.QTActivityImport {
+		t.Errorf("status: got %v want Import", status)
+	}
+	if txType != transaction.TypeTransferIn {
+		t.Errorf("txType: got %v want TransferIn", txType)
+	}
+	if a.Price.IsZero() {
+		t.Error("price should have been set from @ price in description")
+	}
+	want, _ := decimal.NewFromString("14.76000")
+	if !a.Price.Equal(want) {
+		t.Errorf("price: got %s want 14.76000", a.Price)
+	}
+}
+
+func TestClassifyActivity_TFI_AtPriceNotFalseMatchOnAccountRef(t *testing.T) {
+	// "@" in an account number should NOT be parsed as a price
+	a := &questrade.Activity{
+		Action:      "TFI",
+		Quantity:    decimal.NewFromInt(100),
+		Price:       decimal.Zero,
+		Description: "SOME STOCK CANACCORD GENUITY CORP. ACCOUNT TRANSFER ACCOUNT(S): 374Y0PE1 NO PRICE HERE",
+	}
+	status, msg, _ := service.ClassifyQTActivity(a)
+	if status != service.QTActivityFlag {
+		t.Errorf("status: got %v want Flag — no valid price in description", status)
+	}
+	if msg == "" {
+		t.Error("expected flag message when description has no extractable price")
+	}
+}
+
+func TestClassifyActivity_TFI_BookValueInDescription_IsTransferIn(t *testing.T) {
+	a := &questrade.Activity{
+		Action:      "TFI",
+		Quantity:    decimal.NewFromInt(100),
+		Price:       decimal.Zero,
+		Description: "SOME STOCK CANACCORD GENUITY CORP. ACCOUNT TRANSFER BOOK VALUE            9841.94",
+	}
+	status, _, txType := service.ClassifyQTActivity(a)
+	if status != service.QTActivityImport {
+		t.Errorf("status: got %v want Import", status)
+	}
+	if txType != transaction.TypeTransferIn {
+		t.Errorf("txType: got %v want TransferIn", txType)
+	}
+	// price = 9841.94 / 100 = 98.4194
+	want, _ := decimal.NewFromString("98.4194")
+	if !a.Price.Equal(want) {
+		t.Errorf("price: got %s want %s (book value ÷ qty)", a.Price, want)
+	}
+}
+
 func TestClassifyActivity_TFI_NoBookValue_IsFlag(t *testing.T) {
-	a := &questrade.Activity{Action: "TFI", Quantity: decimal.NewFromInt(100), Price: decimal.Zero}
+	a := &questrade.Activity{Action: "TFI", Quantity: decimal.NewFromInt(100), Price: decimal.Zero, Description: "SOME STOCK CANACCORD CAPITAL CORP. TRANSFER IN"}
 	status, msg, _ := service.ClassifyQTActivity(a)
 	if status != service.QTActivityFlag {
 		t.Errorf("status: got %v want Flag", status)

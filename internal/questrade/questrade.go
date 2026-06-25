@@ -219,6 +219,7 @@ type Activity struct {
 	SettledDate time.Time
 	Action      string
 	Symbol      string
+	Description string
 	Currency    string
 	Quantity    decimal.Decimal
 	Price       decimal.Decimal
@@ -237,6 +238,7 @@ type activityJSON struct {
 	SettledDate string      `json:"settlementDate"`
 	Action      string      `json:"action"`
 	Symbol      string      `json:"symbol"`
+	Description string      `json:"description"`
 	Currency    string      `json:"currency"`
 	Quantity    json.Number `json:"quantity"`
 	Price       json.Number `json:"price"`
@@ -337,6 +339,7 @@ func parseActivity(a *activityJSON) (Activity, error) {
 		SettledDate: settledDate,
 		Action:      a.Action,
 		Symbol:      a.Symbol,
+		Description: a.Description,
 		Currency:    a.Currency,
 		Quantity:    qty,
 		Price:       price,
