@@ -471,12 +471,29 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Activity currency must match the security's currency in the DB.
+		// Exception: Questrade reports TFI activities for USD securities with currency="CAD"
+		// because the book value in the description is the CAD equivalent of the USD cost.
+		// Convert the extracted CAD price to USD using the BoC rate so ACB is stored correctly.
 		if act.Currency != sec.Currency {
-			totFlag++
-			baseRow.Status = qtStatusFlag
-			baseRow.StatusMsg = "currency mismatch: activity is " + act.Currency + " but security is " + sec.Currency
-			previewRows = append(previewRows, baseRow)
-			continue
+			if txType == transaction.TypeTransferIn && act.Currency == "CAD" && sec.Currency == "USD" && price.IsPositive() {
+				fxRate, err := h.bocSvc.USDCADRate(ctx, act.TradeDate)
+				if err != nil {
+					totFlag++
+					baseRow.Status = qtStatusFlag
+					baseRow.StatusMsg = "BoC USD/CAD rate unavailable for " + act.TradeDate.Format(time.DateOnly) + ": " + err.Error()
+					previewRows = append(previewRows, baseRow)
+					continue
+				}
+				price = price.Div(fxRate)
+				act.Currency = "USD"
+				baseRow.Currency = "USD"
+			} else {
+				totFlag++
+				baseRow.Status = qtStatusFlag
+				baseRow.StatusMsg = "currency mismatch: activity is " + act.Currency + " but security is " + sec.Currency
+				previewRows = append(previewRows, baseRow)
+				continue
+			}
 		}
 
 		// Only CAD and USD are supported; flag anything else before it reaches commit.

@@ -76,7 +76,7 @@ func ClassifyQTActivity(a *questrade.Activity) (QTActivityStatus, string, transa
 			a.Price = bv
 			return QTActivityImport, "", transaction.TypeTransferIn
 		}
-		return QTActivityFlag, "transfer in — no book value; enter ACB manually", ""
+		return QTActivityFlag, "transfer in — no book value; enter ACB manually — desc: " + a.Description, ""
 	case "FXT":
 		// Norbert's Gambit journal: positive qty = receive leg, negative = give leg.
 		if a.Quantity.IsPositive() {
