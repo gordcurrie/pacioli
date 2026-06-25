@@ -48,18 +48,50 @@ func TestClassifyActivity_Dividend(t *testing.T) {
 }
 
 func TestClassifyActivity_REI_IsBuy(t *testing.T) {
-	a := &questrade.Activity{Action: "REI", Quantity: decimal.NewFromInt(3)}
+	for _, action := range []string{"REI", "DRI"} {
+		a := &questrade.Activity{Action: action, Quantity: decimal.NewFromInt(3)}
+		status, _, txType := service.ClassifyQTActivity(a)
+		if status != service.QTActivityImport {
+			t.Errorf("action=%s: status got %v want Import", action, status)
+		}
+		if txType != transaction.TypeBuy {
+			t.Errorf("action=%s: txType got %v want Buy (reinvestment)", action, txType)
+		}
+	}
+}
+
+func TestClassifyActivity_TFI_InKind_IsTransferIn(t *testing.T) {
+	a := &questrade.Activity{Action: "TFI", Quantity: decimal.NewFromInt(100), Price: decimal.NewFromFloat(48.50)}
 	status, _, txType := service.ClassifyQTActivity(a)
 	if status != service.QTActivityImport {
 		t.Errorf("status: got %v want Import", status)
 	}
-	if txType != transaction.TypeBuy {
-		t.Errorf("txType: got %v want Buy (dividend reinvestment)", txType)
+	if txType != transaction.TypeTransferIn {
+		t.Errorf("txType: got %v want TransferIn", txType)
+	}
+}
+
+func TestClassifyActivity_TFI_ZeroQty_IsSkip(t *testing.T) {
+	a := &questrade.Activity{Action: "TFI", Quantity: decimal.Zero}
+	status, _, _ := service.ClassifyQTActivity(a)
+	if status != service.QTActivitySkip {
+		t.Errorf("status: got %v want Skip", status)
+	}
+}
+
+func TestClassifyActivity_TFI_NoBookValue_IsFlag(t *testing.T) {
+	a := &questrade.Activity{Action: "TFI", Quantity: decimal.NewFromInt(100), Price: decimal.Zero}
+	status, msg, _ := service.ClassifyQTActivity(a)
+	if status != service.QTActivityFlag {
+		t.Errorf("status: got %v want Flag", status)
+	}
+	if msg == "" {
+		t.Error("expected non-empty flag message for zero-price TFI")
 	}
 }
 
 func TestClassifyActivity_Skip(t *testing.T) {
-	for _, action := range []string{"CON", "WDR", "DEP", "TFI", "TFO", "EXP", "BRW", ""} {
+	for _, action := range []string{"CON", "WDR", "DEP", "TFO", "EXP", "BRW", "LFJ", ""} {
 		a := &questrade.Activity{Action: action}
 		status, _, _ := service.ClassifyQTActivity(a)
 		if status != service.QTActivitySkip {

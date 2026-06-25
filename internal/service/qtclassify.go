@@ -28,11 +28,20 @@ func ClassifyQTActivity(a *questrade.Activity) (QTActivityStatus, string, transa
 		return QTActivityImport, "", transaction.TypeSell
 	case "DIV", "INT":
 		return QTActivityImport, "", transaction.TypeDividend
-	case "REI":
-		// Dividend reinvestment: acquires shares, increases ACB.
+	case "REI", "DRI":
+		// Dividend/distribution reinvestment: acquires shares, increases ACB.
 		return QTActivityImport, "", transaction.TypeBuy
-	case "CON", "WDR", "DEP", "TFI", "TFO", "EXP", "BRW", "":
+	case "CON", "WDR", "DEP", "TFO", "EXP", "BRW", "LFJ", "":
 		return QTActivitySkip, "", ""
+	case "TFI":
+		if !a.Quantity.IsPositive() {
+			return QTActivitySkip, "", ""
+		}
+		if a.Price.IsZero() {
+			// Questrade didn't receive book value from the sending broker — ACB unknown.
+			return QTActivityFlag, "transfer in — no book value; enter ACB manually", ""
+		}
+		return QTActivityImport, "", transaction.TypeTransferIn
 	case "FXT":
 		// Norbert's Gambit journal: positive qty = receive leg, negative = give leg.
 		if a.Quantity.IsPositive() {
