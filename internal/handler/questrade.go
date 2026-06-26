@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -69,6 +70,34 @@ type qtPreviewData struct {
 	TotalSkip  int
 	TotalFlag  int
 	Error      string
+}
+
+// qtSecRef is a lightweight security lookup result used during preview building.
+type qtSecRef struct {
+	ID       int64
+	Currency string
+}
+
+// qtRowDisposition classifies how a processed activity should be counted and displayed.
+type qtRowDisposition int
+
+const (
+	qtRowOK          qtRowDisposition = iota
+	qtRowSilentSkip                   // QTActivitySkip: omit from preview, count as skip
+	qtRowVisibleSkip                  // already-imported: show in preview, count as skip
+	qtRowFlag                         // flagged: show in preview, count as flag
+)
+
+// qtPreviewCtx bundles per-request state threaded through processQTActivity.
+// Maps are mutated in place (secByTicker, notFoundTickers) to cache lookups across activities.
+type qtPreviewCtx struct {
+	pAccountID      int64
+	pAccountName    string
+	alreadyImported map[string]bool
+	tickerCount     map[string]int
+	secByTicker     map[string]qtSecRef
+	notFoundTickers map[string]bool
+	tryAutoCreate   func(ticker, currency string) (qtSecRef, bool)
 }
 
 // qtCommitRow is the JSON payload passed from preview to commit.
@@ -328,14 +357,10 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 	for _, s := range securities {
 		tickerCount[s.Ticker]++
 	}
-	type secRef struct {
-		ID       int64
-		Currency string
-	}
-	secByTicker := make(map[string]secRef, len(securities))
+	secByTicker := make(map[string]qtSecRef, len(securities))
 	for _, s := range securities {
 		if tickerCount[s.Ticker] == 1 {
-			secByTicker[s.Ticker] = secRef{s.ID, s.Currency}
+			secByTicker[s.Ticker] = qtSecRef{s.ID, s.Currency}
 		}
 	}
 
@@ -358,12 +383,12 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// tryAutoCreateSecurity calls Questrade symbol search and creates the security in the DB
-	// if an exact ticker match is found. Returns the new secRef on success, false on failure.
-	// Results are idempotent — a second call for the same ticker finds the security via secByTicker.
-	tryAutoCreateSecurity := func(ticker, currency string) (secRef, bool) {
+	// if an exact ticker match is found. Results are idempotent — a second call for the same
+	// ticker finds the security via secByTicker.
+	tryAutoCreateSecurity := func(ticker, currency string) (qtSecRef, bool) {
 		results, err := client.SymbolSearch(ctx, ticker)
 		if err != nil {
-			return secRef{}, false
+			return qtSecRef{}, false
 		}
 		sec := &security.Security{
 			Ticker:   ticker,
@@ -384,13 +409,13 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 		if sec.Exchange == "" {
-			return secRef{}, false
+			return qtSecRef{}, false
 		}
 		if err := h.securities.Create(ctx, sec); err != nil {
-			return secRef{}, false
+			return qtSecRef{}, false
 		}
 		h.logAudit(r, audit.ActionCreate, audit.EntitySecurity, sec.ID, audit.SourceQuestrade, "")
-		return secRef{sec.ID, sec.Currency}, true
+		return qtSecRef{sec.ID, sec.Currency}, true
 	}
 
 	notFoundTickers := make(map[string]bool)
@@ -398,166 +423,32 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 	var commitRows []qtCommitRow
 	totOK, totSkip, totFlag := 0, 0, 0
 
+	pctx := &qtPreviewCtx{
+		pAccountID:      pAccountID,
+		pAccountName:    pAccountName,
+		alreadyImported: alreadyImported,
+		tickerCount:     tickerCount,
+		secByTicker:     secByTicker,
+		notFoundTickers: notFoundTickers,
+		tryAutoCreate:   tryAutoCreateSecurity,
+	}
+
 	for i := range activities {
-		act := &activities[i]
-		status, msg, txType := service.ClassifyQTActivity(act)
-
-		if status == service.QTActivitySkip {
+		previewRow, commitRow, disp := h.processQTActivity(ctx, i+1, &activities[i], pctx)
+		switch disp {
+		case qtRowOK:
+			totOK++
+			previewRows = append(previewRows, previewRow)
+			commitRows = append(commitRows, *commitRow)
+		case qtRowSilentSkip:
 			totSkip++
-			continue
-		}
-
-		baseRow := qtPreviewRow{
-			Line:        i + 1,
-			TradeDate:   act.TradeDate.Format(time.DateOnly),
-			Symbol:      act.Symbol,
-			Currency:    act.Currency,
-			TxType:      string(txType),
-			AccountName: pAccountName,
-		}
-
-		if status == service.QTActivityFlag {
-			totFlag++
-			baseRow.Status = qtStatusFlag
-			baseRow.StatusMsg = msg
-			if strings.TrimSpace(act.Action) == "FXT" && !act.NetAmount.IsZero() {
-				baseRow.StatusMsg += fmt.Sprintf(" — net: %s %s", act.NetAmount.StringFixed(2), act.Currency)
-				if act.Type != "" {
-					baseRow.StatusMsg += " (" + act.Type + ")"
-				}
-			}
-			previewRows = append(previewRows, baseRow)
-			continue
-		}
-
-		qty := act.Quantity.Abs()
-		price := act.Price
-		comm := act.Commission.Abs()
-
-		// Dividends from Questrade have zero qty/price; store as 1 unit at total amount.
-		if txType == transaction.TypeDividend && qty.IsZero() && price.IsZero() {
-			qty = decimal.New(1, 0)
-			price = act.NetAmount.Abs()
-		}
-
-		if !qty.IsPositive() {
-			totFlag++
-			baseRow.Status = qtStatusFlag
-			baseRow.StatusMsg = "zero quantity — record manually"
-			previewRows = append(previewRows, baseRow)
-			continue
-		}
-
-		sec, secOK := secByTicker[act.Symbol]
-		if !secOK && tickerCount[act.Symbol] <= 1 && !notFoundTickers[act.Symbol] {
-			if ref, ok := tryAutoCreateSecurity(act.Symbol, act.Currency); ok {
-				secByTicker[act.Symbol] = ref
-				sec = ref
-				secOK = true
-			} else {
-				notFoundTickers[act.Symbol] = true
-			}
-		}
-		if !secOK {
-			totFlag++
-			baseRow.Status = qtStatusFlag
-			if tickerCount[act.Symbol] > 1 {
-				baseRow.StatusMsg = "ambiguous ticker — multiple securities share: " + act.Symbol
-			} else {
-				baseRow.StatusMsg = "security not found — add security with ticker: " + act.Symbol
-			}
-			previewRows = append(previewRows, baseRow)
-			continue
-		}
-
-		// Activity currency must match the security's currency in the DB.
-		// Exception: Questrade reports TFI activities for USD securities with currency="CAD"
-		// because the book value in the description is the CAD equivalent of the USD cost.
-		// Convert the extracted CAD price to USD using the BoC rate so ACB is stored correctly.
-		// fxRateStr is set here for converted TFIs to avoid a redundant fetch below.
-		var fxRateStr string
-		if act.Currency != sec.Currency {
-			if txType == transaction.TypeTransferIn && act.Currency == "CAD" && sec.Currency == "USD" && price.IsPositive() {
-				fxRate, err := h.bocSvc.USDCADRate(ctx, act.TradeDate)
-				if err != nil {
-					totFlag++
-					baseRow.Status = qtStatusFlag
-					baseRow.StatusMsg = "BoC USD/CAD rate unavailable for " + act.TradeDate.Format(time.DateOnly) + ": " + err.Error()
-					previewRows = append(previewRows, baseRow)
-					continue
-				}
-				price = price.Div(fxRate)
-				fxRateStr = fxRate.String()
-				act.Currency = "USD"
-				baseRow.Currency = "USD"
-			} else {
-				totFlag++
-				baseRow.Status = qtStatusFlag
-				baseRow.StatusMsg = "currency mismatch: activity is " + act.Currency + " but security is " + sec.Currency
-				previewRows = append(previewRows, baseRow)
-				continue
-			}
-		}
-
-		// Only CAD and USD are supported; flag anything else before it reaches commit.
-		if act.Currency != "CAD" && act.Currency != "USD" {
-			totFlag++
-			baseRow.Status = qtStatusFlag
-			baseRow.StatusMsg = "unsupported currency (" + act.Currency + ") — only CAD and USD securities can be imported"
-			previewRows = append(previewRows, baseRow)
-			continue
-		}
-
-		isDup := alreadyImported[qtImportKey(sec.ID, act.TradeDate, txType, qty)]
-		if isDup {
+		case qtRowVisibleSkip:
 			totSkip++
-			baseRow.Status = qtStatusFlag
-			baseRow.StatusMsg = "already imported — skipped"
-			previewRows = append(previewRows, baseRow)
-			continue
+			previewRows = append(previewRows, previewRow)
+		case qtRowFlag:
+			totFlag++
+			previewRows = append(previewRows, previewRow)
 		}
-
-		// Fetch BoC rate for display and to verify it's available before committing.
-		// Skip if already fetched above (CAD-reported USD TFI conversion).
-		if act.Currency == "USD" && fxRateStr == "" {
-			fxRate, err := h.bocSvc.USDCADRate(ctx, act.TradeDate)
-			if err != nil {
-				totFlag++
-				baseRow.Status = qtStatusFlag
-				baseRow.StatusMsg = "BoC USD/CAD rate unavailable for " + act.TradeDate.Format(time.DateOnly) + ": " + err.Error()
-				previewRows = append(previewRows, baseRow)
-				continue
-			}
-			fxRateStr = fxRate.String()
-		}
-
-		totOK++
-		baseRow.Status = qtStatusOK
-		baseRow.TxType = string(txType)
-		baseRow.AccountName = pAccountName
-		baseRow.Quantity = qty.String()
-		baseRow.Price = price.StringFixed(4)
-		baseRow.FXRate = fxRateStr
-		baseRow.Commission = comm.StringFixed(2)
-		if fxRateStr != "" {
-			fxRate, _ := decimal.NewFromString(fxRateStr)
-			baseRow.PriceCAD = price.Mul(fxRate).StringFixed(4)
-			baseRow.CommCAD = comm.Mul(fxRate).StringFixed(2)
-		}
-		previewRows = append(previewRows, baseRow)
-
-		// CAD amounts are NOT stored in the commit payload — derived server-side
-		// at commit time from the security's currency + BoC cache.
-		commitRows = append(commitRows, qtCommitRow{
-			TradeDate:   act.TradeDate.Format(time.DateOnly),
-			SettledDate: act.SettledDate.Format(time.DateOnly),
-			AccountID:   pAccountID,
-			SecurityID:  sec.ID,
-			TxType:      string(txType),
-			Quantity:    qty.String(),
-			PriceNative: price.String(),
-			CommNative:  comm.String(),
-		})
 	}
 
 	commitJSON, err := json.Marshal(commitRows)
@@ -573,6 +464,146 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 		TotalSkip:  totSkip,
 		TotalFlag:  totFlag,
 	})
+}
+
+// processQTActivity maps a single Questrade activity to a preview row, an optional
+// commit row, and a disposition that tells the caller how to count and display the result.
+// act may be mutated (Currency, Price) for CAD-reported USD TFI activities.
+// pctx caches are updated in place (secByTicker, notFoundTickers).
+func (h *Handler) processQTActivity(
+	ctx context.Context,
+	lineNum int,
+	act *questrade.Activity,
+	pctx *qtPreviewCtx,
+) (qtPreviewRow, *qtCommitRow, qtRowDisposition) {
+	status, msg, txType := service.ClassifyQTActivity(act)
+
+	if status == service.QTActivitySkip {
+		return qtPreviewRow{}, nil, qtRowSilentSkip
+	}
+
+	baseRow := qtPreviewRow{
+		Line:        lineNum,
+		TradeDate:   act.TradeDate.Format(time.DateOnly),
+		Symbol:      act.Symbol,
+		Currency:    act.Currency,
+		TxType:      string(txType),
+		AccountName: pctx.pAccountName,
+	}
+
+	flagRow := func(reason string) (qtPreviewRow, *qtCommitRow, qtRowDisposition) {
+		baseRow.Status = qtStatusFlag
+		baseRow.StatusMsg = reason
+		return baseRow, nil, qtRowFlag
+	}
+
+	if status == service.QTActivityFlag {
+		if strings.TrimSpace(act.Action) == "FXT" && !act.NetAmount.IsZero() {
+			msg += fmt.Sprintf(" — net: %s %s", act.NetAmount.StringFixed(2), act.Currency)
+			if act.Type != "" {
+				msg += " (" + act.Type + ")"
+			}
+		}
+		return flagRow(msg)
+	}
+
+	qty := act.Quantity.Abs()
+	price := act.Price
+	comm := act.Commission.Abs()
+
+	// Dividends from Questrade have zero qty/price; store as 1 unit at total amount.
+	if txType == transaction.TypeDividend && qty.IsZero() && price.IsZero() {
+		qty = decimal.New(1, 0)
+		price = act.NetAmount.Abs()
+	}
+
+	if !qty.IsPositive() {
+		return flagRow("zero quantity — record manually")
+	}
+
+	sec, secOK := pctx.secByTicker[act.Symbol]
+	if !secOK && pctx.tickerCount[act.Symbol] <= 1 && !pctx.notFoundTickers[act.Symbol] {
+		if ref, ok := pctx.tryAutoCreate(act.Symbol, act.Currency); ok {
+			pctx.secByTicker[act.Symbol] = ref
+			sec = ref
+			secOK = true
+		} else {
+			pctx.notFoundTickers[act.Symbol] = true
+		}
+	}
+	if !secOK {
+		if pctx.tickerCount[act.Symbol] > 1 {
+			return flagRow("ambiguous ticker — multiple securities share: " + act.Symbol)
+		}
+		return flagRow("security not found — add security with ticker: " + act.Symbol)
+	}
+
+	// Activity currency must match the security's currency in the DB.
+	// Exception: Questrade reports TFI activities for USD securities with currency="CAD"
+	// because the book value in the description is the CAD equivalent of the USD cost.
+	// Convert the extracted CAD price to USD using the BoC rate so ACB is stored correctly.
+	// fxRateStr is set here for converted TFIs to avoid a redundant fetch below.
+	var fxRateStr string
+	if act.Currency != sec.Currency {
+		if txType == transaction.TypeTransferIn && act.Currency == "CAD" && sec.Currency == "USD" && price.IsPositive() {
+			fxRate, err := h.bocSvc.USDCADRate(ctx, act.TradeDate)
+			if err != nil {
+				return flagRow("BoC USD/CAD rate unavailable for " + act.TradeDate.Format(time.DateOnly) + ": " + err.Error())
+			}
+			price = price.Div(fxRate)
+			fxRateStr = fxRate.String()
+			act.Currency = "USD"
+			baseRow.Currency = "USD"
+		} else {
+			return flagRow("currency mismatch: activity is " + act.Currency + " but security is " + sec.Currency)
+		}
+	}
+
+	// Only CAD and USD are supported; flag anything else before it reaches commit.
+	if act.Currency != "CAD" && act.Currency != "USD" {
+		return flagRow("unsupported currency (" + act.Currency + ") — only CAD and USD securities can be imported")
+	}
+
+	if pctx.alreadyImported[qtImportKey(sec.ID, act.TradeDate, txType, qty)] {
+		baseRow.Status = qtStatusFlag
+		baseRow.StatusMsg = "already imported — skipped"
+		return baseRow, nil, qtRowVisibleSkip
+	}
+
+	// Fetch BoC rate for display and to verify it's available before committing.
+	// Skip if already fetched above (CAD-reported USD TFI conversion).
+	if act.Currency == "USD" && fxRateStr == "" {
+		fxRate, err := h.bocSvc.USDCADRate(ctx, act.TradeDate)
+		if err != nil {
+			return flagRow("BoC USD/CAD rate unavailable for " + act.TradeDate.Format(time.DateOnly) + ": " + err.Error())
+		}
+		fxRateStr = fxRate.String()
+	}
+
+	baseRow.Status = qtStatusOK
+	baseRow.Quantity = qty.String()
+	baseRow.Price = price.StringFixed(4)
+	baseRow.FXRate = fxRateStr
+	baseRow.Commission = comm.StringFixed(2)
+	if fxRateStr != "" {
+		fxRate, _ := decimal.NewFromString(fxRateStr)
+		baseRow.PriceCAD = price.Mul(fxRate).StringFixed(4)
+		baseRow.CommCAD = comm.Mul(fxRate).StringFixed(2)
+	}
+
+	// CAD amounts are NOT stored in the commit payload — derived server-side
+	// at commit time from the security's currency + BoC cache.
+	commitRow := qtCommitRow{
+		TradeDate:   act.TradeDate.Format(time.DateOnly),
+		SettledDate: act.SettledDate.Format(time.DateOnly),
+		AccountID:   pctx.pAccountID,
+		SecurityID:  sec.ID,
+		TxType:      string(txType),
+		Quantity:    qty.String(),
+		PriceNative: price.String(),
+		CommNative:  comm.String(),
+	}
+	return baseRow, &commitRow, qtRowOK
 }
 
 // qtImportKey returns the dedup key used to identify an already-imported QT
