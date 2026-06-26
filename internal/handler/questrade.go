@@ -44,6 +44,7 @@ type qtSourceAccount struct {
 const (
 	qtStatusOK   = "ok"
 	qtStatusFlag = "flag"
+	qtStatusSkip = "skip"
 )
 
 type qtPreviewRow struct {
@@ -97,7 +98,7 @@ type qtPreviewCtx struct {
 	tickerCount     map[string]int
 	secByTicker     map[string]qtSecRef
 	notFoundTickers map[string]bool
-	tryAutoCreate   func(ticker, currency string) (qtSecRef, bool)
+	tryAutoCreate   func(ticker, currency string) (qtSecRef, error)
 }
 
 // qtCommitRow is the JSON payload passed from preview to commit.
@@ -120,7 +121,7 @@ func (h *Handler) activeToken(r *http.Request) (questrade.Token, error) {
 	ctx := r.Context()
 	token, err := h.qtTokens.Get(ctx, userFromCtx(r.Context()).ID)
 	if err != nil {
-		return questrade.Token{}, err
+		return questrade.Token{}, fmt.Errorf("load qt token: %w", err)
 	}
 	if !token.IsExpired() {
 		return token, nil
@@ -132,14 +133,14 @@ func (h *Handler) activeToken(r *http.Request) (questrade.Token, error) {
 	defer h.tokenMu.Unlock()
 	token, err = h.qtTokens.Get(ctx, userFromCtx(r.Context()).ID)
 	if err != nil {
-		return questrade.Token{}, err
+		return questrade.Token{}, fmt.Errorf("load qt token: %w", err)
 	}
 	if !token.IsExpired() {
 		return token, nil
 	}
 	token, err = questrade.Exchange(ctx, token.RefreshToken.Reveal())
 	if err != nil {
-		return questrade.Token{}, err
+		return questrade.Token{}, fmt.Errorf("questrade token exchange: %w", err)
 	}
 	if err := h.qtTokens.Save(ctx, userFromCtx(r.Context()).ID, token); err != nil {
 		return questrade.Token{}, fmt.Errorf("save refreshed qt token: %w", err)
@@ -385,10 +386,10 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 	// tryAutoCreateSecurity calls Questrade symbol search and creates the security in the DB
 	// if an exact ticker match is found. Results are idempotent — a second call for the same
 	// ticker finds the security via secByTicker.
-	tryAutoCreateSecurity := func(ticker, currency string) (qtSecRef, bool) {
+	tryAutoCreateSecurity := func(ticker, currency string) (qtSecRef, error) {
 		results, err := client.SymbolSearch(ctx, ticker)
 		if err != nil {
-			return qtSecRef{}, false
+			return qtSecRef{}, fmt.Errorf("symbol search: %w", err)
 		}
 		sec := &security.Security{
 			Ticker:   ticker,
@@ -409,13 +410,13 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 		if sec.Exchange == "" {
-			return qtSecRef{}, false
+			return qtSecRef{}, errs.ErrNotFound
 		}
 		if err := h.securities.Create(ctx, sec); err != nil {
-			return qtSecRef{}, false
+			return qtSecRef{}, fmt.Errorf("create security: %w", err)
 		}
 		h.logAudit(r, audit.ActionCreate, audit.EntitySecurity, sec.ID, audit.SourceQuestrade, "")
-		return qtSecRef{sec.ID, sec.Currency}, true
+		return qtSecRef{sec.ID, sec.Currency}, nil
 	}
 
 	notFoundTickers := make(map[string]bool)
@@ -448,6 +449,9 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 		case qtRowFlag:
 			totFlag++
 			previewRows = append(previewRows, previewRow)
+		default:
+			totFlag++
+			previewRows = append(previewRows, previewRow)
 		}
 	}
 
@@ -468,7 +472,7 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 
 // processQTActivity maps a single Questrade activity to a preview row, an optional
 // commit row, and a disposition that tells the caller how to count and display the result.
-// act may be mutated (Currency, Price) for CAD-reported USD TFI activities.
+// act.Price may be mutated for CAD-reported USD TFI activities (ClassifyQTActivity sets it from description).
 // pctx caches are updated in place (secByTicker, notFoundTickers).
 func (h *Handler) processQTActivity(
 	ctx context.Context,
@@ -523,13 +527,14 @@ func (h *Handler) processQTActivity(
 
 	sec, secOK := pctx.secByTicker[act.Symbol]
 	if !secOK && pctx.tickerCount[act.Symbol] <= 1 && !pctx.notFoundTickers[act.Symbol] {
-		if ref, ok := pctx.tryAutoCreate(act.Symbol, act.Currency); ok {
+		if ref, err := pctx.tryAutoCreate(act.Symbol, act.Currency); err == nil {
 			pctx.secByTicker[act.Symbol] = ref
 			sec = ref
 			secOK = true
-		} else {
+		} else if errors.Is(err, errs.ErrNotFound) {
 			pctx.notFoundTickers[act.Symbol] = true
 		}
+		// transient errors (API, DB): don't block — retry on subsequent activities
 	}
 	if !secOK {
 		if pctx.tickerCount[act.Symbol] > 1 {
@@ -552,7 +557,6 @@ func (h *Handler) processQTActivity(
 			}
 			price = price.Div(fxRate)
 			fxRateStr = fxRate.String()
-			act.Currency = "USD"
 			baseRow.Currency = "USD"
 		} else {
 			return flagRow("currency mismatch: activity is " + act.Currency + " but security is " + sec.Currency)
@@ -565,7 +569,7 @@ func (h *Handler) processQTActivity(
 	}
 
 	if pctx.alreadyImported[qtImportKey(sec.ID, act.TradeDate, txType, qty)] {
-		baseRow.Status = qtStatusFlag
+		baseRow.Status = qtStatusSkip
 		baseRow.StatusMsg = "already imported — skipped"
 		return baseRow, nil, qtRowVisibleSkip
 	}

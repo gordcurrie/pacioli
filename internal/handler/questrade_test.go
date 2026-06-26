@@ -179,9 +179,12 @@ func makeQTServer(t *testing.T, activities []map[string]interface{}) *httptest.S
 	return srv
 }
 
-// qtAct builds a Questrade activity JSON map.
-func qtAct(action, symbol, description, currency string, qty, price float64, date time.Time) map[string]interface{} {
+// qtAct builds a Questrade activity JSON map. qty and price are decimal strings (e.g. "10", "34.50").
+func qtAct(action, symbol, description, currency, qty, price string, date time.Time) map[string]interface{} {
 	ds := date.Format(time.RFC3339)
+	qtyD, _ := decimal.NewFromString(qty)
+	priceD, _ := decimal.NewFromString(price)
+	gross := qtyD.Mul(priceD).Neg().String()
 	return map[string]interface{}{
 		"tradeDate":      ds,
 		"settlementDate": ds,
@@ -189,11 +192,11 @@ func qtAct(action, symbol, description, currency string, qty, price float64, dat
 		"symbol":         symbol,
 		"description":    description,
 		"currency":       currency,
-		"quantity":       qty,
-		"price":          price,
-		"grossAmount":    -(qty * price),
-		"commission":     0,
-		"netAmount":      -(qty * price),
+		"quantity":       json.Number(qty),
+		"price":          json.Number(price),
+		"grossAmount":    json.Number(gross),
+		"commission":     json.Number("0"),
+		"netAmount":      json.Number(gross),
 		"type":           "Trades",
 	}
 }
@@ -268,7 +271,7 @@ func createTestSecurity(t *testing.T, ctx context.Context, store *sqlite.Securit
 func TestQuestradePreview_CADSecurityBuy_OKRow(t *testing.T) {
 	date := time.Date(2026, 5, 28, 0, 0, 0, 0, time.UTC)
 	acts := []map[string]interface{}{
-		qtAct("Buy", "XIU", "", "CAD", 10, 34.50, date),
+		qtAct("Buy", "XIU", "", "CAD", "10", "34.50", date),
 	}
 	srv := makeQTServer(t, acts)
 	env := newQTTestEnv(t, srv)
@@ -293,7 +296,7 @@ func TestQuestradePreview_CADSecurityBuy_OKRow(t *testing.T) {
 func TestQuestradePreview_USDSecurityBuy_OKRowWithFXRate(t *testing.T) {
 	date := time.Date(2026, 5, 28, 0, 0, 0, 0, time.UTC)
 	acts := []map[string]interface{}{
-		qtAct("Buy", "MSFT", "", "USD", 5, 420.00, date),
+		qtAct("Buy", "MSFT", "", "USD", "5", "420.00", date),
 	}
 	srv := makeQTServer(t, acts)
 	env := newQTTestEnv(t, srv)
@@ -322,7 +325,7 @@ func TestQuestradePreview_TFI_USDSecWithCADActivity_ConvertsByBoCRate(t *testing
 	date := time.Date(2026, 5, 28, 0, 0, 0, 0, time.UTC)
 	desc := "SPLV ETF CANACCORD GENUITY CORP. ACCOUNT TRANSFER BOOK VALUE 6850.00"
 	acts := []map[string]interface{}{
-		qtAct("TFI", "SPLV", desc, "CAD", 100, 0, date),
+		qtAct("TFI", "SPLV", desc, "CAD", "100", "0", date),
 	}
 	srv := makeQTServer(t, acts)
 	env := newQTTestEnv(t, srv)
@@ -351,7 +354,7 @@ func TestQuestradePreview_TFI_NoBoCRate_Flags(t *testing.T) {
 	date := time.Date(2026, 5, 28, 0, 0, 0, 0, time.UTC)
 	desc := "SPLV ETF CANACCORD GENUITY CORP. ACCOUNT TRANSFER BOOK VALUE 6850.00"
 	acts := []map[string]interface{}{
-		qtAct("TFI", "SPLV", desc, "CAD", 100, 0, date),
+		qtAct("TFI", "SPLV", desc, "CAD", "100", "0", date),
 	}
 
 	// Fake BoC server that returns error.
@@ -379,15 +382,23 @@ func TestQuestradePreview_TFI_NoBoCRate_Flags(t *testing.T) {
 	fxStore := sqlite.NewFXStore(db)
 
 	ctx := context.Background()
-	hash, _ := bcrypt.GenerateFromPassword([]byte("pw"), 4)
-	userID, _ := userStore.Create(ctx, &user.User{Email: "qt2@example.com", PasswordHash: string(hash), IsAdmin: true})
+	hash, err := bcrypt.GenerateFromPassword([]byte("pw"), 4)
+	if err != nil {
+		t.Fatalf("bcrypt: %v", err)
+	}
+	userID, err := userStore.Create(ctx, &user.User{Email: "qt2@example.com", PasswordHash: string(hash), IsAdmin: true})
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
 	const rawToken = "qt-noboc-session"
-	_ = sessionStore.Create(ctx, &session.Session{
+	if err := sessionStore.Create(ctx, &session.Session{
 		UserID:       userID,
 		TokenHash:    sqlite.HashToken(rawToken),
 		TOTPVerified: true,
 		ExpiresAt:    time.Now().Add(24 * time.Hour),
-	})
+	}); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
 
 	bocSvc := service.NewBOCFetcher(fxStore)
 	bocSvc.BaseURL = bocSrv.URL // force failure
@@ -425,8 +436,12 @@ func TestQuestradePreview_TFI_NoBoCRate_Flags(t *testing.T) {
 	}
 
 	acc := &account.Account{UserID: userID, Name: "Test", Type: account.TypeMargin, Broker: "Questrade", Currency: "CAD"}
-	_ = accountStore.Create(ctx, acc)
-	_ = secStore.Create(ctx, &security.Security{Ticker: "SPLV", Name: "SPLV", Exchange: "NYSE", Type: security.TypeEquity, Currency: "USD"})
+	if err := accountStore.Create(ctx, acc); err != nil {
+		t.Fatalf("create account: %v", err)
+	}
+	if err := secStore.Create(ctx, &security.Security{Ticker: "SPLV", Name: "SPLV", Exchange: "NYSE", Type: security.TypeEquity, Currency: "USD"}); err != nil {
+		t.Fatalf("create security: %v", err)
+	}
 
 	mux := http.NewServeMux()
 	h.Routes(mux)
@@ -458,7 +473,7 @@ func TestQuestradePreview_CurrencyMismatch_NonTFI_Flags(t *testing.T) {
 	date := time.Date(2026, 5, 28, 0, 0, 0, 0, time.UTC)
 	// Buy with activity.Currency=CAD but security is USD — not a TFI, so mismatch flags.
 	acts := []map[string]interface{}{
-		qtAct("Buy", "MSFT", "", "CAD", 5, 420.00, date),
+		qtAct("Buy", "MSFT", "", "CAD", "5", "420.00", date),
 	}
 	srv := makeQTServer(t, acts)
 	env := newQTTestEnv(t, srv)
@@ -483,7 +498,7 @@ func TestQuestradePreview_CurrencyMismatch_NonTFI_Flags(t *testing.T) {
 func TestQuestradePreview_AlreadyImported_VisibleSkip(t *testing.T) {
 	date := time.Date(2026, 5, 28, 0, 0, 0, 0, time.UTC)
 	acts := []map[string]interface{}{
-		qtAct("Buy", "XIU", "", "CAD", 10, 34.50, date),
+		qtAct("Buy", "XIU", "", "CAD", "10", "34.50", date),
 	}
 	srv := makeQTServer(t, acts)
 	env := newQTTestEnv(t, srv)
@@ -524,7 +539,7 @@ func TestQuestradePreview_AlreadyImported_VisibleSkip(t *testing.T) {
 func TestQuestradePreview_SecurityNotFound_Flags(t *testing.T) {
 	date := time.Date(2026, 5, 28, 0, 0, 0, 0, time.UTC)
 	acts := []map[string]interface{}{
-		qtAct("Buy", "UNKNOWN", "", "CAD", 10, 50.00, date),
+		qtAct("Buy", "UNKNOWN", "", "CAD", "10", "50.00", date),
 	}
 	// Server returns empty symbol search so auto-create fails.
 	srv := makeQTServer(t, acts)
@@ -551,7 +566,7 @@ func TestQuestradePreview_TFI_NoBookValue_Flags_WithDescription(t *testing.T) {
 	date := time.Date(2026, 5, 28, 0, 0, 0, 0, time.UTC)
 	desc := "SAABY CANACCORD CAPITAL CORP. TRANSFER IN NO PRICE"
 	acts := []map[string]interface{}{
-		qtAct("TFI", "SAABY", desc, "USD", 50, 0, date),
+		qtAct("TFI", "SAABY", desc, "USD", "50", "0", date),
 	}
 	srv := makeQTServer(t, acts)
 	env := newQTTestEnv(t, srv)
@@ -580,7 +595,7 @@ func TestQuestradePreview_TFI_NoBookValue_Flags_WithDescription(t *testing.T) {
 func TestQuestradePreview_SkipAction_CountedNotShown(t *testing.T) {
 	date := time.Date(2026, 5, 28, 0, 0, 0, 0, time.UTC)
 	acts := []map[string]interface{}{
-		qtAct("WDR", "", "", "CAD", 0, 0, date), // withdrawal — always skipped silently
+		qtAct("WDR", "", "", "CAD", "0", "0", date), // withdrawal — always skipped silently
 	}
 	srv := makeQTServer(t, acts)
 	env := newQTTestEnv(t, srv)
@@ -596,15 +611,18 @@ func TestQuestradePreview_SkipAction_CountedNotShown(t *testing.T) {
 	if !strings.Contains(body, "1 skipped") {
 		t.Errorf("expected '1 skipped' for WDR action; body snippet: %s", body[:min(300, len(body))])
 	}
-	if !strings.Contains(body, "0 ready") && !strings.Contains(body, "0 flagged") {
-		t.Errorf("expected '0 ready' and '0 flagged' for WDR; body: %s", body[:min(300, len(body))])
+	if !strings.Contains(body, "0 ready") {
+		t.Errorf("expected '0 ready' for WDR action; body snippet: %s", body[:min(300, len(body))])
+	}
+	if !strings.Contains(body, "0 flagged") {
+		t.Errorf("expected '0 flagged' for WDR action; body snippet: %s", body[:min(300, len(body))])
 	}
 }
 
 func TestQuestradePreview_ZeroQuantity_Flags(t *testing.T) {
 	date := time.Date(2026, 5, 28, 0, 0, 0, 0, time.UTC)
 	acts := []map[string]interface{}{
-		qtAct("Buy", "XIU", "", "CAD", 0, 34.50, date), // zero qty
+		qtAct("Buy", "XIU", "", "CAD", "0", "34.50", date), // zero qty
 	}
 	srv := makeQTServer(t, acts)
 	env := newQTTestEnv(t, srv)
