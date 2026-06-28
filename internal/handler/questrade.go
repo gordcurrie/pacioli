@@ -550,14 +550,15 @@ func (h *Handler) processQTActivity(
 	}
 
 	bocRate := func(date time.Time) (decimal.Decimal, error) {
-		if r, ok := pctx.bocRates[date]; ok {
+		key := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, time.UTC)
+		if r, ok := pctx.bocRates[key]; ok {
 			return r, nil
 		}
 		r, err := h.bocSvc.USDCADRate(ctx, date)
 		if err != nil {
 			return decimal.Zero, err
 		}
-		pctx.bocRates[date] = r
+		pctx.bocRates[key] = r
 		return r, nil
 	}
 
@@ -579,7 +580,6 @@ func (h *Handler) processQTActivity(
 			comm = comm.Div(fxRate)
 			fxRateStr = fxRate.String()
 			baseRow.Currency = "USD"
-			act.Currency = "USD"
 		} else {
 			return flagRow("currency mismatch: activity is " + act.Currency + " but security is " + sec.Currency)
 		}
