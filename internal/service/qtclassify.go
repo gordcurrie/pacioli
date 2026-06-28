@@ -77,8 +77,8 @@ func ClassifyQTActivity(a *questrade.Activity) (QTActivityStatus, string, transa
 			return QTActivityImport, "", transaction.TypeTransferIn
 		}
 		desc := a.Description
-		if len(desc) > 120 {
-			desc = desc[:120] + "…"
+		if runes := []rune(desc); len(runes) > 120 {
+			desc = string(runes[:120]) + "…"
 		}
 		return QTActivityFlag, "transfer in — no book value; enter ACB manually — desc: " + desc, ""
 	case "FXT":

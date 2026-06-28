@@ -90,7 +90,7 @@ const (
 )
 
 // qtPreviewCtx bundles per-request state threaded through processQTActivity.
-// Maps are mutated in place (secByTicker, notFoundTickers) to cache lookups across activities.
+// Maps are mutated in place to cache lookups across activities.
 type qtPreviewCtx struct {
 	pAccountID      int64
 	pAccountName    string
@@ -98,6 +98,8 @@ type qtPreviewCtx struct {
 	tickerCount     map[string]int
 	secByTicker     map[string]qtSecRef
 	notFoundTickers map[string]bool
+	errTickers      map[string]string            // ticker → error for transient auto-create failures
+	bocRates        map[time.Time]decimal.Decimal // date → USD/CAD rate, avoids redundant DB reads
 	tryAutoCreate   func(ticker, currency string) (qtSecRef, error)
 }
 
@@ -431,6 +433,8 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 		tickerCount:     tickerCount,
 		secByTicker:     secByTicker,
 		notFoundTickers: notFoundTickers,
+		errTickers:      make(map[string]string),
+		bocRates:        make(map[time.Time]decimal.Decimal),
 		tryAutoCreate:   tryAutoCreateSecurity,
 	}
 
@@ -447,9 +451,6 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 			totSkip++
 			previewRows = append(previewRows, previewRow)
 		case qtRowFlag:
-			totFlag++
-			previewRows = append(previewRows, previewRow)
-		default:
 			totFlag++
 			previewRows = append(previewRows, previewRow)
 		}
@@ -526,21 +527,38 @@ func (h *Handler) processQTActivity(
 	}
 
 	sec, secOK := pctx.secByTicker[act.Symbol]
-	if !secOK && pctx.tickerCount[act.Symbol] <= 1 && !pctx.notFoundTickers[act.Symbol] {
+	_, hadErrBefore := pctx.errTickers[act.Symbol]
+	if !secOK && pctx.tickerCount[act.Symbol] <= 1 && !pctx.notFoundTickers[act.Symbol] && !hadErrBefore {
 		if ref, err := pctx.tryAutoCreate(act.Symbol, act.Currency); err == nil {
 			pctx.secByTicker[act.Symbol] = ref
 			sec = ref
 			secOK = true
 		} else if errors.Is(err, errs.ErrNotFound) {
 			pctx.notFoundTickers[act.Symbol] = true
+		} else {
+			pctx.errTickers[act.Symbol] = err.Error()
 		}
-		// transient errors (API, DB): don't block — retry on subsequent activities
 	}
 	if !secOK {
 		if pctx.tickerCount[act.Symbol] > 1 {
 			return flagRow("ambiguous ticker — multiple securities share: " + act.Symbol)
 		}
+		if errMsg, ok := pctx.errTickers[act.Symbol]; ok {
+			return flagRow("security lookup failed for " + act.Symbol + ": " + errMsg)
+		}
 		return flagRow("security not found — add security with ticker: " + act.Symbol)
+	}
+
+	bocRate := func(date time.Time) (decimal.Decimal, error) {
+		if r, ok := pctx.bocRates[date]; ok {
+			return r, nil
+		}
+		r, err := h.bocSvc.USDCADRate(ctx, date)
+		if err != nil {
+			return decimal.Zero, err
+		}
+		pctx.bocRates[date] = r
+		return r, nil
 	}
 
 	// Activity currency must match the security's currency in the DB.
@@ -548,16 +566,20 @@ func (h *Handler) processQTActivity(
 	// because the book value in the description is the CAD equivalent of the USD cost.
 	// Convert the extracted CAD price to USD using the BoC rate so ACB is stored correctly.
 	// fxRateStr is set here for converted TFIs to avoid a redundant fetch below.
+	var fxRate decimal.Decimal
 	var fxRateStr string
 	if act.Currency != sec.Currency {
 		if txType == transaction.TypeTransferIn && act.Currency == "CAD" && sec.Currency == "USD" && price.IsPositive() {
-			fxRate, err := h.bocSvc.USDCADRate(ctx, act.TradeDate)
+			var err error
+			fxRate, err = bocRate(act.TradeDate)
 			if err != nil {
 				return flagRow("BoC USD/CAD rate unavailable for " + act.TradeDate.Format(time.DateOnly) + ": " + err.Error())
 			}
 			price = price.Div(fxRate)
+			comm = comm.Div(fxRate)
 			fxRateStr = fxRate.String()
 			baseRow.Currency = "USD"
+			act.Currency = "USD"
 		} else {
 			return flagRow("currency mismatch: activity is " + act.Currency + " but security is " + sec.Currency)
 		}
@@ -577,7 +599,8 @@ func (h *Handler) processQTActivity(
 	// Fetch BoC rate for display and to verify it's available before committing.
 	// Skip if already fetched above (CAD-reported USD TFI conversion).
 	if act.Currency == "USD" && fxRateStr == "" {
-		fxRate, err := h.bocSvc.USDCADRate(ctx, act.TradeDate)
+		var err error
+		fxRate, err = bocRate(act.TradeDate)
 		if err != nil {
 			return flagRow("BoC USD/CAD rate unavailable for " + act.TradeDate.Format(time.DateOnly) + ": " + err.Error())
 		}
@@ -590,7 +613,6 @@ func (h *Handler) processQTActivity(
 	baseRow.FXRate = fxRateStr
 	baseRow.Commission = comm.StringFixed(2)
 	if fxRateStr != "" {
-		fxRate, _ := decimal.NewFromString(fxRateStr)
 		baseRow.PriceCAD = price.Mul(fxRate).StringFixed(4)
 		baseRow.CommCAD = comm.Mul(fxRate).StringFixed(2)
 	}

@@ -69,7 +69,7 @@ func (e *qtTestEnv) newRequest(method, path string, body io.Reader) *http.Reques
 }
 
 // newQTTestEnv builds a handler with QTTokens and BOCSvc wired to qtServer.
-func newQTTestEnv(t *testing.T, qtServer *httptest.Server) *qtTestEnv {
+func newQTTestEnv(t *testing.T, qtServer *httptest.Server, bocBaseURL ...string) *qtTestEnv {
 	t.Helper()
 	db, err := sqlite.Open(":memory:")
 	if err != nil {
@@ -121,6 +121,9 @@ func newQTTestEnv(t *testing.T, qtServer *httptest.Server) *qtTestEnv {
 	}}
 
 	bocSvc := service.NewBOCFetcher(fxStore)
+	if len(bocBaseURL) > 0 {
+		bocSvc.BaseURL = bocBaseURL[0]
+	}
 	acbSvc := service.NewACBService(txStore)
 	gainsSvc := service.NewGainsService(txStore, secStore)
 	rocSvc := service.NewROCService(txStore, distStore, secStore)
@@ -357,106 +360,19 @@ func TestQuestradePreview_TFI_NoBoCRate_Flags(t *testing.T) {
 		qtAct("TFI", "SPLV", desc, "CAD", "100", "0", date),
 	}
 
-	// Fake BoC server that returns error.
 	bocSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusServiceUnavailable)
 	}))
 	defer bocSrv.Close()
 
 	qtSrv := makeQTServer(t, acts)
-
-	// Build env manually so we can set bocSvc.BaseURL before constructing the handler.
-	db, err := sqlite.Open(":memory:")
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-
-	txStore := sqlite.NewTransactionStore(db)
-	secStore := sqlite.NewSecurityStore(db)
-	distStore := sqlite.NewDistributionStore(db)
-	auditStore := sqlite.NewAuditStore(db)
-	accountStore := sqlite.NewAccountStore(db)
-	userStore := sqlite.NewUserStore(db, nil)
-	sessionStore := sqlite.NewSessionStore(db)
-	fxStore := sqlite.NewFXStore(db)
-
+	env := newQTTestEnv(t, qtSrv, bocSrv.URL)
 	ctx := context.Background()
-	hash, err := bcrypt.GenerateFromPassword([]byte("pw"), 4)
-	if err != nil {
-		t.Fatalf("bcrypt: %v", err)
-	}
-	userID, err := userStore.Create(ctx, &user.User{Email: "qt2@example.com", PasswordHash: string(hash), IsAdmin: true})
-	if err != nil {
-		t.Fatalf("create user: %v", err)
-	}
-	const rawToken = "qt-noboc-session"
-	if err := sessionStore.Create(ctx, &session.Session{
-		UserID:       userID,
-		TokenHash:    sqlite.HashToken(rawToken),
-		TOTPVerified: true,
-		ExpiresAt:    time.Now().Add(24 * time.Hour),
-	}); err != nil {
-		t.Fatalf("create session: %v", err)
-	}
 
-	bocSvc := service.NewBOCFetcher(fxStore)
-	bocSvc.BaseURL = bocSrv.URL // force failure
+	acc := createTestAccount(t, ctx, env.accounts, env.userID)
+	createTestSecurity(t, ctx, env.securities, "SPLV", "USD")
 
-	qtStore := &fakeQTStore{tokens: map[int64]questrade.Token{
-		userID: {
-			AccessToken:  questrade.Secret("fake-access"),
-			RefreshToken: questrade.Secret("fake-refresh"),
-			APIServer:    qtSrv.URL,
-			ExpiresAt:    time.Now().Add(24 * time.Hour),
-		},
-	}}
-
-	acbSvc := service.NewACBService(txStore)
-	h, err := handler.New(&handler.Config{
-		Accounts:     accountStore,
-		Securities:   secStore,
-		Transactions: txStore,
-		Audits:       auditStore,
-		Users:        userStore,
-		Sessions:     sessionStore,
-		QTTokens:     qtStore,
-		BOCSvc:       bocSvc,
-		ACBSvc:       acbSvc,
-		GainsSvc:     service.NewGainsService(txStore, secStore),
-		ROCSvc:       service.NewROCService(txStore, distStore, secStore),
-		NGSvc:        service.NewNGService(txStore, secStore),
-		PortfolioSvc: service.NewPortfolioService(txStore, secStore, acbSvc),
-		YahooSvc:     service.NewYahooFetcher(bocSvc),
-		Logger:       slog.Default(),
-		TemplateFS:   web.Templates,
-	})
-	if err != nil {
-		t.Fatalf("new handler: %v", err)
-	}
-
-	acc := &account.Account{UserID: userID, Name: "Test", Type: account.TypeMargin, Broker: "Questrade", Currency: "CAD"}
-	if err := accountStore.Create(ctx, acc); err != nil {
-		t.Fatalf("create account: %v", err)
-	}
-	if err := secStore.Create(ctx, &security.Security{Ticker: "SPLV", Name: "SPLV", Exchange: "NYSE", Type: security.TypeEquity, Currency: "USD"}); err != nil {
-		t.Fatalf("create security: %v", err)
-	}
-
-	mux := http.NewServeMux()
-	h.Routes(mux)
-	form := url.Values{
-		"qt_account":      {"QT12345"},
-		"pacioli_account": {fmt.Sprint(acc.ID)},
-		"start_date":      {date.Format(time.DateOnly)},
-		"end_date":        {date.Format(time.DateOnly)},
-	}
-	req := httptest.NewRequest(http.MethodPost, "/questrade/preview", strings.NewReader(form.Encode()))
-	req.AddCookie(&http.Cookie{Name: "pacioli_session", Value: rawToken})
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	rr := httptest.NewRecorder()
-	mux.ServeHTTP(rr, req)
-
+	rr := doPreview(t, env, baseForm(acc.ID, date))
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status: got %d want 200", rr.Code)
 	}
