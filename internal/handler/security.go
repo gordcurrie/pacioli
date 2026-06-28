@@ -269,12 +269,15 @@ func (h *Handler) isQTConnected(r *http.Request) bool {
 var validCurrencies = map[string]bool{"CAD": true, "USD": true}
 
 func (h *Handler) createSecurity(w http.ResponseWriter, r *http.Request) {
+	renderForm := func(sec *security.Security, errMsg string) {
+		if sec == nil {
+			sec = &security.Security{Currency: "CAD"}
+		}
+		h.render(w, r, "security_form", securityFormData{Security: sec, Types: securityTypes, Error: errMsg})
+	}
+
 	if err := r.ParseForm(); err != nil {
-		h.render(w, r,"security_form", securityFormData{
-			Security: &security.Security{Currency: "CAD"},
-			Types:    securityTypes,
-			Error:    "invalid form data",
-		})
+		renderForm(nil, "invalid form data")
 		return
 	}
 
@@ -287,21 +290,13 @@ func (h *Handler) createSecurity(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if !validType {
-		h.render(w, r,"security_form", securityFormData{
-			Security: &security.Security{Currency: "CAD"},
-			Types:    securityTypes,
-			Error:    "invalid security type",
-		})
+		renderForm(nil, "invalid security type")
 		return
 	}
 
 	currency := r.FormValue("currency")
 	if !validCurrencies[currency] {
-		h.render(w, r,"security_form", securityFormData{
-			Security: &security.Security{Currency: "CAD"},
-			Types:    securityTypes,
-			Error:    "invalid currency",
-		})
+		renderForm(nil, "invalid currency")
 		return
 	}
 
@@ -315,11 +310,7 @@ func (h *Handler) createSecurity(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.securities.Create(r.Context(), s); err != nil {
-		h.render(w, r,"security_form", securityFormData{
-			Security: s,
-			Types:    securityTypes,
-			Error:    "failed to save security",
-		})
+		renderForm(s, "failed to save security")
 		return
 	}
 	h.logAudit(r, audit.ActionCreate, audit.EntitySecurity, s.ID, audit.SourceManual, "")

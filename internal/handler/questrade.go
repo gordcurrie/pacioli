@@ -266,17 +266,17 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	accounts, err := h.accounts.ListByUser(ctx, userFromCtx(r.Context()).ID)
+	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
+	opts := make([]qtAccountOption, len(accounts))
+	for i, a := range accounts {
+		opts[i] = qtAccountOption{a.ID, a.Name}
+	}
 	renderErr := func(msg string) {
-		accounts, err := h.accounts.ListByUser(ctx, userFromCtx(r.Context()).ID)
-		if err != nil {
-			h.serverError(w, r, err)
-			return
-		}
-		opts := make([]qtAccountOption, len(accounts))
-		for i, a := range accounts {
-			opts[i] = qtAccountOption{a.ID, a.Name}
-		}
-		h.render(w, r,"questrade", qtPageData{Configured: true, Connected: true, Accounts: opts, Error: msg})
+		h.render(w, r, "questrade", qtPageData{Configured: true, Connected: true, Accounts: opts, Error: msg})
 	}
 
 	token, err := h.activeToken(r)
@@ -318,12 +318,6 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// validate account ownership
-	accounts, err := h.accounts.ListByUser(ctx, userFromCtx(r.Context()).ID)
-	if err != nil {
-		h.serverError(w, r, err)
-		return
-	}
 	var pAccountName string
 	owned := false
 	for _, a := range accounts {
