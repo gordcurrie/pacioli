@@ -1,6 +1,7 @@
 package service_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/gordcurrie/pacioli/internal/questrade"
@@ -141,13 +142,14 @@ func TestClassifyActivity_TFI_BookValueInDescription_IsTransferIn(t *testing.T) 
 }
 
 func TestClassifyActivity_TFI_NoBookValue_IsFlag(t *testing.T) {
-	a := &questrade.Activity{Action: "TFI", Quantity: decimal.NewFromInt(100), Price: decimal.Zero, Description: "SOME STOCK CANACCORD CAPITAL CORP. TRANSFER IN"}
+	desc := "SOME STOCK CANACCORD CAPITAL CORP. TRANSFER IN"
+	a := &questrade.Activity{Action: "TFI", Quantity: decimal.NewFromInt(100), Price: decimal.Zero, Description: desc}
 	status, msg, _ := service.ClassifyQTActivity(a)
 	if status != service.QTActivityFlag {
 		t.Errorf("status: got %v want Flag", status)
 	}
-	if msg == "" {
-		t.Error("expected non-empty flag message for zero-price TFI")
+	if !strings.Contains(msg, desc) {
+		t.Errorf("flag message should include description for diagnosis; got %q", msg)
 	}
 }
 

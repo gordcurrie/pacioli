@@ -51,6 +51,8 @@
     <td>
       {{if eq .Status "ok"}}
         <span class="success">&#10003;</span>
+      {{else if eq .Status "skip"}}
+        <span title="{{.StatusMsg}}">&#8213; {{.StatusMsg}}</span>
       {{else}}
         <span class="danger" title="{{.StatusMsg}}">&#9888; {{.StatusMsg}}</span>
       {{end}}
