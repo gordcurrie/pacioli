@@ -115,6 +115,10 @@ type totpSetupPageData struct {
 	EncKeyMissing bool
 }
 
+func (h *Handler) renderTOTPSetup(w http.ResponseWriter, r *http.Request, data *totpSetupPageData) {
+	h.render(w, r, "profile_2fa", data)
+}
+
 func (h *Handler) totpSetupPage(w http.ResponseWriter, r *http.Request) {
 	u := userFromCtx(r.Context())
 
@@ -122,7 +126,7 @@ func (h *Handler) totpSetupPage(w http.ResponseWriter, r *http.Request) {
 
 	if len(h.encKey) != 32 {
 		data.EncKeyMissing = true
-		h.render(w, r, "profile_2fa", data)
+		h.renderTOTPSetup(w, r, &data)
 		return
 	}
 
@@ -157,31 +161,31 @@ func (h *Handler) totpSetupPage(w http.ResponseWriter, r *http.Request) {
 		data.PendingToken = tok
 	}
 
-	h.render(w, r, "profile_2fa", data)
+	h.renderTOTPSetup(w, r, &data)
 }
 
 func (h *Handler) totpEnable(w http.ResponseWriter, r *http.Request) {
 	u := userFromCtx(r.Context())
 
 	if len(h.encKey) != 32 {
-		h.render(w, r, "profile_2fa", totpSetupPageData{EncKeyMissing: true})
+		h.renderTOTPSetup(w, r, &totpSetupPageData{EncKeyMissing: true})
 		return
 	}
 
 	// Decrypt and validate the server-bound token.
 	tok := r.FormValue("pending_token")
 	if tok == "" {
-		h.render(w, r, "profile_2fa", totpSetupPageData{Error: "Invalid request. Please start over."})
+		h.renderTOTPSetup(w, r, &totpSetupPageData{Error: "Invalid request. Please start over."})
 		return
 	}
 	plaintext, err := sqlite.Decrypt(h.encKey, tok)
 	if err != nil {
-		h.render(w, r, "profile_2fa", totpSetupPageData{Error: "Invalid request. Please start over."})
+		h.renderTOTPSetup(w, r, &totpSetupPageData{Error: "Invalid request. Please start over."})
 		return
 	}
 	parts := strings.SplitN(plaintext, "::", 2)
 	if len(parts) != 2 || parts[1] != fmt.Sprintf("%d", u.ID) {
-		h.render(w, r, "profile_2fa", totpSetupPageData{Error: "Invalid request. Please start over."})
+		h.renderTOTPSetup(w, r, &totpSetupPageData{Error: "Invalid request. Please start over."})
 		return
 	}
 	secret := parts[0]
@@ -213,7 +217,7 @@ func (h *Handler) totpEnable(w http.ResponseWriter, r *http.Request) {
 			h.serverError(w, r, err)
 			return
 		}
-		h.render(w, r, "profile_2fa", totpSetupPageData{
+		h.renderTOTPSetup(w, r, &totpSetupPageData{
 			QRDataURI:    qrURI,
 			PendingToken: retryTok,
 			Error:        "Invalid code. Scan the QR again and try once more.",
@@ -239,7 +243,7 @@ func (h *Handler) totpEnable(w http.ResponseWriter, r *http.Request) {
 	}
 	h.logAudit(r, audit.ActionUpdate, audit.EntityUser, u.ID, audit.SourceManual, marshalUserSnapshot(freshEnable))
 
-	h.render(w, r, "profile_2fa", totpSetupPageData{
+	h.renderTOTPSetup(w, r, &totpSetupPageData{
 		TOTPEnabled:   true,
 		RecoveryCodes: plainCodes,
 	})
@@ -257,14 +261,14 @@ func (h *Handler) totpDisable(w http.ResponseWriter, r *http.Request) {
 	// totp.Validate would always return false in this state, permanently trapping
 	// the user. Surface a clear error rather than a misleading "Invalid code."
 	if u.TOTPSecret == "" {
-		h.render(w, r, "profile_2fa", totpSetupPageData{
+		h.renderTOTPSetup(w, r, &totpSetupPageData{
 			TOTPEnabled: true,
 			Error:       "Cannot disable 2FA: encryption key unavailable. Ask your administrator to set TOKEN_ENCRYPTION_KEY.",
 		})
 		return
 	}
 	if !totp.Validate(code, u.TOTPSecret) {
-		h.render(w, r, "profile_2fa", totpSetupPageData{
+		h.renderTOTPSetup(w, r, &totpSetupPageData{
 			TOTPEnabled: true,
 			Error:       "Invalid code.",
 		})
@@ -306,7 +310,7 @@ func (h *Handler) totpDisable(w http.ResponseWriter, r *http.Request) {
 	}
 	http.SetCookie(w, h.sessionCookie(raw, int(sessionDuration.Seconds())))
 	h.logAudit(r, audit.ActionUpdate, audit.EntityUser, u.ID, audit.SourceManual, marshalUserSnapshot(freshDisable))
-	h.render(w, r, "profile_2fa", totpSetupPageData{TOTPDisabled: true})
+	h.renderTOTPSetup(w, r, &totpSetupPageData{TOTPDisabled: true})
 }
 
 // generateRecoveryCodes produces 10 random codes (plain + bcrypt-hashed versions).

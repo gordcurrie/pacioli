@@ -19,6 +19,15 @@ type adminUsersPageData struct {
 	Error   string
 }
 
+func (h *Handler) renderAdminUsers(w http.ResponseWriter, r *http.Request, errMsg, successMsg string) {
+	users, err := h.users.List(r.Context())
+	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
+	h.render(w, r, "admin_users", adminUsersPageData{Users: users, Error: errMsg, Success: successMsg})
+}
+
 func (h *Handler) adminListUsers(w http.ResponseWriter, r *http.Request) {
 	users, err := h.users.List(r.Context())
 	if err != nil {
@@ -32,10 +41,7 @@ func (h *Handler) adminCreateUser(w http.ResponseWriter, r *http.Request) {
 	email := r.FormValue("email")
 	password := r.FormValue("password")
 
-	renderErr := func(msg string) {
-		users, _ := h.users.List(r.Context())
-		h.render(w, r, "admin_users", adminUsersPageData{Users: users, Error: msg})
-	}
+	renderErr := func(msg string) { h.renderAdminUsers(w, r, msg, "") }
 
 	if email == "" || password == "" {
 		renderErr("Email and password are required.")
@@ -62,9 +68,7 @@ func (h *Handler) adminCreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.logAudit(r, audit.ActionCreate, audit.EntityUser, newID, audit.SourceManual, "")
-
-	users, _ := h.users.List(r.Context())
-	h.render(w, r, "admin_users", adminUsersPageData{Users: users, Success: "User created."})
+	h.renderAdminUsers(w, r, "", "User created.")
 }
 
 func (h *Handler) adminDeleteUser(w http.ResponseWriter, r *http.Request) {
@@ -76,8 +80,7 @@ func (h *Handler) adminDeleteUser(w http.ResponseWriter, r *http.Request) {
 
 	actor := userFromCtx(r.Context())
 	if id == actor.ID {
-		users, _ := h.users.List(r.Context())
-		h.render(w, r, "admin_users", adminUsersPageData{Users: users, Error: "Cannot delete your own account."})
+		h.renderAdminUsers(w, r, "Cannot delete your own account.", "")
 		return
 	}
 
@@ -91,8 +94,7 @@ func (h *Handler) adminDeleteUser(w http.ResponseWriter, r *http.Request) {
 	snapshot := marshalUserSnapshot(target)
 	if err := h.users.Delete(r.Context(), id); err != nil {
 		if errors.Is(err, errs.ErrConstraint) {
-			users, _ := h.users.List(r.Context())
-			h.render(w, r, "admin_users", adminUsersPageData{Users: users, Error: "User has linked transactions and cannot be deleted."})
+			h.renderAdminUsers(w, r, "User has linked transactions and cannot be deleted.", "")
 			return
 		}
 		h.serverError(w, r, err)
@@ -103,9 +105,7 @@ func (h *Handler) adminDeleteUser(w http.ResponseWriter, r *http.Request) {
 	// Invalidate the SetupGate cache so the next request re-checks CountConfigured.
 	// Prevents the gate from staying permanently open if this was the last user.
 	h.setupConfigured.Store(false)
-
-	users, _ := h.users.List(r.Context())
-	h.render(w, r, "admin_users", adminUsersPageData{Users: users, Success: "User deleted."})
+	h.renderAdminUsers(w, r, "", "User deleted.")
 }
 
 // marshalUserSnapshot produces a JSON before-state snapshot for user audit entries,
@@ -241,10 +241,7 @@ func (h *Handler) adminResetPassword(w http.ResponseWriter, r *http.Request) {
 
 	password := r.FormValue("password")
 
-	renderErr := func(msg string) {
-		users, _ := h.users.List(r.Context())
-		h.render(w, r, "admin_users", adminUsersPageData{Users: users, Error: msg})
-	}
+	renderErr := func(msg string) { h.renderAdminUsers(w, r, msg, "") }
 
 	if len(password) < minPasswordLen {
 		renderErr(minPasswordMsg)
@@ -276,7 +273,5 @@ func (h *Handler) adminResetPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.logAudit(r, audit.ActionUpdate, audit.EntityUser, id, audit.SourceManual, snapshot)
-
-	users, _ := h.users.List(r.Context())
-	h.render(w, r, "admin_users", adminUsersPageData{Users: users, Success: "Password reset."})
+	h.renderAdminUsers(w, r, "", "Password reset.")
 }
