@@ -119,7 +119,6 @@ type qtCommitRow struct {
 	Notes       string `json:"n"`
 }
 
-// activeToken loads the stored token, refreshing and re-saving if near expiry.
 func (h *Handler) activeToken(r *http.Request) (questrade.Token, error) {
 	ctx := r.Context()
 	token, err := h.qtTokens.Get(ctx, userFromCtx(r.Context()).ID)
@@ -780,8 +779,6 @@ func (h *Handler) questradeCommit(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/transactions", http.StatusSeeOther)
 }
 
-// questradeSync fetches all Questrade accounts and their positions, creating any
-// missing Pacioli accounts and securities.
 func (h *Handler) questradeSync(w http.ResponseWriter, r *http.Request) {
 	if h.qtTokens == nil {
 		http.Redirect(w, r, "/questrade", http.StatusSeeOther)

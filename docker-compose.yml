@@ -8,6 +8,10 @@ services:
     environment:
       DATABASE_DSN: /data/pacioli.db
       ADDR: :8080
+      # Required for Questrade import and TOTP 2FA. Generate once and persist in .env
+      TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:-}
+      # Set to "true" when running behind a TLS-terminating reverse proxy
+      SECURE_COOKIES: ${SECURE_COOKIES:-false}
     restart: unless-stopped
 
 volumes:

@@ -23,17 +23,17 @@ internal/
   fx/           — FX Store interface
   errs/         — shared ErrNotFound
   sqlite/       — Store implementations + migration runner
-  service/      — business logic (ACB engine, FX fetcher, etc.)  [Phase 2+]
-  handler/      — HTTP handlers                                   [Phase 2+]
+  service/      — business logic (ACB engine, FX fetcher, etc.)
+  handler/      — HTTP handlers
 cmd/server/     — main.go, wires everything together
 ```
 
 ## Conventions
 
-- `Store` suffix for data access interfaces (`AccountStore`, not `AccountRepository`)
-- Concrete SQLite types match: `sqlite.AccountStore` satisfies `domain.AccountStore`
+- Domain interfaces named `Store` within their package — callers use `account.Store`, not `account.AccountStore` or `AccountRepository`
+- Concrete SQLite implementations use `<Domain>Store` naming: `sqlite.AccountStore` satisfies `account.Store`
 - Decimal strings in DB (TEXT columns) — avoids float precision loss
-- Errors: wrap with `fmt.Errorf("context: %w", err)`; use `domain.ErrNotFound` for missing rows
+- Errors: wrap with `fmt.Errorf("context: %w", err)`; use `errs.ErrNotFound` for missing rows
 - No comments unless WHY non-obvious
 
 ## Logging
@@ -64,7 +64,7 @@ make test           # go test -race ./...
 make lint           # golangci-lint run ./...
 make sec            # gosec -quiet ./...
 make vuln           # govulncheck ./...
-make check          # lint + sec + vuln (runs on pre-commit)
+make check          # build + test + lint + sec + vuln (runs on pre-commit)
 make install-hooks  # install git pre-commit hook
 make tidy           # go mod tidy
 ```
@@ -75,7 +75,7 @@ make tidy           # go mod tidy
 |------------------------|-------------------------|-------------------------------------------------|
 | `DATABASE_DSN`         | `pacioli.db`            | SQLite file path                                |
 | `ADDR`                 | `:8080`                 | HTTP listen address                             |
-| `TOKEN_ENCRYPTION_KEY` | *(optional)*            | 64 hex chars (32 bytes) — AES-256-GCM key for Questrade tokens at rest. If unset, Questrade integration is disabled. Generate: `openssl rand -hex 32` |
+| `TOKEN_ENCRYPTION_KEY` | *(optional)*            | 64 hex chars (32 bytes) — AES-256-GCM key for Questrade tokens and TOTP secrets at rest. If unset, Questrade integration and TOTP 2FA are disabled. Generate: `openssl rand -hex 32` |
 
 ## Adding a Migration
 

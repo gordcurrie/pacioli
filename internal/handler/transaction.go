@@ -229,7 +229,6 @@ func (h *Handler) createTransaction(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/transactions", http.StatusSeeOther)
 }
 
-// fxCellTmpl renders the FX rate cell content (rate + edit button).
 var fxCellTmpl = template.Must(template.New("fxcell").Parse(
 	`{{if .FXRate}}{{.FXRate.StringFixed 4}} <button ` +
 		`hx-get="/transactions/{{.ID}}/fx/edit" ` +
@@ -239,7 +238,6 @@ var fxCellTmpl = template.Must(template.New("fxcell").Parse(
 		`style="padding:0.1rem 0.4rem;font-size:0.75rem;margin:0">edit</button>{{else}}—{{end}}`,
 ))
 
-// fxEditTmpl renders an inline FX rate edit form.
 var fxEditTmpl = template.Must(template.New("fxedit").Parse(
 	`<form hx-post="/transactions/{{.ID}}/fx" ` +
 		`hx-target="#fx-cell-{{.ID}}" ` +
