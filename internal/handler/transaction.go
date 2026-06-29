@@ -257,20 +257,36 @@ var fxEditTmpl = template.Must(template.New("fxedit").Parse(
 		`</form>`,
 ))
 
-func (h *Handler) editTransactionFXForm(w http.ResponseWriter, r *http.Request) {
+// fetchOwnedTx parses the {id} path value, loads the transaction, and verifies
+// the transaction's account belongs to the current user. Writes the appropriate
+// HTTP error and returns (nil, false) on any failure.
+func (h *Handler) fetchOwnedTx(w http.ResponseWriter, r *http.Request) (*transaction.Transaction, bool) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		http.NotFound(w, r)
-		return
+		return nil, false
 	}
 	tx, err := h.transactions.GetByID(r.Context(), id)
 	if err != nil {
 		h.notFoundOrError(w, r, err)
-		return
+		return nil, false
 	}
 	acct, err := h.accounts.GetByID(r.Context(), tx.AccountID)
-	if err != nil || acct.UserID != userFromCtx(r.Context()).ID {
+	if err != nil {
+		loggerFromCtx(r.Context()).Error("fetchOwnedTx: account lookup", "account_id", tx.AccountID, "err", err)
 		http.NotFound(w, r)
+		return nil, false
+	}
+	if acct.UserID != userFromCtx(r.Context()).ID {
+		http.NotFound(w, r)
+		return nil, false
+	}
+	return tx, true
+}
+
+func (h *Handler) editTransactionFXForm(w http.ResponseWriter, r *http.Request) {
+	tx, ok := h.fetchOwnedTx(w, r)
+	if !ok {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -280,19 +296,8 @@ func (h *Handler) editTransactionFXForm(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *Handler) transactionFXCell(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	tx, err := h.transactions.GetByID(r.Context(), id)
-	if err != nil {
-		h.notFoundOrError(w, r, err)
-		return
-	}
-	acct, err := h.accounts.GetByID(r.Context(), tx.AccountID)
-	if err != nil || acct.UserID != userFromCtx(r.Context()).ID {
-		http.NotFound(w, r)
+	tx, ok := h.fetchOwnedTx(w, r)
+	if !ok {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -302,19 +307,8 @@ func (h *Handler) transactionFXCell(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) updateTransactionFX(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	tx, err := h.transactions.GetByID(r.Context(), id)
-	if err != nil {
-		h.notFoundOrError(w, r, err)
-		return
-	}
-	acct, err := h.accounts.GetByID(r.Context(), tx.AccountID)
-	if err != nil || acct.UserID != userFromCtx(r.Context()).ID {
-		http.NotFound(w, r)
+	tx, ok := h.fetchOwnedTx(w, r)
+	if !ok {
 		return
 	}
 
@@ -339,13 +333,13 @@ func (h *Handler) updateTransactionFX(w http.ResponseWriter, r *http.Request) {
 
 	snapshot, err := json.Marshal(tx)
 	if err != nil {
-		loggerFromCtx(r.Context()).Error("snapshot marshal", "entity", "transaction", "id", id, "err", err)
+		loggerFromCtx(r.Context()).Error("snapshot marshal", "entity", "transaction", "id", tx.ID, "err", err)
 	}
-	if err := h.transactions.UpdateFXRate(r.Context(), id, &fxRate, priceCAD, commCAD); err != nil {
+	if err := h.transactions.UpdateFXRate(r.Context(), tx.ID, &fxRate, priceCAD, commCAD); err != nil {
 		h.serverError(w, r, err)
 		return
 	}
-	h.logAudit(r, audit.ActionUpdate, audit.EntityTransaction, id, audit.Source(tx.Source), string(snapshot))
+	h.logAudit(r, audit.ActionUpdate, audit.EntityTransaction, tx.ID, audit.Source(tx.Source), string(snapshot))
 
 	tx.FXRate = &fxRate
 	tx.PriceCAD = priceCAD
@@ -358,29 +352,18 @@ func (h *Handler) updateTransactionFX(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) deleteTransaction(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	tx, err := h.transactions.GetByID(r.Context(), id)
-	if err != nil {
-		h.notFoundOrError(w, r, err)
-		return
-	}
-	acct, err := h.accounts.GetByID(r.Context(), tx.AccountID)
-	if err != nil || acct.UserID != userFromCtx(r.Context()).ID {
-		http.NotFound(w, r)
+	tx, ok := h.fetchOwnedTx(w, r)
+	if !ok {
 		return
 	}
 	snapshot, err := json.Marshal(tx)
 	if err != nil {
-		loggerFromCtx(r.Context()).Error("snapshot marshal", "entity", "transaction", "id", id, "err", err)
+		loggerFromCtx(r.Context()).Error("snapshot marshal", "entity", "transaction", "id", tx.ID, "err", err)
 	}
-	if err := h.transactions.Delete(r.Context(), id); err != nil {
+	if err := h.transactions.Delete(r.Context(), tx.ID); err != nil {
 		h.serverError(w, r, err)
 		return
 	}
-	h.logAudit(r, audit.ActionDelete, audit.EntityTransaction, id, audit.Source(tx.Source), string(snapshot))
+	h.logAudit(r, audit.ActionDelete, audit.EntityTransaction, tx.ID, audit.Source(tx.Source), string(snapshot))
 	w.WriteHeader(http.StatusOK)
 }
