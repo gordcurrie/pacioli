@@ -20,7 +20,11 @@ type adminUsersPageData struct {
 }
 
 func (h *Handler) renderAdminUsers(w http.ResponseWriter, r *http.Request, errMsg, successMsg string) {
-	users, _ := h.users.List(r.Context())
+	users, err := h.users.List(r.Context())
+	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
 	h.render(w, r, "admin_users", adminUsersPageData{Users: users, Error: errMsg, Success: successMsg})
 }
 
