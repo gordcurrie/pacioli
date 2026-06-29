@@ -2,11 +2,11 @@
 
 ## Duplication
 
-- [ ] **1. Config.validate() — 13 identical switch cases** (`handler/handler.go:75-106`)
-  Every branch is `case cfg.X == nil: return fmt.Errorf("handler: X is required")`. Table-driven loop over `[]struct{val any; name string}` shrinks to ~10 lines.
+- [~] **1. Config.validate() — 13 identical switch cases** (`handler/handler.go:75-106`)
+  Skipped: table-driven approach stores fields as `any`; typed nil stored in an interface doesn't compare equal to nil, so the nil checks silently break. Switch on concrete types is correct here.
 
-- [ ] **2. Decimal parse pattern repeated 3x** (`handler/transaction.go:150-163`)
-  `quantity`, `price`, `commission` each parsed identically — only field name differs. Extract `parseDecimal(r, field) (decimal.Decimal, error)` helper.
+- [~] **2. Decimal parse pattern repeated 3x** (`handler/transaction.go:150-163`)
+  Skipped: `qty` requires `IsPositive`, price/commission require `IsNegative` — different validation semantics per field. A shared helper would need a validation func param, adding more complexity than it removes.
 
 - [x] **3. editTransactionFXForm / transactionFXCell duplicate fetch** (`handler/transaction.go:260-302`)
   Both fetch the transaction, fetch the account, check ownership. Same 20-line block. Extract `fetchAndOwnTx(r) (*transaction.Transaction, *account.Account, error)`.
@@ -17,7 +17,7 @@
 - [x] **5. PRAGMA busy_timeout set twice** (`sqlite/db.go:34,41`)
   Set in both DSN string and via `ExecContext`. Pick one.
 
-- [ ] **6. Admin handlers repeat `h.users.List()` + render** (`handler/admin.go:36,79,94,107,245,280`)
+- [x] **6. Admin handlers repeat `h.users.List()` + render** (`handler/admin.go:36,79,94,107,245,280`)
   Extract `renderAdminUsers(w, r, errMsg string)` helper that fetches + renders.
 
 ---
@@ -27,18 +27,18 @@
 - [x] **7. questradePreview renderErr closure** (`handler/questrade.go:269-279`)
   Closure called 6+ times; rebuilds accounts/options slice on every invocation. Capture once before closure.
 
-- [ ] **8. userOwnsSecurityID called twice per ACB handler flow** (`handler/acb.go:80-86,95,158`)
+- [x] **8. userOwnsSecurityID called twice per ACB handler flow** (`handler/acb.go:80-86,95,158`)
   Fetches all security IDs for user each call. Load once, pass result.
 
-- [ ] **9. totpSetupPageData multiple overlapping render paths** (`handler/profile.go:216-270`)
+- [x] **9. totpSetupPageData multiple overlapping render paths** (`handler/profile.go:216-270`)
   Extract into single `h.renderTOTPSetup(w, r, data totpSetupPageData)`.
 
 ---
 
 ## Structural
 
-- [ ] **10. accountScanner interface** (`sqlite/account.go:92-94`)
-  Wraps `sql.Row`/`sql.Rows` for single use in `scanAccount`. Accept `interface { Scan(...any) error }` directly, or split into two typed functions.
+- [~] **10. accountScanner interface** (`sqlite/account.go:92-94`)
+  Skipped: the existing named interface IS `interface { Scan(...any) error }` — it's the standard Go pattern for abstracting `*sql.Row` / `*sql.Rows` behind a shared scanner. No improvement available.
 
 - [x] **11. NGSvc optional nil-check** (`handler/handler.go:229-232`)
   Only optional service; nil-guard in `Routes` silently disables feature. Add comment explaining this is intentional.

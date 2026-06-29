@@ -92,29 +92,23 @@ func (h *Handler) showACB(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	owned, err := h.userOwnsSecurityID(r.Context(), userFromCtx(r.Context()).ID, id)
-	if err != nil {
-		h.serverError(w, r, err)
-		return
-	}
-	if !owned {
-		http.NotFound(w, r)
-		return
-	}
-
 	sec, err := h.securities.GetByID(r.Context(), id)
 	if err != nil {
 		h.notFoundOrError(w, r, err)
 		return
 	}
 
-	txs, err := h.transactions.ListBySecurityNonRegistered(r.Context(), id, userFromCtx(r.Context()).ID)
+	allTxs, err := h.transactions.ListBySecurityAllAccounts(r.Context(), id, userFromCtx(r.Context()).ID)
 	if err != nil {
 		h.serverError(w, r, err)
 		return
 	}
+	if len(allTxs) == 0 {
+		http.NotFound(w, r)
+		return
+	}
 
-	allTxs, err := h.transactions.ListBySecurityAllAccounts(r.Context(), id, userFromCtx(r.Context()).ID)
+	txs, err := h.transactions.ListBySecurityNonRegistered(r.Context(), id, userFromCtx(r.Context()).ID)
 	if err != nil {
 		h.serverError(w, r, err)
 		return
