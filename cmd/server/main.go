@@ -1,3 +1,4 @@
+// Command server runs the Pacioli web server: applies migrations, wires dependencies, and starts HTTP.
 package main
 
 import (

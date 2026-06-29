@@ -11,3 +11,4 @@ import/
 dist/
 .DS_Store
 coverage.out
+.claude/

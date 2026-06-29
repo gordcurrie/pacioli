@@ -31,7 +31,6 @@ type importSession struct {
 	importID      string
 }
 
-// newImportSession loads the user's accounts and generates a random import ID.
 func (h *Handler) newImportSession(ctx context.Context, userID int64) (importSession, error) {
 	accounts, err := h.accounts.ListByUser(ctx, userID)
 	if err != nil {

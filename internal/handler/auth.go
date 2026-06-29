@@ -272,7 +272,6 @@ func (h *Handler) totpSubmit(w http.ResponseWriter, r *http.Request) {
 
 	code := r.FormValue("code")
 
-	// Try TOTP first.
 	if u.TOTPEnabled && u.TOTPSecret != "" && totp.Validate(code, u.TOTPSecret) {
 		if err := h.sessions.SetTOTPVerified(r.Context(), sess.ID); err != nil {
 			h.serverError(w, r, err)
@@ -282,7 +281,6 @@ func (h *Handler) totpSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Try recovery codes.
 	if ok, err := h.consumeRecoveryCode(r, u.ID, code); err != nil {
 		h.serverError(w, r, err)
 		return
