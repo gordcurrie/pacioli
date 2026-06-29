@@ -30,8 +30,8 @@ cmd/server/     — main.go, wires everything together
 
 ## Conventions
 
-- `Store` suffix for data access interfaces (`AccountStore`, not `AccountRepository`)
-- Concrete SQLite types match: `sqlite.AccountStore` satisfies `account.Store`
+- Domain interfaces named `Store` within their package — callers use `account.Store`, not `account.AccountStore` or `AccountRepository`
+- Concrete SQLite implementations use `<Domain>Store` naming: `sqlite.AccountStore` satisfies `account.Store`
 - Decimal strings in DB (TEXT columns) — avoids float precision loss
 - Errors: wrap with `fmt.Errorf("context: %w", err)`; use `errs.ErrNotFound` for missing rows
 - No comments unless WHY non-obvious

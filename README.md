@@ -70,7 +70,7 @@ Generate your encryption key once and save it — rotating it makes existing Que
 docker compose up --build
 ```
 
-Without `.env`, Questrade import and TOTP 2FA are unavailable.
+Without `TOKEN_ENCRYPTION_KEY` set, Questrade import and TOTP 2FA are unavailable.
 
 Data persists in the `pacioli-data` Docker volume.
 
