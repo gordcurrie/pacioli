@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -266,16 +267,16 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	accounts, err := h.accounts.ListByUser(ctx, userFromCtx(r.Context()).ID)
-	if err != nil {
-		h.serverError(w, r, err)
-		return
-	}
-	opts := make([]qtAccountOption, len(accounts))
-	for i, a := range accounts {
-		opts[i] = qtAccountOption{a.ID, a.Name}
-	}
 	renderErr := func(msg string) {
+		accounts, err := h.accounts.ListByUser(ctx, userFromCtx(ctx).ID)
+		if err != nil {
+			h.serverError(w, r, err)
+			return
+		}
+		opts := make([]qtAccountOption, len(accounts))
+		for i, a := range accounts {
+			opts[i] = qtAccountOption{a.ID, a.Name}
+		}
 		h.render(w, r, "questrade", qtPageData{Configured: true, Connected: true, Accounts: opts, Error: msg})
 	}
 
@@ -285,7 +286,8 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 			http.Redirect(w, r, "/questrade", http.StatusSeeOther)
 			return
 		}
-		renderErr("token error: " + err.Error())
+		// Token exists but is invalid/unrefreshable — show reconnect form.
+		h.render(w, r, "questrade", qtPageData{Configured: true, Connected: false, Error: "token error: " + err.Error()})
 		return
 	}
 
@@ -318,19 +320,20 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var pAccountName string
-	owned := false
-	for _, a := range accounts {
-		if a.ID == pAccountID {
-			pAccountName = a.Name
-			owned = true
-			break
+	pAccount, err := h.accounts.GetByID(ctx, pAccountID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) || errors.Is(err, errs.ErrNotFound) {
+			renderErr("account not found or not owned")
+		} else {
+			h.serverError(w, r, err)
 		}
+		return
 	}
-	if !owned {
+	if pAccount.UserID != userFromCtx(ctx).ID {
 		renderErr("account not found or not owned")
 		return
 	}
+	pAccountName := pAccount.Name
 
 	client := questrade.New(token)
 	// end + 1 day gives an exclusive upper bound covering the entire end date in any timezone.

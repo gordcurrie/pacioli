@@ -40,7 +40,7 @@ func Open(dsn string) (*sql.DB, error) {
 
 	if _, err := db.ExecContext(context.Background(), `PRAGMA journal_mode = WAL`); err != nil {
 		_ = db.Close()
-		return nil, fmt.Errorf("set WAL mode: %w", err)
+		return nil, fmt.Errorf("set journal_mode WAL: %w", err)
 	}
 
 	if err := runMigrations(db); err != nil {

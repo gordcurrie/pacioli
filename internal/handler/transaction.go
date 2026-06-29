@@ -273,7 +273,8 @@ func (h *Handler) fetchOwnedTx(w http.ResponseWriter, r *http.Request) (*transac
 	}
 	acct, err := h.accounts.GetByID(r.Context(), tx.AccountID)
 	if err != nil {
-		h.notFoundOrError(w, r, err)
+		loggerFromCtx(r.Context()).Error("fetchOwnedTx: account lookup", "account_id", tx.AccountID, "err", err)
+		http.NotFound(w, r)
 		return nil, false
 	}
 	if acct.UserID != userFromCtx(r.Context()).ID {
