@@ -64,8 +64,10 @@ Server starts at `http://localhost:8080`. On first visit, a setup wizard creates
 ### Docker
 
 ```bash
-docker compose up --build
+TOKEN_ENCRYPTION_KEY=$(openssl rand -hex 32) docker compose up --build
 ```
+
+`TOKEN_ENCRYPTION_KEY` is required for Questrade import and TOTP 2FA. Set it as an environment variable or add it to a `.env` file alongside `docker-compose.yml`.
 
 Data persists in the `pacioli-data` Docker volume.
 
@@ -114,7 +116,7 @@ On first visit the setup wizard prompts for an admin email, password, and option
 ## Development
 
 ```bash
-make check    # lint + gosec + govulncheck (also runs on pre-commit)
+make check    # build + test + lint + gosec + govulncheck (also runs on pre-commit)
 make test     # go test -race ./...
 make build    # compile to bin/pacioli
 make run      # go run ./cmd/server
@@ -135,7 +137,7 @@ Handler errors include the same `request_id` for correlation. Service and store 
 
 Per-concept packages in `internal/`. Each owns its domain type(s) and a `Store` interface. SQLite implementations live in `internal/sqlite/`. Business logic (ACB engine, gains calculator, NG detector, ROC service, BoC FX fetcher) lives in `internal/service/`.
 
-See [CLAUDE.md](CLAUDE.md) for full conventions and domain rules.
+See [CLAUDE.md](CLAUDE.md) for full conventions, Canadian tax domain rules, and architecture decisions.
 
 ## License
 
