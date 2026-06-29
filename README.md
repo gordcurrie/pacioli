@@ -63,11 +63,14 @@ Server starts at `http://localhost:8080`. On first visit, a setup wizard creates
 
 ### Docker
 
+Generate your encryption key once and save it — rotating it makes existing Questrade tokens and TOTP secrets unreadable:
+
 ```bash
-TOKEN_ENCRYPTION_KEY=$(openssl rand -hex 32) docker compose up --build
+echo "TOKEN_ENCRYPTION_KEY=$(openssl rand -hex 32)" > .env
+docker compose up --build
 ```
 
-`TOKEN_ENCRYPTION_KEY` is required for Questrade import and TOTP 2FA. Set it as an environment variable or add it to a `.env` file alongside `docker-compose.yml`.
+`TOKEN_ENCRYPTION_KEY` is required for Questrade import and TOTP 2FA. Keep the same value across restarts and redeploys.
 
 Data persists in the `pacioli-data` Docker volume.
 
