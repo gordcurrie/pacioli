@@ -272,3 +272,101 @@ func TestUserStore_UpdateTOTP_WithKey(t *testing.T) {
 	}
 }
 
+func TestUserStore_GetFirstUnconfigured(t *testing.T) {
+	db := newTestDB(t) // seeds 2 users with NULL password_hash
+	s := sqlite.NewUserStore(db, nil)
+	ctx := context.Background()
+
+	got, err := s.GetFirstUnconfigured(ctx)
+	if err != nil {
+		t.Fatalf("GetFirstUnconfigured: %v", err)
+	}
+	if got.PasswordHash != "" {
+		t.Errorf("expected empty PasswordHash, got %q", got.PasswordHash)
+	}
+
+	// Configure all seeded users; GetFirstUnconfigured should then return ErrNotFound.
+	users, _ := s.List(ctx)
+	for _, u := range users {
+		_ = s.UpdatePassword(ctx, u.ID, "some-hash")
+	}
+	_, err = s.GetFirstUnconfigured(ctx)
+	if !errors.Is(err, errs.ErrNotFound) {
+		t.Errorf("all configured: want ErrNotFound, got %v", err)
+	}
+}
+
+func TestUserStore_ConfigureUser(t *testing.T) {
+	db := newTestDB(t)
+	s := sqlite.NewUserStore(db, nil)
+	ctx := context.Background()
+
+	id, _ := s.Create(ctx, &user.User{Email: "tmp@x.com"})
+
+	if err := s.ConfigureUser(ctx, id, "configured@x.com", "hashed-pw", true); err != nil {
+		t.Fatalf("ConfigureUser: %v", err)
+	}
+
+	got, _ := s.GetByID(ctx, id)
+	if got.Email != "configured@x.com" {
+		t.Errorf("Email = %q, want configured@x.com", got.Email)
+	}
+	if got.PasswordHash != "hashed-pw" {
+		t.Errorf("PasswordHash = %q, want hashed-pw", got.PasswordHash)
+	}
+	if !got.IsAdmin {
+		t.Error("expected IsAdmin=true")
+	}
+
+	err := s.ConfigureUser(ctx, 9999, "x@x.com", "h", false)
+	if !errors.Is(err, errs.ErrNotFound) {
+		t.Errorf("missing user: want ErrNotFound, got %v", err)
+	}
+}
+
+func TestUserStore_EnableTOTPWithCodes(t *testing.T) {
+	key := make([]byte, 32)
+	db := newTestDB(t)
+	s := sqlite.NewUserStore(db, key)
+	ctx := context.Background()
+
+	id, _ := s.Create(ctx, &user.User{Email: "totp-atomic@x.com", PasswordHash: "h"})
+
+	codes := []*user.RecoveryCode{{Hash: "hash1"}, {Hash: "hash2"}}
+	if err := s.EnableTOTPWithCodes(ctx, id, "MYSECRET", codes); err != nil {
+		t.Fatalf("EnableTOTPWithCodes: %v", err)
+	}
+
+	got, _ := s.GetByID(ctx, id)
+	if !got.TOTPEnabled {
+		t.Error("expected TOTPEnabled=true")
+	}
+	if got.TOTPSecret != "MYSECRET" {
+		t.Errorf("TOTPSecret = %q, want MYSECRET", got.TOTPSecret)
+	}
+	listed, _ := s.ListRecoveryCodes(ctx, id)
+	if len(listed) != 2 {
+		t.Errorf("expected 2 recovery codes, got %d", len(listed))
+	}
+
+	// Re-enable with new secret and codes — old codes must be replaced, not accumulated.
+	newCodes := []*user.RecoveryCode{{Hash: "hash3"}}
+	_ = s.EnableTOTPWithCodes(ctx, id, "NEWSECRET", newCodes)
+	listed2, _ := s.ListRecoveryCodes(ctx, id)
+	if len(listed2) != 1 {
+		t.Errorf("after re-enable: expected 1 code, got %d", len(listed2))
+	}
+
+	// Missing user returns ErrNotFound.
+	err := s.EnableTOTPWithCodes(ctx, 9999, "S", nil)
+	if !errors.Is(err, errs.ErrNotFound) {
+		t.Errorf("missing user: want ErrNotFound, got %v", err)
+	}
+
+	// Nil key returns error.
+	noKey := sqlite.NewUserStore(db, nil)
+	if err := noKey.EnableTOTPWithCodes(ctx, id, "S", nil); err == nil {
+		t.Error("expected error with nil key")
+	}
+}
+

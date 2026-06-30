@@ -785,3 +785,289 @@ func TestUpdatePassword_Success(t *testing.T) {
 }
 
 func itoa(n int64) string { return fmt.Sprintf("%d", n) }
+
+// totpHandlerEnv is a handler + stores backed by a DB with AES-256-GCM key and one TOTP-enabled user.
+type totpHandlerEnv struct {
+	h          *handler.Handler
+	users      *sqlite.UserStore
+	sessions   *sqlite.SessionStore
+	userID     int64
+	password   string
+	totpSecret string
+}
+
+func newTOTPHandlerEnv(t *testing.T) *totpHandlerEnv {
+	t.Helper()
+	ctx := context.Background()
+	key := make([]byte, 32)
+
+	db, err := sqlite.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	txStore := sqlite.NewTransactionStore(db)
+	secStore := sqlite.NewSecurityStore(db)
+	distStore := sqlite.NewDistributionStore(db)
+	auditStore := sqlite.NewAuditStore(db)
+	accountStore := sqlite.NewAccountStore(db)
+	userStore := sqlite.NewUserStore(db, key)
+	sessionStore := sqlite.NewSessionStore(db)
+
+	const pw = "pw-totp-user"
+	hash, _ := bcrypt.GenerateFromPassword([]byte(pw), 4)
+	uid, _ := userStore.Create(ctx, &user.User{Email: "totp-env@test.com", PasswordHash: string(hash)})
+
+	totpKey, _ := totp.Generate(totp.GenerateOpts{Issuer: "Test", AccountName: "totp-env@test.com"})
+	_ = userStore.UpdateTOTP(ctx, uid, totpKey.Secret(), true)
+
+	acbSvc := service.NewACBService(txStore)
+	h, err := handler.New(&handler.Config{
+		Accounts: accountStore, Securities: secStore, Transactions: txStore,
+		Audits: auditStore, Users: userStore, Sessions: sessionStore,
+		ACBSvc:       acbSvc,
+		GainsSvc:     service.NewGainsService(txStore, secStore),
+		ROCSvc:       service.NewROCService(txStore, distStore, secStore),
+		PortfolioSvc: service.NewPortfolioService(txStore, secStore, acbSvc),
+		YahooSvc:     service.NewYahooFetcher(service.NewBOCFetcher(sqlite.NewFXStore(db))),
+		EncKey:       key,
+		Logger:       slog.Default(),
+		TemplateFS:   web.Templates,
+	})
+	if err != nil {
+		t.Fatalf("new handler: %v", err)
+	}
+	return &totpHandlerEnv{
+		h: h, users: userStore, sessions: sessionStore,
+		userID: uid, password: pw, totpSecret: totpKey.Secret(),
+	}
+}
+
+// --- loginSubmit additional paths ---
+
+func TestLoginSubmit_EmptyPasswordHash_RejectsWithSentinelTiming(t *testing.T) {
+	h, userStore := newBlankTestEnv(t)
+	ctx := context.Background()
+	mux := http.NewServeMux()
+	h.Routes(mux)
+
+	// User exists but has no password set (e.g. imported account pre-setup).
+	if _, err := userStore.Create(ctx, &user.User{Email: "nohash@test.com"}); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	rr := postForm(mux, "/login", url.Values{
+		"email":    {"nohash@test.com"},
+		"password": {"anything"},
+	}, nil)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("got %d want 200", rr.Code)
+	}
+	if !strings.Contains(rr.Body.String(), "Invalid email or password") {
+		t.Error("unconfigured account should show same error as wrong password")
+	}
+}
+
+func TestLoginSubmit_TOTPEnabled_RedirectsTo2FA(t *testing.T) {
+	env := newTOTPHandlerEnv(t)
+	mux := http.NewServeMux()
+	env.h.Routes(mux)
+
+	rr := postForm(mux, "/login", url.Values{
+		"email":    {"totp-env@test.com"},
+		"password": {env.password},
+	}, nil)
+
+	if rr.Code != http.StatusSeeOther {
+		t.Errorf("TOTP login: got %d want 303\nbody: %s", rr.Code, rr.Body.String())
+	}
+	if rr.Header().Get("Location") != "/login/2fa" {
+		t.Errorf("redirect = %q want /login/2fa", rr.Header().Get("Location"))
+	}
+
+	// Session must exist with totp_verified=false.
+	var sessionCookie string
+	for _, c := range rr.Result().Cookies() {
+		if c.Name == "pacioli_session" {
+			sessionCookie = c.Value
+		}
+	}
+	if sessionCookie == "" {
+		t.Fatal("no session cookie set")
+	}
+	sess, err := env.sessions.GetByTokenHash(context.Background(), sqlite.HashToken(sessionCookie))
+	if err != nil {
+		t.Fatalf("GetByTokenHash: %v", err)
+	}
+	if sess.TOTPVerified {
+		t.Error("session should have totp_verified=false after TOTP login")
+	}
+}
+
+// --- totpSubmit additional paths ---
+
+func TestTOTPSubmit_NoCookie_RedirectsLogin(t *testing.T) {
+	h, _ := newBlankTestEnv(t)
+	mux := http.NewServeMux()
+	h.Routes(mux)
+
+	rr := postForm(mux, "/login/2fa", url.Values{"code": {"123456"}}, nil)
+
+	if rr.Code != http.StatusSeeOther {
+		t.Errorf("no cookie: got %d want 303", rr.Code)
+	}
+	if rr.Header().Get("Location") != "/login" {
+		t.Errorf("redirect = %q want /login", rr.Header().Get("Location"))
+	}
+}
+
+func TestTOTPSubmit_ExpiredSession_RedirectsLogin(t *testing.T) {
+	env := newTestEnv(t)
+	ctx := context.Background()
+
+	expiredToken := "expired-totp-session"
+	if err := env.sessions.Create(ctx, &session.Session{
+		UserID:       env.userID,
+		TokenHash:    sqlite.HashToken(expiredToken),
+		TOTPVerified: false,
+		ExpiresAt:    time.Now().Add(-time.Hour),
+	}); err != nil {
+		t.Fatalf("create expired session: %v", err)
+	}
+
+	mux := http.NewServeMux()
+	env.handler.Routes(mux)
+
+	cookie := &http.Cookie{Name: "pacioli_session", Value: expiredToken}
+	rr := postForm(mux, "/login/2fa", url.Values{"code": {"123456"}}, cookie)
+
+	if rr.Code != http.StatusSeeOther {
+		t.Errorf("expired session: got %d want 303", rr.Code)
+	}
+	if rr.Header().Get("Location") != "/login" {
+		t.Errorf("redirect = %q want /login", rr.Header().Get("Location"))
+	}
+}
+
+func TestTOTPSubmit_RecoveryCode_Success(t *testing.T) {
+	env := newTOTPHandlerEnv(t)
+	ctx := context.Background()
+
+	const plainCode = "RCVR-TEST-0001"
+	codeHash, _ := bcrypt.GenerateFromPassword([]byte(plainCode), 4)
+	if err := env.users.CreateRecoveryCodes(ctx, []*user.RecoveryCode{
+		{UserID: env.userID, Hash: string(codeHash)},
+	}); err != nil {
+		t.Fatalf("CreateRecoveryCodes: %v", err)
+	}
+
+	rawToken := "pre-totp-recovery"
+	if err := env.sessions.Create(ctx, &session.Session{
+		UserID:       env.userID,
+		TokenHash:    sqlite.HashToken(rawToken),
+		TOTPVerified: false,
+		ExpiresAt:    time.Now().Add(time.Hour),
+	}); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	mux := http.NewServeMux()
+	env.h.Routes(mux)
+
+	cookie := &http.Cookie{Name: "pacioli_session", Value: rawToken}
+	rr := postForm(mux, "/login/2fa", url.Values{"code": {plainCode}}, cookie)
+
+	if rr.Code != http.StatusSeeOther {
+		t.Errorf("recovery code: got %d want 303\nbody: %s", rr.Code, rr.Body.String())
+	}
+	if rr.Header().Get("Location") != "/" {
+		t.Errorf("redirect = %q want /", rr.Header().Get("Location"))
+	}
+
+	sess, _ := env.sessions.GetByTokenHash(ctx, sqlite.HashToken(rawToken))
+	if !sess.TOTPVerified {
+		t.Error("session should be TOTP verified after valid recovery code")
+	}
+
+	// Recovery code must be consumed.
+	remaining, _ := env.users.ListRecoveryCodes(ctx, env.userID)
+	if len(remaining) != 0 {
+		t.Errorf("recovery code should be marked used, got %d remaining", len(remaining))
+	}
+}
+
+// --- setupSubmit additional paths ---
+
+func TestSetupSubmit_ReuseUnconfiguredUser(t *testing.T) {
+	h, userStore := newBlankTestEnv(t)
+	ctx := context.Background()
+	mux := http.NewServeMux()
+	h.Routes(mux)
+
+	// Unconfigured user with a different email (simulates imported data with no auth set).
+	unconfiguredID, err := userStore.Create(ctx, &user.User{Email: "imported@example.com"})
+	if err != nil {
+		t.Fatalf("create unconfigured user: %v", err)
+	}
+
+	rr := postForm(mux, "/setup", url.Values{
+		"email":    {"admin@pacioli.com"},
+		"password": {"securepassword1"},
+		"confirm":  {"securepassword1"},
+	}, nil)
+
+	if rr.Code != http.StatusSeeOther {
+		t.Errorf("got %d want 303\nbody: %s", rr.Code, rr.Body.String())
+	}
+
+	// Original unconfigured row must be reused and fully configured.
+	u, err := userStore.GetByID(ctx, unconfiguredID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if u.Email != "admin@pacioli.com" {
+		t.Errorf("Email = %q, want admin@pacioli.com", u.Email)
+	}
+	if u.PasswordHash == "" {
+		t.Error("PasswordHash should be set after setup")
+	}
+	if !u.IsAdmin {
+		t.Error("reused user should be set as admin")
+	}
+}
+
+func TestSetupSubmit_ConfigureExistingUnconfiguredEmailMatch(t *testing.T) {
+	h, userStore := newBlankTestEnv(t)
+	ctx := context.Background()
+	mux := http.NewServeMux()
+	h.Routes(mux)
+
+	// User with target email already exists but has no password.
+	existingID, err := userStore.Create(ctx, &user.User{Email: "admin@pacioli.com"})
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	rr := postForm(mux, "/setup", url.Values{
+		"email":    {"admin@pacioli.com"},
+		"password": {"securepassword1"},
+		"confirm":  {"securepassword1"},
+	}, nil)
+
+	if rr.Code != http.StatusSeeOther {
+		t.Errorf("got %d want 303\nbody: %s", rr.Code, rr.Body.String())
+	}
+
+	u, err := userStore.GetByID(ctx, existingID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if u.PasswordHash == "" {
+		t.Error("PasswordHash should be set after setup")
+	}
+	if !u.IsAdmin {
+		t.Error("existing user should be promoted to admin")
+	}
+}
