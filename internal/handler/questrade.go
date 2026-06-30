@@ -408,7 +408,9 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 		if sec.Exchange == "" {
-			return qtSecRef{}, errs.ErrNotFound
+			// Not listed on Questrade (e.g. private/alt security) — create a minimal
+			// placeholder so the import can proceed; user can edit name/details later.
+			sec.Name = ticker
 		}
 		if err := h.securities.Create(ctx, sec); err != nil {
 			return qtSecRef{}, fmt.Errorf("create security: %w", err)
@@ -522,6 +524,10 @@ func (h *Handler) processQTActivity(
 		return flagRow("zero quantity — record manually")
 	}
 
+	if strings.TrimSpace(act.Symbol) == "" {
+		return flagRow("no symbol — cannot identify security; skip or record manually")
+	}
+
 	sec, secOK := pctx.secByTicker[act.Symbol]
 	_, hadErrBefore := pctx.errTickers[act.Symbol]
 	if !secOK && pctx.tickerCount[act.Symbol] <= 1 && !pctx.notFoundTickers[act.Symbol] && !hadErrBefore {
@@ -529,8 +535,6 @@ func (h *Handler) processQTActivity(
 			pctx.secByTicker[act.Symbol] = ref
 			sec = ref
 			secOK = true
-		} else if errors.Is(err, errs.ErrNotFound) {
-			pctx.notFoundTickers[act.Symbol] = true
 		} else {
 			pctx.errTickers[act.Symbol] = err.Error()
 		}
