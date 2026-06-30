@@ -97,9 +97,8 @@ type qtPreviewCtx struct {
 	pAccountName    string
 	alreadyImported map[string]bool
 	tickerCount     map[string]int
-	secByTicker     map[string]qtSecRef
-	notFoundTickers map[string]bool
-	errTickers      map[string]string            // ticker → error for transient auto-create failures
+	secByTicker map[string]qtSecRef
+	errTickers  map[string]string            // ticker → error for transient auto-create failures
 	bocRates        map[time.Time]decimal.Decimal // date → USD/CAD rate, avoids redundant DB reads
 	tryAutoCreate   func(ticker, currency string) (qtSecRef, error)
 }
@@ -419,7 +418,6 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 		return qtSecRef{sec.ID, sec.Currency}, nil
 	}
 
-	notFoundTickers := make(map[string]bool)
 	var previewRows []qtPreviewRow
 	var commitRows []qtCommitRow
 	totOK, totSkip, totFlag := 0, 0, 0
@@ -429,9 +427,8 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 		pAccountName:    pAccountName,
 		alreadyImported: alreadyImported,
 		tickerCount:     tickerCount,
-		secByTicker:     secByTicker,
-		notFoundTickers: notFoundTickers,
-		errTickers:      make(map[string]string),
+		secByTicker: secByTicker,
+		errTickers:  make(map[string]string),
 		bocRates:        make(map[time.Time]decimal.Decimal),
 		tryAutoCreate:   tryAutoCreateSecurity,
 	}
@@ -472,7 +469,7 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 // processQTActivity maps a single Questrade activity to a preview row, an optional
 // commit row, and a disposition that tells the caller how to count and display the result.
 // act.Price may be mutated for CAD-reported USD TFI activities (ClassifyQTActivity sets it from description).
-// pctx caches are updated in place (secByTicker, notFoundTickers).
+// pctx caches are updated in place (secByTicker, errTickers).
 func (h *Handler) processQTActivity(
 	ctx context.Context,
 	lineNum int,
@@ -485,10 +482,11 @@ func (h *Handler) processQTActivity(
 		return qtPreviewRow{}, nil, qtRowSilentSkip
 	}
 
+	ticker := strings.TrimSpace(act.Symbol)
 	baseRow := qtPreviewRow{
 		Line:        lineNum,
 		TradeDate:   act.TradeDate.Format(time.DateOnly),
-		Symbol:      act.Symbol,
+		Symbol:      ticker,
 		Currency:    act.Currency,
 		TxType:      string(txType),
 		AccountName: pctx.pAccountName,
@@ -524,29 +522,29 @@ func (h *Handler) processQTActivity(
 		return flagRow("zero quantity — record manually")
 	}
 
-	if strings.TrimSpace(act.Symbol) == "" {
+	if ticker == "" {
 		return flagRow("no symbol — cannot identify security; skip or record manually")
 	}
 
-	sec, secOK := pctx.secByTicker[act.Symbol]
-	_, hadErrBefore := pctx.errTickers[act.Symbol]
-	if !secOK && pctx.tickerCount[act.Symbol] <= 1 && !pctx.notFoundTickers[act.Symbol] && !hadErrBefore {
-		if ref, err := pctx.tryAutoCreate(act.Symbol, act.Currency); err == nil {
-			pctx.secByTicker[act.Symbol] = ref
+	sec, secOK := pctx.secByTicker[ticker]
+	_, hadErrBefore := pctx.errTickers[ticker]
+	if !secOK && pctx.tickerCount[ticker] <= 1 && !hadErrBefore {
+		if ref, err := pctx.tryAutoCreate(ticker, act.Currency); err == nil {
+			pctx.secByTicker[ticker] = ref
 			sec = ref
 			secOK = true
 		} else {
-			pctx.errTickers[act.Symbol] = err.Error()
+			pctx.errTickers[ticker] = err.Error()
 		}
 	}
 	if !secOK {
-		if pctx.tickerCount[act.Symbol] > 1 {
-			return flagRow("ambiguous ticker — multiple securities share: " + act.Symbol)
+		if pctx.tickerCount[ticker] > 1 {
+			return flagRow("ambiguous ticker — multiple securities share: " + ticker)
 		}
-		if errMsg, ok := pctx.errTickers[act.Symbol]; ok {
-			return flagRow("security lookup failed for " + act.Symbol + ": " + errMsg)
+		if errMsg, ok := pctx.errTickers[ticker]; ok {
+			return flagRow("security lookup failed for " + ticker + ": " + errMsg)
 		}
-		return flagRow("security not found — add security with ticker: " + act.Symbol)
+		return flagRow("security not found — add security with ticker: " + ticker)
 	}
 
 	bocRate := func(date time.Time) (decimal.Decimal, error) {
