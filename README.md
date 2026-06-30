@@ -114,7 +114,7 @@ docker run --rm -v pacioli-data:/data -v $(pwd):/out alpine \
 
 **First run**
 
-On first visit the setup wizard prompts for an admin email, password, and optionally a second admin. After setup is complete, the wizard is permanently disabled (no `FIRST_RUN` flag needed).
+On first visit the setup wizard prompts for an admin email and password. After setup is complete, the wizard is permanently disabled (no `FIRST_RUN` flag needed).
 
 ## Development
 
