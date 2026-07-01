@@ -452,29 +452,33 @@ func TestQuestradePreview_AlreadyImported_VisibleSkip(t *testing.T) {
 	}
 }
 
-func TestQuestradePreview_SecurityNotFound_Flags(t *testing.T) {
+func TestQuestradePreview_UnknownTicker_AutoCreatesPlaceholder(t *testing.T) {
 	date := time.Date(2026, 5, 28, 0, 0, 0, 0, time.UTC)
 	acts := []map[string]interface{}{
-		qtAct("Buy", "UNKNOWN", "", "CAD", "10", "50.00", date),
+		qtAct("Buy", "PRIVALT", "", "CAD", "10", "50.00", date),
 	}
-	// Server returns empty symbol search so auto-create fails.
+	// Server returns empty symbol search results (ticker not on Questrade — e.g. private/alt).
 	srv := makeQTServer(t, acts)
 	env := newQTTestEnv(t, srv)
 	ctx := context.Background()
 
 	acc := createTestAccount(t, ctx, env.accounts, env.userID)
-	// Do NOT create a security for "UNKNOWN".
 
 	rr := doPreview(t, env, baseForm(acc.ID, date))
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status: got %d want 200", rr.Code)
 	}
 	body := rr.Body.String()
-	if !strings.Contains(body, "1 flagged") {
-		t.Errorf("expected '1 flagged' for unknown ticker; body snippet: %s", body[:min(400, len(body))])
+	if !strings.Contains(body, "1 ready") {
+		t.Errorf("expected '1 ready' — unknown ticker should auto-create placeholder; body snippet: %s", body[:min(400, len(body))])
 	}
-	if !strings.Contains(body, "security not found") {
-		t.Errorf("expected 'security not found' in flag message")
+	// Placeholder security should exist in the DB with the ticker as name.
+	sec, err := env.securities.GetByTickerExchange(ctx, "PRIVALT", "")
+	if err != nil {
+		t.Fatalf("placeholder security not created: %v", err)
+	}
+	if sec.Name != "PRIVALT" {
+		t.Errorf("placeholder name: got %q want %q", sec.Name, "PRIVALT")
 	}
 }
 
