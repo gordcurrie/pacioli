@@ -412,6 +412,12 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 			sec.Name = ticker
 		}
 		if err := h.securities.Create(ctx, sec); err != nil {
+			// A concurrent request may have created the same security first (e.g. double-submit).
+			// Try a lookup before surfacing the error.
+			existing, lookupErr := h.securities.GetByTickerExchange(ctx, sec.Ticker, sec.Exchange)
+			if lookupErr == nil {
+				return qtSecRef{existing.ID, existing.Currency}, nil
+			}
 			return qtSecRef{}, fmt.Errorf("create security: %w", err)
 		}
 		h.logAudit(r, audit.ActionCreate, audit.EntitySecurity, sec.ID, audit.SourceQuestrade, "")
