@@ -846,7 +846,7 @@ func newTOTPHandlerEnv(t *testing.T) *totpHandlerEnv {
 
 // --- loginSubmit additional paths ---
 
-func TestLoginSubmit_EmptyPasswordHash_RejectsWithSentinelTiming(t *testing.T) {
+func TestLoginSubmit_EmptyPasswordHash_Rejects(t *testing.T) {
 	h, userStore := newBlankTestEnv(t)
 	ctx := context.Background()
 	mux := http.NewServeMux()
@@ -949,6 +949,12 @@ func TestTOTPSubmit_ExpiredSession_RedirectsLogin(t *testing.T) {
 	if rr.Header().Get("Location") != "/login" {
 		t.Errorf("redirect = %q want /login", rr.Header().Get("Location"))
 	}
+	for _, c := range rr.Result().Cookies() {
+		if c.Name == "pacioli_session" && c.MaxAge < 0 {
+			return
+		}
+	}
+	t.Error("expired session should clear pacioli_session cookie (MaxAge<0)")
 }
 
 func TestTOTPSubmit_RecoveryCode_Success(t *testing.T) {

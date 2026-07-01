@@ -286,9 +286,14 @@ func TestUserStore_GetFirstUnconfigured(t *testing.T) {
 	}
 
 	// Configure all seeded users; GetFirstUnconfigured should then return ErrNotFound.
-	users, _ := s.List(ctx)
+	users, err := s.List(ctx)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
 	for _, u := range users {
-		_ = s.UpdatePassword(ctx, u.ID, "some-hash")
+		if err := s.UpdatePassword(ctx, u.ID, "some-hash"); err != nil {
+			t.Fatalf("UpdatePassword %d: %v", u.ID, err)
+		}
 	}
 	_, err = s.GetFirstUnconfigured(ctx)
 	if !errors.Is(err, errs.ErrNotFound) {
