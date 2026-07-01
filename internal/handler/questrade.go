@@ -394,10 +394,12 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 			Currency: currency,
 			Source:   string(audit.SourceQuestrade),
 		}
+		found := false
 		for _, sr := range results {
 			if sr.Symbol != ticker {
 				continue
 			}
+			found = true
 			sec.Exchange = sr.Exchange
 			sec.Name = sr.Description
 			sec.Type = mapQTSecurityType(sr.SecurityType)
@@ -406,7 +408,7 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 			}
 			break
 		}
-		if sec.Exchange == "" {
+		if !found {
 			// Not listed on Questrade (e.g. private/alt security) — create a minimal
 			// placeholder so the import can proceed; user can edit name/details later.
 			sec.Name = ticker
