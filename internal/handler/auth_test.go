@@ -377,66 +377,21 @@ func TestRequireAuth_ExpiredSession_RedirectsLogin(t *testing.T) {
 }
 
 func TestRequireAuth_TOTPPending_Redirects2FA(t *testing.T) {
-	env := newTestEnv(t)
+	env := newTOTPHandlerEnv(t)
 	ctx := context.Background()
 
-	// Enable TOTP on the user (no real secret needed — just the flag).
-	u, _ := env.users.GetByID(ctx, env.userID)
-	_ = env.users.UpdatePassword(ctx, u.ID, u.PasswordHash) // no-op, just satisfy interface
-
-	// Create a session with totp_verified=false for a TOTP-enabled user.
-	// We'll hack this by creating the user with TOTP enabled via DB directly.
-	// Simpler: create a second user with TOTP enabled via the store with a key.
-	key := make([]byte, 32)
-	db2, err := sqlite.Open(":memory:")
-	if err != nil {
-		t.Fatalf("open db2: %v", err)
-	}
-	defer db2.Close()
-
-	txStore2 := sqlite.NewTransactionStore(db2)
-	secStore2 := sqlite.NewSecurityStore(db2)
-	distStore2 := sqlite.NewDistributionStore(db2)
-	auditStore2 := sqlite.NewAuditStore(db2)
-	accountStore2 := sqlite.NewAccountStore(db2)
-	userStore2 := sqlite.NewUserStore(db2, key)
-	sessionStore2 := sqlite.NewSessionStore(db2)
-
-	acbSvc2 := service.NewACBService(txStore2)
-	gainsSvc2 := service.NewGainsService(txStore2, secStore2)
-	rocSvc2 := service.NewROCService(txStore2, distStore2, secStore2)
-	portfolioSvc2 := service.NewPortfolioService(txStore2, secStore2, acbSvc2)
-	fxStore2 := sqlite.NewFXStore(db2)
-	yahooSvc2 := service.NewYahooFetcher(service.NewBOCFetcher(fxStore2))
-
-	hash, _ := bcrypt.GenerateFromPassword([]byte("pw"), 4)
-	uid, _ := userStore2.Create(ctx, &user.User{Email: "totp@test.com", PasswordHash: string(hash)})
-
-	// Generate a real TOTP key and enable it.
-	totpKey, _ := totp.Generate(totp.GenerateOpts{Issuer: "Test", AccountName: "totp@test.com"})
-	_ = userStore2.UpdateTOTP(ctx, uid, totpKey.Secret(), true)
-
 	rawToken := "totp-pending-token"
-	_ = sessionStore2.Create(ctx, &session.Session{
-		UserID:       uid,
+	if err := env.sessions.Create(ctx, &session.Session{
+		UserID:       env.userID,
 		TokenHash:    sqlite.HashToken(rawToken),
-		TOTPVerified: false, // not yet verified
+		TOTPVerified: false,
 		ExpiresAt:    time.Now().Add(time.Hour),
-	})
-
-	h2, err := handler.New(&handler.Config{
-		Accounts: accountStore2, Securities: secStore2, Transactions: txStore2,
-		Audits: auditStore2, Users: userStore2, Sessions: sessionStore2,
-		ACBSvc: acbSvc2, GainsSvc: gainsSvc2, ROCSvc: rocSvc2,
-		PortfolioSvc: portfolioSvc2, YahooSvc: yahooSvc2,
-		Logger: slog.Default(), TemplateFS: web.Templates,
-	})
-	if err != nil {
-		t.Fatalf("new handler: %v", err)
+	}); err != nil {
+		t.Fatalf("create session: %v", err)
 	}
 
 	mux := http.NewServeMux()
-	h2.Routes(mux)
+	env.h.Routes(mux)
 
 	req := httptest.NewRequest(http.MethodGet, "/accounts", http.NoBody)
 	req.AddCookie(&http.Cookie{Name: "pacioli_session", Value: rawToken})
@@ -551,59 +506,26 @@ func TestTOTPPage(t *testing.T) {
 }
 
 func TestTOTPSubmit_ValidCode(t *testing.T) {
+	env := newTOTPHandlerEnv(t)
 	ctx := context.Background()
-	key := make([]byte, 32)
-	db, err := sqlite.Open(":memory:")
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	defer db.Close()
-
-	txStore := sqlite.NewTransactionStore(db)
-	secStore := sqlite.NewSecurityStore(db)
-	distStore := sqlite.NewDistributionStore(db)
-	auditStore := sqlite.NewAuditStore(db)
-	accountStore := sqlite.NewAccountStore(db)
-	userStore := sqlite.NewUserStore(db, key)
-	sessionStore := sqlite.NewSessionStore(db)
-
-	hash, _ := bcrypt.GenerateFromPassword([]byte("pw"), 4)
-	uid, _ := userStore.Create(ctx, &user.User{Email: "totp@test.com", PasswordHash: string(hash)})
-
-	totpKey, _ := totp.Generate(totp.GenerateOpts{Issuer: "Test", AccountName: "totp@test.com"})
-	_ = userStore.UpdateTOTP(ctx, uid, totpKey.Secret(), true)
 
 	rawToken := "pre-totp-raw"
-	_ = sessionStore.Create(ctx, &session.Session{
-		UserID:       uid,
+	if err := env.sessions.Create(ctx, &session.Session{
+		UserID:       env.userID,
 		TokenHash:    sqlite.HashToken(rawToken),
 		TOTPVerified: false,
 		ExpiresAt:    time.Now().Add(time.Hour),
-	})
-
-	acbSvcLocal := service.NewACBService(txStore)
-	fxStoreLocal := sqlite.NewFXStore(db)
-	bocSvcLocal := service.NewBOCFetcher(fxStoreLocal)
-	h, err := handler.New(&handler.Config{
-		Accounts: accountStore, Securities: secStore, Transactions: txStore,
-		Audits: auditStore, Users: userStore, Sessions: sessionStore,
-		ACBSvc:       acbSvcLocal,
-		GainsSvc:     service.NewGainsService(txStore, secStore),
-		ROCSvc:       service.NewROCService(txStore, distStore, secStore),
-		PortfolioSvc: service.NewPortfolioService(txStore, secStore, acbSvcLocal),
-		YahooSvc:     service.NewYahooFetcher(bocSvcLocal),
-		EncKey:       key,
-		Logger:       slog.Default(),
-		TemplateFS:   web.Templates,
-	})
-	if err != nil {
-		t.Fatalf("new handler: %v", err)
+	}); err != nil {
+		t.Fatalf("create session: %v", err)
 	}
 
 	mux := http.NewServeMux()
-	h.Routes(mux)
+	env.h.Routes(mux)
 
-	validCode, _ := totp.GenerateCode(totpKey.Secret(), time.Now())
+	validCode, err := totp.GenerateCode(env.totpSecret, time.Now())
+	if err != nil {
+		t.Fatalf("generate code: %v", err)
+	}
 	cookie := &http.Cookie{Name: "pacioli_session", Value: rawToken}
 	rr := postForm(mux, "/login/2fa", url.Values{"code": {validCode}}, cookie)
 
@@ -614,55 +536,29 @@ func TestTOTPSubmit_ValidCode(t *testing.T) {
 		t.Errorf("redirect = %q want /", rr.Header().Get("Location"))
 	}
 
-	// Session should be totp_verified.
-	sess, _ := sessionStore.GetByTokenHash(ctx, sqlite.HashToken(rawToken))
+	sess, err := env.sessions.GetByTokenHash(ctx, sqlite.HashToken(rawToken))
+	if err != nil {
+		t.Fatalf("GetByTokenHash: %v", err)
+	}
 	if !sess.TOTPVerified {
 		t.Error("session should be TOTP verified after successful code")
 	}
 }
 
 func TestTOTPSubmit_InvalidCode_RerendersError(t *testing.T) {
+	env := newTOTPHandlerEnv(t)
 	ctx := context.Background()
-	key := make([]byte, 32)
-	db, err := sqlite.Open(":memory:")
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	defer db.Close()
-
-	txStore := sqlite.NewTransactionStore(db)
-	secStore := sqlite.NewSecurityStore(db)
-	distStore := sqlite.NewDistributionStore(db)
-	auditStore := sqlite.NewAuditStore(db)
-	accountStore := sqlite.NewAccountStore(db)
-	userStore := sqlite.NewUserStore(db, key)
-	sessionStore := sqlite.NewSessionStore(db)
-
-	hash, _ := bcrypt.GenerateFromPassword([]byte("pw"), 4)
-	uid, _ := userStore.Create(ctx, &user.User{Email: "totp2@test.com", PasswordHash: string(hash)})
-	totpKey, _ := totp.Generate(totp.GenerateOpts{Issuer: "Test", AccountName: "totp2@test.com"})
-	_ = userStore.UpdateTOTP(ctx, uid, totpKey.Secret(), true)
 
 	rawToken := "pre-totp-invalid"
-	_ = sessionStore.Create(ctx, &session.Session{
-		UserID: uid, TokenHash: sqlite.HashToken(rawToken),
+	if err := env.sessions.Create(ctx, &session.Session{
+		UserID: env.userID, TokenHash: sqlite.HashToken(rawToken),
 		TOTPVerified: false, ExpiresAt: time.Now().Add(time.Hour),
-	})
-
-	h, err := handler.New(&handler.Config{
-		Accounts: accountStore, Securities: secStore, Transactions: txStore,
-		Audits: auditStore, Users: userStore, Sessions: sessionStore,
-		ACBSvc: service.NewACBService(txStore), GainsSvc: service.NewGainsService(txStore, secStore),
-		ROCSvc: service.NewROCService(txStore, distStore, secStore),
-		PortfolioSvc: service.NewPortfolioService(txStore, secStore, service.NewACBService(txStore)),
-		YahooSvc: service.NewYahooFetcher(service.NewBOCFetcher(sqlite.NewFXStore(db))),
-		EncKey: key, Logger: slog.Default(), TemplateFS: web.Templates,
-	})
-	if err != nil {
-		t.Fatalf("new handler: %v", err)
+	}); err != nil {
+		t.Fatalf("create session: %v", err)
 	}
+
 	mux := http.NewServeMux()
-	h.Routes(mux)
+	env.h.Routes(mux)
 
 	cookie := &http.Cookie{Name: "pacioli_session", Value: rawToken}
 	rr := postForm(mux, "/login/2fa", url.Values{"code": {"000000"}}, cookie)
@@ -786,7 +682,6 @@ func TestUpdatePassword_Success(t *testing.T) {
 
 func itoa(n int64) string { return fmt.Sprintf("%d", n) }
 
-// totpHandlerEnv is a handler + stores backed by a DB with AES-256-GCM key and one TOTP-enabled user.
 type totpHandlerEnv struct {
 	h          *handler.Handler
 	users      *sqlite.UserStore
@@ -816,11 +711,21 @@ func newTOTPHandlerEnv(t *testing.T) *totpHandlerEnv {
 	sessionStore := sqlite.NewSessionStore(db)
 
 	const pw = "pw-totp-user"
-	hash, _ := bcrypt.GenerateFromPassword([]byte(pw), 4)
-	uid, _ := userStore.Create(ctx, &user.User{Email: "totp-env@test.com", PasswordHash: string(hash)})
-
-	totpKey, _ := totp.Generate(totp.GenerateOpts{Issuer: "Test", AccountName: "totp-env@test.com"})
-	_ = userStore.UpdateTOTP(ctx, uid, totpKey.Secret(), true)
+	hash, err := bcrypt.GenerateFromPassword([]byte(pw), 4)
+	if err != nil {
+		t.Fatalf("bcrypt: %v", err)
+	}
+	uid, err := userStore.Create(ctx, &user.User{Email: "totp-env@test.com", PasswordHash: string(hash)})
+	if err != nil {
+		t.Fatalf("create totp user: %v", err)
+	}
+	totpKey, err := totp.Generate(totp.GenerateOpts{Issuer: "Test", AccountName: "totp-env@test.com"})
+	if err != nil {
+		t.Fatalf("generate totp key: %v", err)
+	}
+	if err := userStore.UpdateTOTP(ctx, uid, totpKey.Secret(), true); err != nil {
+		t.Fatalf("UpdateTOTP: %v", err)
+	}
 
 	acbSvc := service.NewACBService(txStore)
 	h, err := handler.New(&handler.Config{
@@ -843,8 +748,6 @@ func newTOTPHandlerEnv(t *testing.T) *totpHandlerEnv {
 		userID: uid, password: pw, totpSecret: totpKey.Secret(),
 	}
 }
-
-// --- loginSubmit additional paths ---
 
 func TestLoginSubmit_EmptyPasswordHash_Rejects(t *testing.T) {
 	h, userStore := newBlankTestEnv(t)
@@ -887,7 +790,6 @@ func TestLoginSubmit_TOTPEnabled_RedirectsTo2FA(t *testing.T) {
 		t.Errorf("redirect = %q want /login/2fa", rr.Header().Get("Location"))
 	}
 
-	// Session must exist with totp_verified=false.
 	var sessionCookie string
 	for _, c := range rr.Result().Cookies() {
 		if c.Name == "pacioli_session" {
@@ -905,8 +807,6 @@ func TestLoginSubmit_TOTPEnabled_RedirectsTo2FA(t *testing.T) {
 		t.Error("session should have totp_verified=false after TOTP login")
 	}
 }
-
-// --- totpSubmit additional paths ---
 
 func TestTOTPSubmit_NoCookie_RedirectsLogin(t *testing.T) {
 	h, _ := newBlankTestEnv(t)
@@ -962,7 +862,10 @@ func TestTOTPSubmit_RecoveryCode_Success(t *testing.T) {
 	ctx := context.Background()
 
 	const plainCode = "RCVR-TEST-0001"
-	codeHash, _ := bcrypt.GenerateFromPassword([]byte(plainCode), 4)
+	codeHash, err := bcrypt.GenerateFromPassword([]byte(plainCode), 4)
+	if err != nil {
+		t.Fatalf("bcrypt: %v", err)
+	}
 	if err := env.users.CreateRecoveryCodes(ctx, []*user.RecoveryCode{
 		{UserID: env.userID, Hash: string(codeHash)},
 	}); err != nil {
@@ -992,19 +895,60 @@ func TestTOTPSubmit_RecoveryCode_Success(t *testing.T) {
 		t.Errorf("redirect = %q want /", rr.Header().Get("Location"))
 	}
 
-	sess, _ := env.sessions.GetByTokenHash(ctx, sqlite.HashToken(rawToken))
+	sess, err := env.sessions.GetByTokenHash(ctx, sqlite.HashToken(rawToken))
+	if err != nil {
+		t.Fatalf("GetByTokenHash: %v", err)
+	}
 	if !sess.TOTPVerified {
 		t.Error("session should be TOTP verified after valid recovery code")
 	}
 
-	// Recovery code must be consumed.
-	remaining, _ := env.users.ListRecoveryCodes(ctx, env.userID)
+	remaining, err := env.users.ListRecoveryCodes(ctx, env.userID)
+	if err != nil {
+		t.Fatalf("ListRecoveryCodes: %v", err)
+	}
 	if len(remaining) != 0 {
 		t.Errorf("recovery code should be marked used, got %d remaining", len(remaining))
 	}
 }
 
-// --- setupSubmit additional paths ---
+func TestTOTPSubmit_WrongRecoveryCode_Rejects(t *testing.T) {
+	env := newTOTPHandlerEnv(t)
+	ctx := context.Background()
+
+	codeHash, err := bcrypt.GenerateFromPassword([]byte("RCVR-CORRECT"), 4)
+	if err != nil {
+		t.Fatalf("bcrypt: %v", err)
+	}
+	if err := env.users.CreateRecoveryCodes(ctx, []*user.RecoveryCode{
+		{UserID: env.userID, Hash: string(codeHash)},
+	}); err != nil {
+		t.Fatalf("CreateRecoveryCodes: %v", err)
+	}
+
+	rawToken := "pre-totp-wrong-rc"
+	if err := env.sessions.Create(ctx, &session.Session{
+		UserID:       env.userID,
+		TokenHash:    sqlite.HashToken(rawToken),
+		TOTPVerified: false,
+		ExpiresAt:    time.Now().Add(time.Hour),
+	}); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	mux := http.NewServeMux()
+	env.h.Routes(mux)
+
+	cookie := &http.Cookie{Name: "pacioli_session", Value: rawToken}
+	rr := postForm(mux, "/login/2fa", url.Values{"code": {"RCVR-WRONG"}}, cookie)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("wrong recovery code: got %d want 200 (re-render)", rr.Code)
+	}
+	if !strings.Contains(rr.Body.String(), "Invalid code") {
+		t.Error("should show 'Invalid code' error for wrong recovery code")
+	}
+}
 
 func TestSetupSubmit_ReuseUnconfiguredUser(t *testing.T) {
 	h, userStore := newBlankTestEnv(t)
@@ -1026,6 +970,15 @@ func TestSetupSubmit_ReuseUnconfiguredUser(t *testing.T) {
 
 	if rr.Code != http.StatusSeeOther {
 		t.Errorf("got %d want 303\nbody: %s", rr.Code, rr.Body.String())
+	}
+	hasCookie := false
+	for _, c := range rr.Result().Cookies() {
+		if c.Name == "pacioli_session" && c.MaxAge > 0 {
+			hasCookie = true
+		}
+	}
+	if !hasCookie {
+		t.Error("setup should set pacioli_session cookie")
 	}
 
 	// Original unconfigured row must be reused and fully configured.
@@ -1065,6 +1018,15 @@ func TestSetupSubmit_ConfigureExistingUnconfiguredEmailMatch(t *testing.T) {
 	if rr.Code != http.StatusSeeOther {
 		t.Errorf("got %d want 303\nbody: %s", rr.Code, rr.Body.String())
 	}
+	hasCookie := false
+	for _, c := range rr.Result().Cookies() {
+		if c.Name == "pacioli_session" && c.MaxAge > 0 {
+			hasCookie = true
+		}
+	}
+	if !hasCookie {
+		t.Error("setup should set pacioli_session cookie")
+	}
 
 	u, err := userStore.GetByID(ctx, existingID)
 	if err != nil {
@@ -1075,5 +1037,30 @@ func TestSetupSubmit_ConfigureExistingUnconfiguredEmailMatch(t *testing.T) {
 	}
 	if !u.IsAdmin {
 		t.Error("existing user should be promoted to admin")
+	}
+}
+
+func TestSetupSubmit_AlreadyConfigured_RedirectsLogin(t *testing.T) {
+	h, userStore := newBlankTestEnv(t)
+	ctx := context.Background()
+	mux := http.NewServeMux()
+	h.Routes(mux)
+
+	// Once any configured user exists, POST /setup must redirect to /login — not process the form.
+	if _, err := userStore.Create(ctx, &user.User{Email: "existing@pacioli.com", PasswordHash: "existing-hash", IsAdmin: true}); err != nil {
+		t.Fatalf("create configured user: %v", err)
+	}
+
+	rr := postForm(mux, "/setup", url.Values{
+		"email":    {"other@pacioli.com"},
+		"password": {"newpassword1"},
+		"confirm":  {"newpassword1"},
+	}, nil)
+
+	if rr.Code != http.StatusSeeOther {
+		t.Errorf("got %d want 303", rr.Code)
+	}
+	if rr.Header().Get("Location") != "/login" {
+		t.Errorf("redirect = %q want /login", rr.Header().Get("Location"))
 	}
 }

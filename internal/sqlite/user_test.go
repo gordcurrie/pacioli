@@ -273,7 +273,7 @@ func TestUserStore_UpdateTOTP_WithKey(t *testing.T) {
 }
 
 func TestUserStore_GetFirstUnconfigured(t *testing.T) {
-	db := newTestDB(t) // seeds 2 users with NULL password_hash
+	db := newTestDB(t)
 	s := sqlite.NewUserStore(db, nil)
 	ctx := context.Background()
 
@@ -356,15 +356,15 @@ func TestUserStore_EnableTOTPWithCodes(t *testing.T) {
 
 	// Re-enable with new secret and codes — old codes must be replaced, not accumulated.
 	newCodes := []*user.RecoveryCode{{Hash: "hash3"}}
-	_ = s.EnableTOTPWithCodes(ctx, id, "NEWSECRET", newCodes)
+	if err := s.EnableTOTPWithCodes(ctx, id, "NEWSECRET", newCodes); err != nil {
+		t.Fatalf("re-enable EnableTOTPWithCodes: %v", err)
+	}
 	listed2, _ := s.ListRecoveryCodes(ctx, id)
 	if len(listed2) != 1 {
 		t.Errorf("after re-enable: expected 1 code, got %d", len(listed2))
 	}
 
-	// Missing user returns ErrNotFound.
-	err := s.EnableTOTPWithCodes(ctx, 9999, "S", nil)
-	if !errors.Is(err, errs.ErrNotFound) {
+	if err := s.EnableTOTPWithCodes(ctx, 9999, "S", nil); !errors.Is(err, errs.ErrNotFound) {
 		t.Errorf("missing user: want ErrNotFound, got %v", err)
 	}
 
