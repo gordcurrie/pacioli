@@ -394,21 +394,7 @@ func (h *Handler) questradePreview(w http.ResponseWriter, r *http.Request) {
 			Currency: currency,
 			Source:   string(audit.SourceQuestrade),
 		}
-		found := false
-		for _, sr := range results {
-			if sr.Symbol != ticker {
-				continue
-			}
-			found = true
-			sec.Exchange = sr.Exchange
-			sec.Name = sr.Description
-			sec.Type = mapQTSecurityType(sr.SecurityType)
-			if validCurrencies[sr.Currency] {
-				sec.Currency = sr.Currency
-			}
-			break
-		}
-		if !found {
+		if !applyQTSymbolInfo(sec, results, ticker) {
 			// Not listed on Questrade (e.g. private/alt security) — create a minimal
 			// placeholder so the import can proceed; user can edit name/details later.
 			sec.Name = ticker
@@ -568,12 +554,6 @@ func (h *Handler) processQTActivity(
 		return r, nil
 	}
 
-	if pctx.alreadyImported[qtImportKey(sec.ID, act.TradeDate, txType, qty)] {
-		baseRow.Status = qtStatusSkip
-		baseRow.StatusMsg = "already imported — skipped"
-		return baseRow, nil, qtRowVisibleSkip
-	}
-
 	// Activity currency must match the security's currency in the DB.
 	// Exception: Questrade reports TFI activities for USD securities with currency="CAD"
 	// because the book value in the description is the CAD equivalent of the USD cost.
@@ -600,6 +580,14 @@ func (h *Handler) processQTActivity(
 	// Only CAD and USD are supported; flag anything else before it reaches commit.
 	if act.Currency != "CAD" && act.Currency != "USD" {
 		return flagRow("unsupported currency (" + act.Currency + ") — only CAD and USD securities can be imported")
+	}
+
+	// Dedup check after currency normalisation so baseRow.Currency is correct for TFI rows
+	// and currency-mismatch flags are not suppressed by an early skip.
+	if pctx.alreadyImported[qtImportKey(sec.ID, act.TradeDate, txType, qty)] {
+		baseRow.Status = qtStatusSkip
+		baseRow.StatusMsg = "already imported — skipped"
+		return baseRow, nil, qtRowVisibleSkip
 	}
 
 	// Fetch BoC rate for display and to verify it's available before committing.
@@ -858,8 +846,10 @@ func (h *Handler) questradeSync(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, r, err)
 		return
 	}
+	existingTickers := make(map[string]bool, len(existingSecs))
 	secByTickerExchange := make(map[string]*security.Security, len(existingSecs))
 	for _, s := range existingSecs {
+		existingTickers[s.Ticker] = true
 		secByTickerExchange[s.Ticker+"|"+s.Exchange] = s
 	}
 	symbolCache := make(map[string][]questrade.SymbolInfo)
@@ -894,19 +884,13 @@ func (h *Handler) questradeSync(w http.ResponseWriter, r *http.Request) {
 					symbolCache[ticker] = nil
 				}
 			}
-			for _, sr := range symbolCache[ticker] {
-				if sr.Symbol != ticker {
-					continue
-				}
-				sec.Exchange = sr.Exchange
-				sec.Name = sr.Description
-				sec.Type = mapQTSecurityType(sr.SecurityType)
-				if validCurrencies[sr.Currency] {
-					sec.Currency = sr.Currency
-				}
-				break
-			}
+			applyQTSymbolInfo(sec, symbolCache[ticker], ticker)
 			if _, ok := secByTickerExchange[ticker+"|"+sec.Exchange]; ok {
+				continue
+			}
+			// OTC/unknown tickers have no exchange from search results; skip if any
+			// security for this ticker already exists, regardless of exchange.
+			if sec.Exchange == "" && existingTickers[ticker] {
 				continue
 			}
 			if err := h.securities.Create(ctx, sec); err != nil {
@@ -922,6 +906,24 @@ func (h *Handler) questradeSync(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r,
 		fmt.Sprintf("/questrade?sync_accounts=%d&sync_securities=%d", newAccounts, newSecurities),
 		http.StatusSeeOther)
+}
+
+// applyQTSymbolInfo fills sec.Exchange/Name/Type/Currency from the first SymbolSearch result
+// where sr.Symbol == ticker exactly. Returns true when a match was found.
+func applyQTSymbolInfo(sec *security.Security, results []questrade.SymbolInfo, ticker string) bool {
+	for _, sr := range results {
+		if sr.Symbol != ticker {
+			continue
+		}
+		sec.Exchange = sr.Exchange
+		sec.Name = sr.Description
+		sec.Type = mapQTSecurityType(sr.SecurityType)
+		if validCurrencies[sr.Currency] {
+			sec.Currency = sr.Currency
+		}
+		return true
+	}
+	return false
 }
 
 func mapQTAccountType(qt string) account.Type {
