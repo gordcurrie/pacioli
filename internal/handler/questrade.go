@@ -536,7 +536,7 @@ func (h *Handler) processQTActivity(
 
 	sec, secOK := pctx.secByTicker[ticker]
 	_, hadErrBefore := pctx.errTickers[ticker]
-	if !secOK && pctx.tickerCount[ticker] <= 1 && !hadErrBefore {
+	if !secOK && pctx.tickerCount[ticker] == 0 && !hadErrBefore {
 		if ref, err := pctx.tryAutoCreate(ticker, act.Currency); err == nil {
 			pctx.secByTicker[ticker] = ref
 			sec = ref
@@ -568,6 +568,12 @@ func (h *Handler) processQTActivity(
 		return r, nil
 	}
 
+	if pctx.alreadyImported[qtImportKey(sec.ID, act.TradeDate, txType, qty)] {
+		baseRow.Status = qtStatusSkip
+		baseRow.StatusMsg = "already imported — skipped"
+		return baseRow, nil, qtRowVisibleSkip
+	}
+
 	// Activity currency must match the security's currency in the DB.
 	// Exception: Questrade reports TFI activities for USD securities with currency="CAD"
 	// because the book value in the description is the CAD equivalent of the USD cost.
@@ -594,12 +600,6 @@ func (h *Handler) processQTActivity(
 	// Only CAD and USD are supported; flag anything else before it reaches commit.
 	if act.Currency != "CAD" && act.Currency != "USD" {
 		return flagRow("unsupported currency (" + act.Currency + ") — only CAD and USD securities can be imported")
-	}
-
-	if pctx.alreadyImported[qtImportKey(sec.ID, act.TradeDate, txType, qty)] {
-		baseRow.Status = qtStatusSkip
-		baseRow.StatusMsg = "already imported — skipped"
-		return baseRow, nil, qtRowVisibleSkip
 	}
 
 	// Fetch BoC rate for display and to verify it's available before committing.
@@ -894,14 +894,17 @@ func (h *Handler) questradeSync(w http.ResponseWriter, r *http.Request) {
 					symbolCache[ticker] = nil
 				}
 			}
-			if results := symbolCache[ticker]; len(results) > 0 {
-				sr := results[0]
+			for _, sr := range symbolCache[ticker] {
+				if sr.Symbol != ticker {
+					continue
+				}
 				sec.Exchange = sr.Exchange
 				sec.Name = sr.Description
 				sec.Type = mapQTSecurityType(sr.SecurityType)
 				if validCurrencies[sr.Currency] {
 					sec.Currency = sr.Currency
 				}
+				break
 			}
 			if _, ok := secByTickerExchange[ticker+"|"+sec.Exchange]; ok {
 				continue
