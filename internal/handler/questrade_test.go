@@ -564,3 +564,230 @@ func TestQuestradePreview_ZeroQuantity_Flags(t *testing.T) {
 	}
 }
 
+// --- Sync tests ---
+
+// syncAccNum is the QT account number used across all sync tests.
+const syncAccNum = "MARGIN123"
+
+// makeQTSyncServer returns a fake Questrade API server for /questrade/sync tests.
+// It exposes one Margin account (syncAccNum) and serves positions and symbol search
+// results from the supplied maps. A nil symbol result returns empty symbols.
+func makeQTSyncServer(
+	t *testing.T,
+	positions map[string][]map[string]interface{},
+	symbolResults map[string][]map[string]interface{},
+) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.URL.Path == "/v1/accounts":
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"accounts": []map[string]interface{}{
+					{"number": syncAccNum, "type": "Margin", "status": "Active"},
+				},
+			})
+		case strings.HasSuffix(r.URL.Path, "/positions"):
+			parts := strings.Split(r.URL.Path, "/")
+			accNum := parts[len(parts)-2]
+			poses := positions[accNum]
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"positions": poses})
+		case strings.Contains(r.URL.Path, "/symbols/search"):
+			ticker := r.URL.Query().Get("prefix")
+			results := symbolResults[ticker]
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"symbols": results})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// qtPos builds a position JSON map for makeQTSyncServer.
+func qtPos(symbol, currency string) map[string]interface{} {
+	return map[string]interface{}{
+		"symbol":       symbol,
+		"currency":     currency,
+		"openQuantity": json.Number("100"),
+	}
+}
+
+// qtSym builds a symbol search result JSON map.
+func qtSym(symbol, description, exchange, secType, currency string) map[string]interface{} {
+	return map[string]interface{}{
+		"symbol":          symbol,
+		"description":     description,
+		"listingExchange": exchange,
+		"securityType":    secType,
+		"currency":        currency,
+	}
+}
+
+// doSync fires POST /questrade/sync and returns the recorder.
+func doSync(t *testing.T, env *qtTestEnv) *httptest.ResponseRecorder {
+	t.Helper()
+	mux := http.NewServeMux()
+	env.h.Routes(mux)
+	req := env.newRequest(http.MethodPost, "/questrade/sync", nil)
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, req)
+	return rr
+}
+
+// assertSyncRedirect checks that the sync response is a 303 redirect and that the
+// Location contains the expected sync_securities count.
+func assertSyncRedirect(t *testing.T, rr *httptest.ResponseRecorder, wantSecurities int) {
+	t.Helper()
+	if rr.Code != http.StatusSeeOther {
+		t.Fatalf("sync: status got %d want 303", rr.Code)
+	}
+	loc := rr.Header().Get("Location")
+	wantS := fmt.Sprintf("sync_securities=%d", wantSecurities)
+	if !strings.Contains(loc, wantS) {
+		t.Errorf("redirect %q: want %q", loc, wantS)
+	}
+}
+
+// TestQuestradeSync_ExactMatch_PopulatesSecurityFields verifies that when the
+// symbol search returns an exact-ticker match, the created security gets the
+// correct exchange, name, type, and currency from the search result (not the
+// position's default values).
+func TestQuestradeSync_ExactMatch_PopulatesSecurityFields(t *testing.T) {
+	ctx := context.Background()
+	positions := map[string][]map[string]interface{}{
+		syncAccNum: {qtPos("XIU", "CAD")},
+	}
+	symbolResults := map[string][]map[string]interface{}{
+		"XIU": {qtSym("XIU", "iShares S&P/TSX 60 Index ETF", "TSX", "ETF", "CAD")},
+	}
+	srv := makeQTSyncServer(t, positions, symbolResults)
+	env := newQTTestEnv(t, srv)
+
+	rr := doSync(t, env)
+	assertSyncRedirect(t, rr, 1)
+
+	sec, err := env.securities.GetByTickerExchange(ctx, "XIU", "TSX")
+	if err != nil {
+		t.Fatalf("security not created: %v", err)
+	}
+	if sec.Exchange != "TSX" {
+		t.Errorf("Exchange: got %q want %q", sec.Exchange, "TSX")
+	}
+	if sec.Name != "iShares S&P/TSX 60 Index ETF" {
+		t.Errorf("Name: got %q want %q", sec.Name, "iShares S&P/TSX 60 Index ETF")
+	}
+	if sec.Currency != "CAD" {
+		t.Errorf("Currency: got %q want %q", sec.Currency, "CAD")
+	}
+}
+
+// TestQuestradeSync_NoExactMatch_CreatesPlaceholder verifies that when symbol search
+// returns no exact-ticker match, sync creates a placeholder security (Name=ticker,
+// Exchange="") rather than using a non-exact hit.
+func TestQuestradeSync_NoExactMatch_CreatesPlaceholder(t *testing.T) {
+	ctx := context.Background()
+	positions := map[string][]map[string]interface{}{
+		syncAccNum: {qtPos("OTCCO", "USD")},
+	}
+	// Search returns a result with a different symbol — no exact match.
+	symbolResults := map[string][]map[string]interface{}{
+		"OTCCO": {qtSym("OTCCO.U", "OTC Corp USD", "OTC", "Stock", "USD")},
+	}
+	srv := makeQTSyncServer(t, positions, symbolResults)
+	env := newQTTestEnv(t, srv)
+
+	rr := doSync(t, env)
+	assertSyncRedirect(t, rr, 1)
+
+	sec, err := env.securities.GetByTickerExchange(ctx, "OTCCO", "")
+	if err != nil {
+		t.Fatalf("placeholder security not created: %v", err)
+	}
+	if sec.Name != "OTCCO" {
+		t.Errorf("placeholder Name: got %q want %q", sec.Name, "OTCCO")
+	}
+	if sec.Exchange != "" {
+		t.Errorf("placeholder Exchange: got %q want empty", sec.Exchange)
+	}
+}
+
+// TestQuestradeSync_ExistingExactExchange_NoDuplicate verifies that re-syncing an
+// account where a security already exists (same ticker+exchange) does not create a
+// duplicate — the secByTickerExchange guard skips creation.
+func TestQuestradeSync_ExistingExactExchange_NoDuplicate(t *testing.T) {
+	ctx := context.Background()
+	positions := map[string][]map[string]interface{}{
+		syncAccNum: {qtPos("XIU", "CAD")},
+	}
+	symbolResults := map[string][]map[string]interface{}{
+		"XIU": {qtSym("XIU", "iShares S&P/TSX 60 Index ETF", "TSX", "ETF", "CAD")},
+	}
+	srv := makeQTSyncServer(t, positions, symbolResults)
+	env := newQTTestEnv(t, srv)
+
+	// Pre-create the security so it already exists at sync time.
+	createTestSecurity(t, ctx, env.securities, "XIU", "CAD")
+
+	rr := doSync(t, env)
+	assertSyncRedirect(t, rr, 0)
+
+	all, err := env.securities.ListAll(ctx)
+	if err != nil {
+		t.Fatalf("list securities: %v", err)
+	}
+	var count int
+	for _, s := range all {
+		if s.Ticker == "XIU" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Errorf("XIU security count: got %d want 1", count)
+	}
+}
+
+// TestQuestradeSync_ExistingOTCSecurity_NoDuplicateViaExistingTickers verifies that
+// re-syncing an OTC security (empty exchange) does not create a duplicate via the
+// existingTickers guard, even though the ticker+"|" key would miss an existing entry
+// with a different exchange.
+func TestQuestradeSync_ExistingOTCSecurity_NoDuplicateViaExistingTickers(t *testing.T) {
+	ctx := context.Background()
+	positions := map[string][]map[string]interface{}{
+		syncAccNum: {qtPos("OTCCO", "USD")},
+	}
+	// Empty symbol search → no exact match → Exchange stays "".
+	symbolResults := map[string][]map[string]interface{}{}
+	srv := makeQTSyncServer(t, positions, symbolResults)
+	env := newQTTestEnv(t, srv)
+
+	// Pre-create placeholder (as a prior sync would have).
+	existing := &security.Security{
+		Ticker:   "OTCCO",
+		Name:     "OTCCO",
+		Exchange: "",
+		Type:     security.TypeEquity,
+		Currency: "USD",
+	}
+	if err := env.securities.Create(ctx, existing); err != nil {
+		t.Fatalf("pre-create security: %v", err)
+	}
+
+	rr := doSync(t, env)
+	assertSyncRedirect(t, rr, 0)
+
+	all, err := env.securities.ListAll(ctx)
+	if err != nil {
+		t.Fatalf("list securities: %v", err)
+	}
+	var count int
+	for _, s := range all {
+		if s.Ticker == "OTCCO" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Errorf("OTCCO security count: got %d want 1 (existingTickers guard failed)", count)
+	}
+}
+
