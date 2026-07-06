@@ -62,8 +62,8 @@ type qtTestEnv struct {
 	rawToken     string
 }
 
-func (e *qtTestEnv) newRequest(method, path string, body io.Reader) *http.Request {
-	req := httptest.NewRequest(method, path, body)
+func (e *qtTestEnv) newRequest(path string, body io.Reader) *http.Request {
+	req := httptest.NewRequest(http.MethodPost, path, body)
 	req.AddCookie(&http.Cookie{Name: "pacioli_session", Value: e.rawToken})
 	return req
 }
@@ -219,7 +219,7 @@ func doPreview(t *testing.T, env *qtTestEnv, formVals url.Values) *httptest.Resp
 	mux := http.NewServeMux()
 	env.h.Routes(mux)
 	body := strings.NewReader(formVals.Encode())
-	req := env.newRequest(http.MethodPost, "/questrade/preview", body)
+	req := env.newRequest("/questrade/preview", body)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rr := httptest.NewRecorder()
 	mux.ServeHTTP(rr, req)
@@ -629,7 +629,7 @@ func doSync(t *testing.T, env *qtTestEnv) *httptest.ResponseRecorder {
 	t.Helper()
 	mux := http.NewServeMux()
 	env.h.Routes(mux)
-	req := env.newRequest(http.MethodPost, "/questrade/sync", nil)
+	req := env.newRequest("/questrade/sync", nil)
 	rr := httptest.NewRecorder()
 	mux.ServeHTTP(rr, req)
 	return rr
